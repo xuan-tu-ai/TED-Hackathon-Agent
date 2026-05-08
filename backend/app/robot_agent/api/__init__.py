@@ -1,1 +1,7 @@
-# API Package
+from __future__ import annotations
+
+from .hitl_api import router as hitl_router
+from .incidents_api import router as incidents_router
+from .simulation_api import router as simulation_router
+
+__all__ = ["hitl_router", "incidents_router", "simulation_router"]
