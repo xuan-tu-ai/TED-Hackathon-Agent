@@ -1,0 +1,130 @@
+import torch
+import torch.nn as nn
+
+from ..layers.preprocessing import RevIN, LogScaler, GlobalStatsStandardizer
+from ..layers.feature_extraction import ShapeEncoder, StatProjector, RelativePositionEncoder, ContextualEmbedding
+from ..layers.backbone import MLPMixerBackbone
+from ..layers.bottleneck import MultitaskVAEHead
+
+from .base import BaseAnomalyDetectionModel
+
+class V1VAEAnomalyDetectionModel(BaseAnomalyDetectionModel):
+    """Robot anomaly detection model using VAE bottleneck.
+    
+    Args:
+        num_sensors (int): Number of input channels.
+        window_size (int): Size of the input window.
+        num_stats_features (int): Number of statistical features.
+        num_robots (int): Number of robots.
+        num_programs (int): Number of programs.
+        d_model (int, optional): Model dimension. Defaults to 128.
+        latent_dim (int, optional): Latent dimension for VAE. Defaults to 32.
+        num_mixer_blocks (int, optional): Number of mixer blocks. Defaults to 4.
+        dropout (float, optional): Dropout rate. Defaults to 0.1.
+    """
+    
+    def __init__(self, num_sensors: int, window_size: int,
+                 num_stats_features: int, num_robots: int, num_programs: int,
+                 d_model: int = 128, latent_dim: int = 32,
+                 num_mixer_blocks: int = 4, dropout: float = 0.1):
+        super().__init__()
+        self.num_sensors = num_sensors
+        self.window_size = window_size
+        self.num_stats_features = num_stats_features
+        self.d_model = d_model
+        self.latent_dim = latent_dim
+        self.num_mixer_blocks = num_mixer_blocks
+        self.num_robots = num_robots
+        self.num_programs = num_programs
+        self.dropout = dropout
+
+        # Input Processing
+        self.revin = RevIN(num_sensors=num_sensors)
+        self.log_scaler = LogScaler()
+        self.stat_standardizer = GlobalStatsStandardizer(num_sensors=num_sensors)
+        self.pos_encoder = RelativePositionEncoder(d_model=d_model)
+        self.context_embedding = ContextualEmbedding(num_robots=num_robots, num_programs=num_programs, d_model=d_model)
+
+        assert self.d_model % 2 == 0, "d_model must be even for the mixer blocks"
+
+        # Feature Projector (2 Branch)
+        self.shape_encoder = ShapeEncoder(num_sensors=num_sensors, window_size=window_size, d_model=d_model//2, dropout=dropout)
+        self.stat_projector = StatProjector(num_sensors=num_sensors, num_stats_features=num_stats_features, d_model=d_model//2, dropout=dropout)
+
+        # Mixer Backbone
+        self.mixer_backbone = MLPMixerBackbone(num_sensors=num_sensors, d_model=d_model, num_blocks=num_mixer_blocks, expansion_factor=4, dropout=dropout)
+
+        # Bottleneck(VAE)
+        self.vae_head = MultitaskVAEHead(num_sensors=num_sensors, num_stats_features=num_stats_features, window_size=window_size, d_model=d_model, latent_dim=latent_dim)
+
+    @property
+    def name(self):
+        return 'robot_anomaly_model_vae'
+        
+    @property
+    def required_input_args(self):
+        return {'raw_window', 'stats', 'rel_pos', 'robot_idx', 'program_idx'}
+
+    def _forward_args(self, raw_window, stats, rel_pos, robot_idx, program_idx):
+        """Forward pass for robot anomaly model.
+
+        Args:
+            raw_window (Tensor): Raw input window [B, C, W].
+            stats (Tensor): Statistical features [B, C, K].
+            rel_pos (Tensor): Relative positional encoding.
+            robot_idx (Tensor): Robot indices.
+            program_idx (Tensor): Program indices.
+            
+        Returns:
+            Dict: recon_raw, recon_norm, x_norm, pred_stats_z, true_stats_z, mu, logvar
+        """
+        # Raw windows: [B, C, W]
+        # Stats: [B, C, K]
+
+        s_log = self.log_scaler(stats)
+        s_zscore = self.stat_standardizer(s_log)
+        f_phys = self.stat_projector(s_zscore)
+
+        x_norm, revin_stats = self.revin(raw_window)
+        f_shape = self.shape_encoder(x_norm)
+
+        f_pos = self.pos_encoder(rel_pos) # B, 1, 28
+        f_context = self.context_embedding(robot_idx, program_idx)
+
+        combined = torch.cat([f_shape, f_phys], dim=-1)
+        combined = combined + f_pos + f_context
+
+        mixer_out = self.mixer_backbone(combined)
+
+        recon_norm, pred_stats_z, mu, logvar = self.vae_head(mixer_out)
+
+        recon_raw = self.revin.denormalize(recon_norm, revin_stats)
+
+        return {
+            "recon_raw": recon_raw,
+            "recon_norm": recon_norm,
+            "x_norm": x_norm,
+            "pred_stats_z": pred_stats_z,
+            "true_stats_z": s_zscore,
+            "mu": mu,
+            "logvar": logvar
+        }
+
+    def get_metadata(self):
+        """Get model metadata.
+        
+        Returns:
+            dict: Model configuration metadata.
+        """
+        return {
+            'name': self.name,
+            'num_sensors': self.num_sensors,
+            'window_size': self.window_size,
+            'num_stats_features': self.num_stats_features,
+            'd_model': self.d_model,
+            'latent_dim': self.latent_dim,
+            'num_mixer_blocks': self.num_mixer_blocks,
+            'num_robots': self.num_robots,
+            'num_programs': self.num_programs,
+            'dropout': self.dropout
+        }

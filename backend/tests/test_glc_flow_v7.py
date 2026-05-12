@@ -1,8 +1,11 @@
 import pytest
 import torch
 
-from app.anomaly_detection.models.factory import create_glc_flow_v7, count_parameters, get_model_summary
-from app.anomaly_detection.schemas import GLCFlowConfig
+from app.anomaly_detection.models.factory import create_model, count_parameters, get_model_summary
+
+
+def create_glc_flow_v7(metadata=None):
+    return create_model("glc_flow_v7", metadata=metadata)
 
 
 class TestFactory:
@@ -11,11 +14,11 @@ class TestFactory:
         assert model is not None
         assert hasattr(model, "forward")
 
-    def test_create_with_config(self):
-        config = GLCFlowConfig(d_model=64, transformer_layers=2)
-        model = create_glc_flow_v7(config)
-        assert model.config.d_model == 64
-        assert model.config.transformer_layers == 2
+    def test_create_with_metadata(self):
+        meta = {"d_model": 64, "transformer_layers": 2}
+        model = create_glc_flow_v7(meta)
+        assert model.d_model == 64
+        assert model.transformer_layers == 2
 
     def test_count_parameters_positive(self):
         model = create_glc_flow_v7()
@@ -25,15 +28,15 @@ class TestFactory:
     def test_model_summary_keys(self):
         model = create_glc_flow_v7()
         summary = get_model_summary(model)
-        assert "total_params" in summary
-        assert "trainable_params" in summary
+        assert "total_parameters" in summary
+        assert "trainable_parameters" in summary
         assert "by_component" in summary
 
     def test_model_summary_total_equals_sum(self):
         model = create_glc_flow_v7()
         summary = get_model_summary(model)
         component_sum = sum(summary["by_component"].values())
-        assert component_sum == summary["total_params"]
+        assert component_sum == summary["total_parameters"]
 
 
 class TestGLCFlowV7Forward:
@@ -48,17 +51,17 @@ class TestGLCFlowV7Forward:
         assert set(out.keys()) == set(expected_keys)
 
     def test_forward_shapes(self):
-        config = GLCFlowConfig()
-        model = create_glc_flow_v7(config)
+        meta = {}
+        model = create_glc_flow_v7(meta)
         x = {"input": torch.randn(2, 6, 240)}
         out = model(x)
-        assert out["z_pooled"].shape == (2, 256)  # [B, 2D=2*128]
-        assert out["z_cls"].shape == (2, 128)       # [B, D]
-        assert out["z_patches"].shape == (2, 84, 128)  # [B, 84, D]
-        assert out["z_max_local"].shape == (2, 128)    # [B, D]
-        assert out["file_stats_pred"].shape == (2, 6, 6)  # [B, C, 6]
-        assert out["patch_stats_pred"].shape == (2, 6, 14, 2)  # [B, C, N, 2]
-        assert out["transformer_output"].shape == (2, 85, 128)  # [B, 85, D]
+        assert out["z_pooled"].shape == (2, 256)
+        assert out["z_cls"].shape == (2, 128)
+        assert out["z_patches"].shape == (2, 84, 128)
+        assert out["z_max_local"].shape == (2, 128)
+        assert out["file_stats_pred"].shape == (2, 6, 6)
+        assert out["patch_stats_pred"].shape == (2, 6, 14, 2)
+        assert out["transformer_output"].shape == (2, 85, 128)
 
     def test_forward_single_sample(self):
         model = create_glc_flow_v7()
@@ -83,17 +86,16 @@ class TestGLCFlowV7Forward:
 
     def test_detect_anomaly_single_file(self):
         model = create_glc_flow_v7()
-        raw = torch.randn(6, 240)  # 2D input (no batch dim)
+        raw = torch.randn(6, 240)
         result = model.detect_anomaly(raw)
-        assert result["anomaly_score"].ndim == 0  # scalar
+        assert result["anomaly_score"].ndim == 0
         assert isinstance(result["is_anomaly"], bool)
 
     def test_stage1_loss_dict(self):
-        config = GLCFlowConfig()
-        model = create_glc_flow_v7(config)
+        model = create_glc_flow_v7()
         x = {"input": torch.randn(2, 6, 240)}
-        file_stats = torch.randn(2, 6, 6)  # [B, C, 6]
-        patch_stats = torch.randn(2, 6, 14, 2)  # [B, C, N, 2]
+        file_stats = torch.randn(2, 6, 6)
+        patch_stats = torch.randn(2, 6, 14, 2)
         loss_dict = model.stage1_loss(x, file_stats, patch_stats, lambda_orth=0.05)
         assert "loss" in loss_dict
         assert "global_loss" in loss_dict
@@ -106,3 +108,10 @@ class TestGLCFlowV7Forward:
         repr_str = model.extra_repr()
         assert "GLCFlowV7" in repr_str
         assert "D=128" in repr_str
+
+    def test_get_metadata(self):
+        model = create_glc_flow_v7()
+        meta = model.get_metadata()
+        assert meta["name"] == "GLCFlowV7"
+        assert meta["d_model"] == 128
+        assert "num_patches" in meta

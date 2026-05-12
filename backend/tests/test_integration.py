@@ -1,10 +1,14 @@
 import pytest
 import torch
 
-from app.anomaly_detection.models.factory import create_glc_flow_v7, count_parameters
+from app.anomaly_detection.models.factory import create_model, count_parameters
 from app.anomaly_detection.schemas import GLCFlowConfig
 from app.anomaly_detection.layers.scorer import MADThreshold, AnomalyScorer
-from app.anomaly_detection.train import GLCFlowTrainer
+from app.anomaly_detection.training import GLCFlowTrainer
+
+
+def create_glc_flow_v7():
+    return create_model("glc_flow_v7")
 
 
 class TestDetectAnomalyPipeline:
@@ -113,8 +117,8 @@ class TestEndToEndWithTrainer:
     def test_trainer_initialization_with_custom_config(self):
         config = GLCFlowConfig(d_model=64, transformer_layers=2)
         trainer = GLCFlowTrainer(config)
-        assert trainer.model.config.d_model == 64
-        assert trainer.model.config.transformer_layers == 2
+        assert trainer.model.d_model == 64
+        assert trainer.model.transformer_layers == 2
 
     def test_train_stage1_single_epoch(self):
         trainer = GLCFlowTrainer()
@@ -186,8 +190,8 @@ class TestModelParameterCount:
         assert total < 5_000_000
 
     def test_model_with_small_d_model(self):
-        config = GLCFlowConfig(d_model=32, transformer_layers=2)
-        model = create_glc_flow_v7(config)
+        meta = {"d_model": 32, "transformer_layers": 2}
+        model = create_model("glc_flow_v7", metadata=meta)
         total = count_parameters(model)
         assert total > 0
         assert total < 1_000_000

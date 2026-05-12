@@ -1,16 +1,20 @@
 import pytest
 import torch
 
-from app.anomaly_detection.train import (
+from app.anomaly_detection.training import (
     Stage1Trainer,
     Stage2Trainer,
     Evaluator,
     GLCFlowTrainer,
     EvalResult,
 )
-from app.anomaly_detection.models.factory import create_glc_flow_v7
-from app.anomaly_detection.schemas import GLCFlowConfig
+from app.anomaly_detection.training import _glc_config_to_metadata
+from app.anomaly_detection.models.factory import create_model
 from app.anomaly_detection.layers.scorer import MADThreshold
+
+
+def create_glc_flow_v7():
+    return create_model("glc_flow_v7")
 
 
 class TestStage1Trainer:
@@ -162,11 +166,12 @@ class TestGLCFlowTrainer:
         assert trainer.stage1_trainer is None
         assert trainer.stage2_trainer is None
 
-    def test_initialization_with_config(self):
-        config = GLCFlowConfig(d_model=64, transformer_layers=2)
-        trainer = GLCFlowTrainer(config)
-        assert trainer.model.config.d_model == 64
-        assert trainer.model.config.transformer_layers == 2
+    def test_initialization_with_metadata(self):
+        from app.anomaly_detection.models.factory import create_model
+        trainer = GLCFlowTrainer()
+        trainer.model = create_model("glc_flow_v7", metadata={"d_model": 64, "transformer_layers": 2})
+        assert trainer.model.d_model == 64
+        assert trainer.model.transformer_layers == 2
 
     def test_train_stage1_history_keys(self):
         trainer = GLCFlowTrainer()

@@ -1,0 +1,1 @@
+from app.anomaly_detection.training.v6.trainer import V6Trainer

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from dataclasses import dataclass
 
-from ..schemas import RevINStat
+from app.anomaly_detection.schemas import RevINStat
 
 
 class GlobalRevIN(nn.Module):
