@@ -61,15 +61,14 @@ def _gen_error_steps(rng: np.random.Generator, center: int, spread: int, count: 
     return sorted(set(int(x) for x in clipped))
 
 
-def seed_perception_results(session: Session, days: int = 30) -> int:
-    rng = np.random.default_rng(20260421)
+def seed_perception_results(session: Session, days: int = 45) -> int:
+    """45 days. No warmup — anomalies from day 0. Different robots & sensors than before."""
+    rng = np.random.default_rng(20260501)
 
     robots = [f"R-{idx:02d}" for idx in range(1, 48)]
     cycles_per_day = 60
     now = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
     start_day = now - timedelta(days=days)
-
-    r31_burst_start_day = days - 5
 
     rows: list[PerceptionResult] = []
 
@@ -83,81 +82,51 @@ def seed_perception_results(session: Session, days: int = 30) -> int:
             for robot in robots:
                 per_sensor: dict[str, dict[str, float | list[int]]] = {}
 
+                # Default: Normal health
                 for sensor in SENSORS:
                     per_sensor[sensor] = {
-                        "shape": float(np.clip(rng.normal(0.07, 0.02), 0.01, 0.15)),
-                        "win": float(np.clip(rng.normal(0.06, 0.02), 0.01, 0.16)),
-                        "error_steps": _gen_error_steps(rng, center=120, spread=70, count=2),
+                        "shape": float(np.clip(rng.normal(0.05, 0.01), 0.01, 0.10)),
+                        "win": float(np.clip(rng.normal(0.04, 0.01), 0.01, 0.09)),
+                        "error_steps": _gen_error_steps(rng, center=120, spread=80, count=1),
                     }
 
-                if robot == "R-07":
-                    shape = float(np.clip(0.25 + progress * 0.66 + rng.normal(0.0, 0.03), 0.02, 0.99))
-                    win = float(np.clip(shape * 0.88 + rng.normal(0.0, 0.02), 0.02, 0.98))
-                    count = max(5, int(8 + progress * 14))
-                    per_sensor["paint_pressure"] = {
-                        "shape": shape,
-                        "win": win,
-                        "error_steps": _gen_error_steps(rng, center=118, spread=18, count=count),
-                    }
+                is_file_anomaly = False
 
-                elif robot == "R-31":
-                    if day_idx >= r31_burst_start_day:
-                        shape = float(np.clip(0.68 + rng.normal(0.0, 0.04), 0.55, 0.95))
-                        win = float(np.clip(shape * 0.85 + rng.normal(0.0, 0.03), 0.50, 0.92))
-                        count = max(12, int(14 + rng.integers(0, 5)))
-                        per_sensor["high_pressure_voltage"] = {
+                if robot == "R-03":
+                    # L1 Burst — paint_flow_rate, immediate dense anomalies
+                    if rng.random() < 0.65:
+                        shape = float(np.clip(0.60 + rng.normal(0.0, 0.04), 0.45, 0.92))
+                        per_sensor["paint_flow_rate"] = {
                             "shape": shape,
-                            "win": win,
-                            "error_steps": _gen_error_steps(rng, center=80, spread=25, count=count),
+                            "win": shape * 0.82,
+                            "error_steps": _gen_error_steps(rng, center=110, spread=25, count=9),
                         }
-                    else:
-                        for sensor in SENSORS:
-                            per_sensor[sensor] = {
-                                "shape": float(np.clip(rng.normal(0.05, 0.01), 0.01, 0.10)),
-                                "win": float(np.clip(rng.normal(0.04, 0.01), 0.01, 0.09)),
-                                "error_steps": _gen_error_steps(rng, center=120, spread=80, count=1),
-                            }
+                        is_file_anomaly = True
 
-                elif robot == "R-13":
-                    is_cyclic_peak = cycle_idx % 3 == 0
-                    if is_cyclic_peak:
-                        shape = float(np.clip(0.72 + rng.normal(0.0, 0.03), 0.50, 0.92))
-                        win = float(np.clip(0.69 + rng.normal(0.0, 0.04), 0.48, 0.90))
-                        steps = [45, 46, 47, 120, 121]
-                    else:
-                        shape = float(np.clip(0.13 + rng.normal(0.0, 0.02), 0.05, 0.22))
-                        win = float(np.clip(0.10 + rng.normal(0.0, 0.02), 0.04, 0.20))
-                        steps = _gen_error_steps(rng, center=120, spread=60, count=3)
-
-                    per_sensor["air_motor_rotation_speed"] = {
+                elif robot == "R-04":
+                    # L2 Escalation — high_pressure_current, gradual worsening
+                    shape = float(np.clip(0.30 + progress * 0.55 + rng.normal(0.0, 0.02), 0.10, 0.93))
+                    per_sensor["high_pressure_current"] = {
                         "shape": shape,
-                        "win": win,
-                        "error_steps": steps,
+                        "win": shape * 0.87,
+                        "error_steps": _gen_error_steps(rng, center=115, spread=22, count=int(4 + progress * 12)),
                     }
+                    is_file_anomaly = True
 
-                elif robot == "R-22":
-                    for sensor in SENSORS:
-                        per_sensor[sensor] = {
-                            "shape": float(np.clip(rng.normal(0.04, 0.01), 0.01, 0.09)),
-                            "win": float(np.clip(rng.normal(0.04, 0.01), 0.01, 0.09)),
-                            "error_steps": _gen_error_steps(rng, center=120, spread=80, count=1),
-                        }
-
-                else:
-                    if rng.random() < 0.50:
-                        dominant = rng.choice(SENSORS)
-                        shape = float(np.clip(rng.beta(2, 5) * 1.2, 0.10, 0.95))
-                        win = float(np.clip(shape * 0.9 + rng.normal(0.0, 0.02), 0.08, 0.92))
-                        per_sensor[dominant] = {
+                elif robot == "R-05":
+                    # L1 Burst — electro_pneumatic_output, intermittent spikes
+                    if rng.random() < 0.55:
+                        shape = float(np.clip(0.58 + rng.normal(0.0, 0.06), 0.40, 0.88))
+                        per_sensor["electro_pneumatic_output"] = {
                             "shape": shape,
-                            "win": win,
-                            "error_steps": _gen_error_steps(rng, center=110, spread=30, count=6),
+                            "win": shape * 0.83,
+                            "error_steps": _gen_error_steps(rng, center=95, spread=35, count=7),
                         }
+                        is_file_anomaly = True
 
                 abnormal_score = _normalized_score(per_sensor)
                 abnormal_type = _dominant_sensor(per_sensor)
                 severity_hint = _severity_from_score(abnormal_score)
-                is_file_anomaly = abnormal_score >= 0.35 and robot not in {"R-22"}
 
                 rows.append(
                     PerceptionResult(

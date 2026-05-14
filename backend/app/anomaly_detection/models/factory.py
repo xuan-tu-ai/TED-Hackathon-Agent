@@ -1,13 +1,22 @@
 from enum import Enum
 from typing import Any, Dict
 
-from .base import BaseAnomalyDetectionModel, filter_model_kwargs
+from .base import BaseAnomalyDetectionModel, ModelConfig, filter_model_kwargs
 from .v1_vae import V1VAEAnomalyDetectionModel
 from .v5_vq import V5VQAnomalyDetectionModel
 from .v5_vq_file import V5VQFileAnomalyDetectionModel
 from .v6_vq import V6VQAnomalyDetectionModel
 from .v6_rvq import V6RVQAnomalyDetectionModel
 from .glc_flow_v7 import GLCFlowV7
+
+_STR_TO_MODEL_CLS = {
+    "glc_flow_v7": GLCFlowV7,
+    "v6_rvq": V6RVQAnomalyDetectionModel,
+    "v6_vq": V6VQAnomalyDetectionModel,
+    "v5_vq_file": V5VQFileAnomalyDetectionModel,
+    "v5_vq": V5VQAnomalyDetectionModel,
+    "v1_vae": V1VAEAnomalyDetectionModel,
+}
 
 
 class SupportedAnomalyDetectionModels(Enum):
@@ -20,31 +29,23 @@ class SupportedAnomalyDetectionModels(Enum):
 
 
 def create_model(
-    model_type: SupportedAnomalyDetectionModels | str,
-    metadata: Dict[str, Any] | None = None,
+    model_type: "SupportedAnomalyDetectionModels | str",
+    config: "Dict[str, Any] | ModelConfig | None" = None,
 ) -> BaseAnomalyDetectionModel:
     if isinstance(model_type, str):
-        if model_type == "glc_flow_v7":
-            model_cls = GLCFlowV7
-        elif model_type == "v6_rvq":
-            model_cls = V6RVQAnomalyDetectionModel
-        elif model_type == "v6_vq":
-            model_cls = V6VQAnomalyDetectionModel
-        elif model_type == "v5_vq_file":
-            model_cls = V5VQFileAnomalyDetectionModel
-        elif model_type == "v5_vq":
-            model_cls = V5VQAnomalyDetectionModel
-        elif model_type == "v1_vae":
-            model_cls = V1VAEAnomalyDetectionModel
-        else:
-            raise ValueError(f"Unknown model type: {model_type}")
+        if model_type not in _STR_TO_MODEL_CLS:
+            raise ValueError(f"Unknown model type: {model_type!r}. Valid: {list(_STR_TO_MODEL_CLS)}")
+        model_cls = _STR_TO_MODEL_CLS[model_type]
     else:
         model_cls = model_type.value
 
-    if metadata is not None:
-        return model_cls.load_from_metadata(metadata)
+    if config is None:
+        return model_cls()
 
-    return model_cls()
+    if not isinstance(config, dict):
+        config = config.to_dict()
+
+    return model_cls.load_from_metadata(config)
 
 
 def count_parameters(model: BaseAnomalyDetectionModel) -> int:

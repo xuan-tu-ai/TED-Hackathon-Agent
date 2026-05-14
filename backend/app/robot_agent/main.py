@@ -3,13 +3,14 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite:///data/demo.db")
+os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite:///../data/demo.db")
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .api import hitl_router, incidents_router, simulation_router
+from .db import init_db
 
 
 app = FastAPI(
@@ -36,6 +37,12 @@ def health():
     return {"status": "ok"}
 
 
-_ui_path = Path(__file__).resolve().parents[2] / "frontend"
+@app.on_event("startup")
+def on_startup() -> None:
+    """Ensure all database tables exist on app startup."""
+    init_db()
+
+
+_ui_path = Path(__file__).resolve().parents[3] / "frontend"
 if _ui_path.exists():
     app.mount("/ui", StaticFiles(directory=str(_ui_path), html=True), name="ui")

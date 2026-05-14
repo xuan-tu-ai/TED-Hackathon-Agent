@@ -1,1 +1,4 @@
-from app.anomaly_detection.training.v6.trainer import V6Trainer
+from app.anomaly_detection.training.single_stage_trainer import SingleStageTrainer
+
+# Backward compat
+V6Trainer = SingleStageTrainer

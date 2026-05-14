@@ -69,7 +69,7 @@ export const useSimulationStore = create((set, get) => ({
                         ...incident,
                         plan: {
                             tasks: incident.plan.tasks.map(t =>
-                                t.id === taskId ? { ...t, status } : t
+                                String(t.id) === String(taskId) ? { ...t, status } : t
                             )
                         }
                     }

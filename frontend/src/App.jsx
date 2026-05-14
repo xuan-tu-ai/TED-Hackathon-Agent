@@ -46,7 +46,7 @@ function StartScreen({ onStart, speed, onSpeedChange }) {
     );
 }
 
-function DashboardHeader({ tick, totalTicks, onStop }) {
+function DashboardHeader({ tick, totalTicks, onStop, onSkip }) {
     const progress = totalTicks > 0 ? (tick / totalTicks) * 100 : 0;
     return (
         <div className="dashboard-header">
@@ -57,7 +57,10 @@ function DashboardHeader({ tick, totalTicks, onStop }) {
             <div className="sim-progress">
                 <div className="sim-progress-bar" style={{ width: `${progress}%` }}></div>
             </div>
-            <button className="btn-stop" onClick={onStop}>⏹ Stop</button>
+            <div className="dashboard-actions">
+                <button className="btn-skip" onClick={onSkip} title="Fast-forward to first alert">⏭ Skip to Alert</button>
+                <button className="btn-stop" onClick={onStop}>⏹ Stop</button>
+            </div>
         </div>
     );
 }
@@ -72,6 +75,7 @@ function App() {
         incidents,
         activeIncidentId,
         alerts,
+        tick,
         updateRobot,
         addIncident,
         updateIncidentStatus,
@@ -151,7 +155,11 @@ function App() {
                     type: event.alert_type,
                     status: 'ALERT'
                 });
-                if (!activeIncidentId) selectIncident(event.incident_id);
+                // Use getState() to get the most recent value and avoid stale closure issues
+                const currentActiveId = useSimulationStore.getState().activeIncidentId;
+                if (!currentActiveId) {
+                    selectIncident(event.incident_id);
+                }
                 break;
             case 'incident_queued':
                 updateIncidentStatus(event.incident_id, 'QUEUED', { queuePosition: event.queue_position });
@@ -223,6 +231,14 @@ function App() {
         }
     };
 
+    const handleSkip = async () => {
+        try {
+            await fetch(`${API_BASE}/skip_to_alert`, { method: 'POST' });
+        } catch (err) {
+            console.error('Failed to skip to alert:', err);
+        }
+    };
+
     const handleSpeedChange = (newSpeed) => {
         setSpeed(newSpeed);
     };
@@ -247,9 +263,10 @@ function App() {
             </header>
             <main className="app-main">
                 <DashboardHeader
-                    tick={useSimulationStore.getState().tick}
+                    tick={tick}
                     totalTicks={totalTicks}
                     onStop={handleStop}
+                    onSkip={handleSkip}
                 />
                 <div className="dashboard">
                     <div className="dashboard-top">

@@ -1,3 +1,6 @@
+from dataclasses import dataclass, fields
+from typing import ClassVar
+
 import torch
 import torch.nn as nn
 
@@ -8,7 +11,33 @@ from ..layers.bottleneck import ResidualFactorizedVectorQuantizerEMA
 
 from .base import BaseAnomalyDetectionModel
 
+
+@dataclass
+class V6RVQConfig:
+    """Hyperparameters for V6RVQAnomalyDetectionModel."""
+    num_sensors: int = 6
+    window_size: int = 32
+    num_win_stats_features: int = 10
+    num_robots: int = 64
+    num_programs: int = 512
+    d_model: int = 128
+    codebook_size: int = 256
+    num_vq_levels: int = 2
+    num_mixer_blocks: int = 4
+    dropout: float = 0.1
+
+    def to_dict(self) -> dict:
+        return {f.name: getattr(self, f.name) for f in fields(self) if f.init}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "V6RVQConfig":
+        valid = {f.name for f in fields(cls) if f.init}
+        return cls(**{k: v for k, v in d.items() if k in valid})
+
+
 class V6RVQAnomalyDetectionModel(BaseAnomalyDetectionModel):
+    PARADIGM: ClassVar[str] = "window"
+    CONFIG_CLASS = V6RVQConfig
     """Robot anomaly detection model using residual vector quantization bottleneck.
     
     Args:
@@ -136,11 +165,6 @@ class V6RVQAnomalyDetectionModel(BaseAnomalyDetectionModel):
         }
 
     def get_metadata(self):
-        """Get model metadata.
-        
-        Returns:
-            dict: Model configuration metadata.
-        """
         return {
             'name': self.name,
             'num_sensors': self.num_sensors,
@@ -152,5 +176,11 @@ class V6RVQAnomalyDetectionModel(BaseAnomalyDetectionModel):
             'num_mixer_blocks': self.num_mixer_blocks,
             'num_robots': self.num_robots,
             'num_programs': self.num_programs,
-            'dropout': self.dropout
+            'dropout': self.dropout,
         }
+
+    def compute_anomaly_score(self, batch: dict) -> "dict[str, torch.Tensor]":
+        out = self.forward(batch)
+        shape_score = ((out["recon_norm"] - out["x_norm"]) ** 2).mean(dim=-1)  # [B, C]
+        win_score = ((out["pred_stats_z"] - out["true_stats_z"]) ** 2).mean(dim=-1)  # [B, C]
+        return {"shape_score": shape_score, "win_score": win_score}

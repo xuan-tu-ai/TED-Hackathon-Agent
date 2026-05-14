@@ -42,20 +42,17 @@ function EmptyPlanState() {
 }
 
 export default function PlanTracker({ plan, onTaskClick }) {
-    if (!plan || !plan.tasks || plan.tasks.length === 0) {
-        return (
-            <div className="plan-tracker plan-tracker--empty">
-                <EmptyPlanState />
-            </div>
-        );
-    }
+    if (!plan || !plan.tasks || plan.tasks.length === 0) return null;
+
+    const completedCount = plan.tasks.filter(t => t.status === 'completed').length;
+    const progress = Math.round((completedCount / plan.tasks.length) * 100);
 
     return (
         <div className="plan-tracker">
             <div className="plan-tracker-header">
-                <span className="plan-tracker-title">Diagnostic Plan</span>
+                <span className="plan-tracker-title">Diagnostic Roadmap</span>
                 <span className="plan-tracker-count">
-                    {plan.tasks.filter(t => t.status === 'completed').length}/{plan.tasks.length}
+                    {completedCount}/{plan.tasks.length} ({progress}%)
                 </span>
             </div>
             <div className="plan-tracker-tasks">

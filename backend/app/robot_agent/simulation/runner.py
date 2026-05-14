@@ -22,7 +22,7 @@ from .state import SimulationState
 logger = logging.getLogger("simulation_runner")
 
 ALERT_STORM_THRESHOLD = 5
-DEBOUNCE_WINDOW_TICKS = 4
+DEBOUNCE_WINDOW_TICKS = 24
 
 
 class SimulationRunner:
@@ -43,13 +43,15 @@ class SimulationRunner:
         self._pause_event = threading.Event()
         self._pause_event.set()
         self._debounce_timestamps: dict[str, int] = {}
-        self._agent_executor = ThreadPoolExecutor(max_workers=2)
         self._running = False
         self._pending_systemic_alerts: list[SystemicIncident] = []
         self._pending_incidents: list[DiagnosticIncident] = []
         self._active_incident_count = 0
+        self._warp_mode = False
+        self._target_tick: int | None = None
 
         self._incident_queue: queue.Queue[DiagnosticIncident] = queue.Queue()
+        self._agent_executor = ThreadPoolExecutor(max_workers=5)
         self._dispatcher_thread: threading.Thread | None = None
         self._dispatcher_stop_event = threading.Event()
 
@@ -79,13 +81,18 @@ class SimulationRunner:
         if alert_type == "L1_BURST":
             abnormal_family = "DROPOUT"
             sensor = l1.get("recent_events", [None])[0].abnormal_type if l1.get("recent_events") else "unknown"
-            score = 0.9
+            # L1 Score: density / threshold (capped at 1.0)
+            base_score = l1.get("density_per_hour", 30) / 30.0
+            score = min(0.98, max(0.85, base_score))
             severity = "HIGH"
         else:
             abnormal_family = "SURGE"
             sensor = "paint_pressure"
-            score = 0.75
-            severity = "MEDIUM"
+            # L2 Score: slope based (normalized)
+            # min_slope_threshold is 0.002, common max is ~0.02
+            slope = l2.get("slope", 0.002)
+            score = min(0.88, max(0.65, (slope / 0.015) + 0.5))
+            severity = "MEDIUM" if score < 0.8 else "HIGH"
 
         inc = DiagnosticIncident(
             incident_id=incident_id,
@@ -93,7 +100,7 @@ class SimulationRunner:
             abnormal_family=abnormal_family,
             abnormal_subtype=alert_type,
             sensor=sensor,
-            anomaly_score=score,
+            anomaly_score=round(score, 2),
             severity_hint=severity,
         )
         return inc
@@ -157,6 +164,7 @@ class SimulationRunner:
             if self._stop_event.is_set():
                 break
 
+            time.sleep(0.3)  # Small gap to avoid UI flood
             self._submit_to_executor(inc)
 
     def _submit_incident(self, inc: DiagnosticIncident) -> None:
@@ -192,7 +200,10 @@ class SimulationRunner:
             agent = DiagnosticAgent()
             agent.on_hitl_request = self._broadcast
             agent.on_step = self._broadcast
-            
+            agent.on_observation = self._broadcast
+            agent.on_plan = self._broadcast
+            agent.on_plan_task = self._broadcast
+
             result = agent.run_incident(inc)
 
             self._broadcast({
@@ -288,6 +299,20 @@ class SimulationRunner:
         self.state.set_status("running")
         self._broadcast({"type": "sim_resumed"})
 
+    def warp_to_alert(self) -> None:
+        if not self._running:
+            return
+        self._warp_mode = True
+        self.resume() # Ensure we are not paused
+        logger.info("Simulation warping to first alert...")
+
+    def jump_to_tick(self, tick_index: int) -> None:
+        if not self._running:
+            return
+        self._target_tick = tick_index
+        self.resume()
+        logger.info(f"Simulation jumping to tick {tick_index}")
+
     def _run_loop(self) -> None:
         timeline = self.engine.get_timeline()
         real_seconds_per_tick = 1.0  # 1 tick = 1 simulated hour = 1 real second at 1x speed
@@ -301,12 +326,22 @@ class SimulationRunner:
             "speed_factor": self.speed_factor,
         })
 
-        for tick_index, tick_time in enumerate(timeline):
+        tick_index = 0
+        while tick_index < len(timeline):
             if self._stop_event.is_set():
                 break
 
             self._pause_event.wait()
 
+            # Handle jump
+            if self._target_tick is not None:
+                tick_index = self._target_tick
+                self._target_tick = None
+                if tick_index >= len(timeline):
+                    break
+                logger.debug(f"Runner jumped to tick {tick_index}")
+
+            tick_time = timeline[tick_index]
             self.state.set_tick_index(tick_index)
             self.state.set_sim_time(tick_time)
 
@@ -316,6 +351,8 @@ class SimulationRunner:
                 events_count = len(events)
             finally:
                 session.close()
+
+            logger.debug(f"Tick {tick_index} processed")
 
             self._broadcast({
                 "type": "tick",
@@ -390,13 +427,24 @@ class SimulationRunner:
                     else:
                         self._submit_incident(inc)
 
+                    # Stop warp mode if we found an alert
+                    if self._warp_mode:
+                        self._warp_mode = False
+                        logger.info(f"Warp stopped at tick {tick_index} (Alert triggered)")
+
             self._handle_alert_storm(tick_time)
-            time.sleep(real_seconds_per_tick)
+
+            if not self._warp_mode:
+                time.sleep(real_seconds_per_tick)
+
+            tick_index += 1
 
         self.state.set_status("finished")
         self._broadcast({
             "type": "sim_finished",
             "total_ticks": len(timeline),
         })
+        self._running = False
+        logger.info("Simulation runner finished")
         self._running = False
         logger.info("Simulation runner finished")

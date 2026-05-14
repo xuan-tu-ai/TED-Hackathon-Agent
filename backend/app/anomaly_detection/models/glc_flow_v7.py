@@ -1,6 +1,8 @@
+from dataclasses import dataclass, field, fields
+from typing import ClassVar, Optional
+
 import torch
 import torch.nn as nn
-from typing import Optional, Dict, Any, Union
 
 from app.anomaly_detection.layers.revin import GlobalRevIN, PerPatchRevIN, compute_file_stats, compute_patch_stats
 from app.anomaly_detection.layers.patchify import Patchify, FlattenPatches
@@ -12,7 +14,44 @@ from app.anomaly_detection.criterions.dual_head import DualHeadLoss, GlobalHead,
 from app.anomaly_detection.criterions.orthogonality import OrthogonalityLoss
 from app.anomaly_detection.layers.cnf import CNF
 from app.anomaly_detection.models.base import BaseAnomalyDetectionModel
-from app.anomaly_detection.schemas import GLCFlowConfig
+
+
+@dataclass
+class GLCFlowV7Config:
+    """Model hyperparameters for GLCFlowV7.
+
+    Only contains init-time hyperparams. Computed fields (d_half, num_patches)
+    are excluded from to_dict() and recomputed on load.
+    """
+    num_sensors: int = 6
+    seq_len: int = 240
+    patch_size: int = 32
+    patch_stride: int = 16
+    d_model: int = 128
+    transformer_layers: int = 4
+    transformer_heads: int = 4
+    ffn_dim: int = 256
+    dropout: float = 0.1
+    time_emb_dim: int = 32
+    cnff_dim: int = 256
+    lambda_orth: float = 0.05
+    lambda_recon: float = 1.0
+
+    # computed — excluded from to_dict / from_dict
+    d_half: int = field(init=False)
+    num_patches: int = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.d_half = self.d_model // 2
+        self.num_patches = (self.seq_len - self.patch_size) // self.patch_stride + 1
+
+    def to_dict(self) -> dict:
+        return {f.name: getattr(self, f.name) for f in fields(self) if f.init}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "GLCFlowV7Config":
+        valid = {f.name for f in fields(cls) if f.init}
+        return cls(**{k: v for k, v in d.items() if k in valid})
 
 
 class GLCFlowV7(BaseAnomalyDetectionModel, nn.Module):
@@ -59,21 +98,10 @@ class GLCFlowV7(BaseAnomalyDetectionModel, nn.Module):
     [STAGE 1: Encoder training]   [STAGE 2: CNF training]
     GlobalHead(z_cls) → file_stats  CNF(z_pooled) → log-likelihood
     LocalHead(z_patches) → patch_stats
-
-    Forward output dict:
-        z_pooled: [B, 2D] — pooled representation for CNF / scoring
-        z_cls: [B, D] — global drift representation
-        z_patches: [B, 84, D] — per-patch tokens
-        z_max_local: [B, D] — max-pooled local representation
-        file_stats_pred: [B, 36] — auxiliary head prediction
-        patch_stats_pred: [B, 12] — auxiliary head prediction
-        transformer_output: [B, 85, D] — full transformer output
-
-    Metadata keys:
-        num_sensors, seq_len, patch_size, patch_stride, d_model, d_half,
-        num_patches, transformer_layers, transformer_heads, ffn_dim, dropout,
-        time_emb_dim, cnff_dim, lambda_orth
     """
+
+    PARADIGM: ClassVar[str] = "macro"
+    CONFIG_CLASS = GLCFlowV7Config
 
     def __init__(
         self,
@@ -94,23 +122,6 @@ class GLCFlowV7(BaseAnomalyDetectionModel, nn.Module):
     ) -> None:
         BaseAnomalyDetectionModel.__init__(self)
         nn.Module.__init__(self)
-
-        if isinstance(num_sensors, GLCFlowConfig):
-            config = num_sensors
-            num_sensors = config.num_sensors
-            seq_len = config.seq_len
-            patch_size = config.patch_size
-            patch_stride = config.patch_stride
-            d_model = config.d_model
-            transformer_layers = config.transformer_layers
-            transformer_heads = config.transformer_heads
-            ffn_dim = config.ffn_dim
-            dropout = config.dropout
-            time_emb_dim = config.time_emb_dim
-            cnff_dim = config.cnff_dim
-            lambda_orth = config.lambda_orth
-            lambda_recon = config.lambda_recon
-            num_patches = config.num_patches
 
         d_half = d_model // 2
         if num_patches is None:
@@ -255,6 +266,12 @@ class GLCFlowV7(BaseAnomalyDetectionModel, nn.Module):
             "local_loss": loss_local,
             "orth_loss": loss_orth,
         }
+
+    def compute_anomaly_score(self, batch: dict) -> torch.Tensor:
+        """Returns -log_likelihood [B]. Higher = more anomalous."""
+        out = self.forward(batch)
+        ll, _ = self.cnf.compute_log_likelihood(out["z_pooled"])
+        return -ll
 
     def detect_anomaly(
         self,

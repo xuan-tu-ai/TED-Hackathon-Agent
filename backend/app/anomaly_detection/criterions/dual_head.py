@@ -1,8 +1,10 @@
 import torch
 import torch.nn as nn
 
+from .base import BaseAnomalyDetectionLoss
 
-class DualHeadLoss(nn.Module):
+
+class DualHeadLoss(BaseAnomalyDetectionLoss):
     """Dual-head reconstruction loss for auxiliary training of Encoder.
 
     Two lightweight decoder heads that supervise both streams during Stage 1:
@@ -69,6 +71,15 @@ class DualHeadLoss(nn.Module):
         loss = loss_global + loss_local
 
         return {"loss": loss, "global_loss": loss_global, "local_loss": loss_local}
+
+    def get_metadata(self) -> dict:
+        return {
+            "type": "DualHeadLoss",
+            "d_model": self.d_model,
+            "num_sensors": self.num_sensors,
+            "file_stats_dim": self.file_stats_dim,
+            "patch_stats_dim": self.patch_stats_dim,
+        }
 
     def extra_repr(self) -> str:
         return f"d_model={self.d_model}, file_stats_dim={self.file_stats_dim}, patch_stats_dim={self.patch_stats_dim}"

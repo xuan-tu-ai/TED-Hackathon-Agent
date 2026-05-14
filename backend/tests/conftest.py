@@ -5,7 +5,9 @@ from app.robot_agent.seed import create_session_factory
 
 @pytest.fixture(scope="session")
 def db_url():
-    return "sqlite+pysqlite:///C:/Users/admin/Desktop/Workspace/TED-Hackathon-Agent/data/demo.db"
+    from pathlib import Path
+    db_path = Path(__file__).resolve().parents[2] / "data" / "demo.db"
+    return f"sqlite+pysqlite:///{db_path.as_posix()}"
 
 
 @pytest.fixture(scope="session")

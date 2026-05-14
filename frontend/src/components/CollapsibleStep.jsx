@@ -5,7 +5,9 @@ const TOOL_ICONS = {
     query_pm_cards: '🔍',
     query_db: '🗄️',
     hitl_check: '🔔',
-    complete: '✅',
+    update_task_status: '✅',
+    create_plan: '📝',
+    complete: '🏁',
     verify_surface_defect: '🔬',
     error: '❌',
 };
@@ -30,34 +32,38 @@ export default function CollapsibleStep({ step, stepNumber }) {
         <div className="chat-msg">
             <div className="step-header">
                 <span className="step-marker">Step {stepNumber}</span>
-                <span className="step-action-badge">
-                    <span className="step-action-icon">{icon}</span>
-                    <span className="step-action-name">{displayTool}</span>
-                    {displayInput && (
-                        <span className="step-action-input">({truncate(displayInput, 20)})</span>
-                    )}
-                </span>
                 {observation === null ? (
                     <span className="step-status step-status--running">⏳ Running</span>
-                ) : observation ? (
-                    <span className="step-status step-status--done">✅ Done</span>
-                ) : null}
+                ) : (
+                    <span className="step-status step-status--done">Done</span>
+                )}
             </div>
 
-            <details className="step-details">
-                <summary className="step-reasoning-summary">💭 Thinking</summary>
-                <div className="reasoning-box">{reasoning}</div>
-            </details>
-
-            <details className="step-details">
-                <summary className="step-observation-summary">
-                    📊 Result
-                    {observation === null && <span className="step-loading">⏳ Running...</span>}
-                </summary>
-                <div className="observation-content">
-                    {observation !== null ? observation : <span className="step-loading">⏳ Running...</span>}
+            <div className="step-thought-container">
+                <div className="thought-header">
+                    <span>💭 Thought</span>
                 </div>
-            </details>
+                <div className="thought-content">{reasoning}</div>
+            </div>
+
+            <div className="tool-call-container">
+                <div className="tool-call-block">
+                    <span className="tool-icon">{icon}</span>
+                    <span className="tool-name">{displayTool}</span>
+                    <span className="tool-args">({truncate(displayInput, 100)})</span>
+                </div>
+            </div>
+
+            <div className="result-container">
+                <details className="result-details" open={observation !== null && observation.length < 200}>
+                    <summary className="result-summary">
+                        <span>Result</span>
+                    </summary>
+                    <div className="result-content">
+                        {observation !== null ? observation : <span className="step-loading">⏳ Processing...</span>}
+                    </div>
+                </details>
+            </div>
         </div>
     );
 }

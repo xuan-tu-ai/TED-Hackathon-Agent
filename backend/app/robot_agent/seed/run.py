@@ -10,14 +10,14 @@ from .perception_results import seed_perception_results
 from .pm_cards import seed_pm_cards
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
 DATA_DIR = PROJECT_ROOT / "data"
 SQL_DIR = DATA_DIR / "sql"
 DB_PATH = DATA_DIR / "demo.db"
 SQL_PATH = SQL_DIR / "seed_snapshot.sql"
 
 
-def seed_all(session, days: int = 30) -> dict[str, int]:
+def seed_all(session, days: int = 45) -> dict[str, int]:
     perception_count = seed_perception_results(session, days=days)
     pm_cards_count = seed_pm_cards(session)
     maintenance_count = seed_maintenance_events(session)
@@ -29,7 +29,7 @@ def seed_all(session, days: int = 30) -> dict[str, int]:
     }
 
 
-def seed_demo_data(session, days: int = 30) -> dict[str, int]:
+def seed_demo_data(session, days: int = 45) -> dict[str, int]:
     return seed_all(session, days=days)
 
 
@@ -42,14 +42,15 @@ def run() -> None:
 
     db_url = f"sqlite:///{DB_PATH}"
     engine = create_engine(db_url)
+    Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
 
     from sqlalchemy.orm import sessionmaker
     SF = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
-    print("Seeding 30-day demo data…")
+    print("Seeding 45-day demo data…")
     with SF() as session:
-        counts = seed_all(session, days=30)
+        counts = seed_all(session, days=45)
 
     print("Seeded rows:")
     for table, count in counts.items():

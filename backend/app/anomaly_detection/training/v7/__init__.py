@@ -1,8 +1,10 @@
-from app.anomaly_detection.training.v7.trainer import (
-    GLCFlowTrainer,
+from app.anomaly_detection.training.flow_matching_trainer import (
+    FlowMatchingTrainer,
     Stage1Trainer,
     Stage2Trainer,
     Evaluator,
     EvalResult,
-    _glc_config_to_metadata,
 )
+
+# Backward compat
+GLCFlowTrainer = FlowMatchingTrainer

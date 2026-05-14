@@ -4,12 +4,6 @@ description: Hard-coded routing rules to direct incidents to the correct diagnos
 required_tools: [load_skill]
 ---
 
----
-name: routing
-description: Route incidents to correct diagnostic skill based on abnormal_family
-required_tools: [load_skill]
----
-
 # Routing Skill — Signal Anomaly Classification
 
 ## Purpose

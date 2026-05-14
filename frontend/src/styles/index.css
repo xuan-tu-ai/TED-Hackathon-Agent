@@ -291,6 +291,12 @@ body {
     color: var(--accent-blue);
 }
 
+.incident-item.hitl_wait {
+    border-color: var(--accent-amber);
+    background-color: rgba(245, 158, 11, 0.05);
+    animation: pulse-border 2s infinite;
+}
+
 .incident-item-status.hitl_wait {
     background-color: rgba(245, 158, 11, 0.3);
     color: var(--accent-amber);
@@ -678,13 +684,34 @@ details[open] .observation-summary::before {
     background-color: #dc2626;
 }
 
+.dashboard-actions {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.btn-skip {
+    padding: 0.5rem 1rem;
+    background-color: var(--accent-amber);
+    color: #000;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s ease;
+}
+
+.btn-skip:hover {
+    background-color: #d97706;
+}
+
 /* CollapsibleStep Component */
 .chat-msg {
     background-color: var(--bg-secondary);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
-    margin-bottom: 0.75rem;
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
     overflow: hidden;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
 
 .step-header {
@@ -824,6 +851,105 @@ details[open] .observation-summary::before {
 }
 
 
+
+/* Modern Agent Layout */
+.step-thought-container {
+    padding: 1rem;
+    background-color: rgba(15, 23, 42, 0.2);
+}
+
+.thought-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--accent-blue);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.75rem;
+}
+
+.thought-content {
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    color: var(--text-primary);
+    white-space: pre-wrap !important;
+    word-break: break-word;
+}
+
+.tool-call-container {
+    padding: 0 1rem 1rem 1rem;
+}
+
+.tool-call-block {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.8125rem;
+    border-left: 3px solid var(--accent-green);
+}
+
+.tool-name {
+    color: var(--accent-green);
+    font-weight: 700;
+}
+
+.tool-args {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+}
+
+.result-container {
+    padding: 0 1rem 1rem 1rem;
+}
+
+.result-details {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.result-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background-color: var(--bg-tertiary);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+}
+
+.result-summary::before {
+    content: '▶';
+    font-size: 0.6rem;
+    transition: transform 0.2s ease;
+}
+
+details[open] .result-summary::before {
+    transform: rotate(90deg);
+}
+
+.result-content {
+    padding: 1rem;
+    background-color: #0c111c;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    max-height: 400px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
 
 /* PlanTracker Component */
 .plan-tracker {

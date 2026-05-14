@@ -22,6 +22,7 @@ class SimulationEngine:
         self.session_factory = create_session_factory(db_url)
         self.speed_factor = speed_factor
         self._timeline: list[datetime] | None = None
+        self._first_alert_tick: int | None = None
 
     def get_timeline(self) -> list[datetime]:
         if self._timeline is not None:
@@ -43,7 +44,7 @@ class SimulationEngine:
             self._timeline = [
                 datetime.fromisoformat(row.hour).replace(tzinfo=UTC)
                 for row in hourly_timestamps
-            ]
+            ][-720:]  # Only last 30 days for simulation
             return self._timeline
         finally:
             session.close()
@@ -85,13 +86,13 @@ class SimulationEngine:
 
         l1_info = detect_l1_burst(
             session, robot_id,
-            window_hours=1, density_threshold=8.0,
+            window_hours=24, density_threshold=15,
             reference_time=reference_time,
         )
 
         l2_info = detect_l2_slope(
             session, robot_id,
-            days=30, min_slope=0.10,
+            days=30, min_slope=0.005,
             reference_time=reference_time,
         )
 
@@ -112,3 +113,21 @@ class SimulationEngine:
 
     def get_robots(self) -> list[str]:
         return ALL_ROBOTS
+
+    def find_first_alert_tick(self) -> int | None:
+        if self._first_alert_tick is not None:
+            return self._first_alert_tick
+
+        timeline = self.get_timeline()
+        robots = self.get_robots()
+        session = self.session_factory()
+        try:
+            for idx, tick_time in enumerate(timeline):
+                for robot_id in robots:
+                    triggers = self.check_triggers(session, robot_id, up_to=tick_time)
+                    if triggers.get("has_alert"):
+                        self._first_alert_tick = idx
+                        return idx
+            return None
+        finally:
+            session.close()

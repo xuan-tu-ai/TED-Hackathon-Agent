@@ -1,8 +1,10 @@
 import torch
 import torch.nn as nn
 
+from .base import BaseAnomalyDetectionLoss
 
-class FlowMatchingLoss(nn.Module):
+
+class FlowMatchingLoss(BaseAnomalyDetectionLoss):
     """Conditional Flow Matching loss for training CNF.
 
     Objective:
@@ -48,6 +50,9 @@ class FlowMatchingLoss(nn.Module):
             return loss
         else:
             raise ValueError(f"Unknown reduction: {self.reduction}")
+
+    def get_metadata(self) -> dict:
+        return {"type": "FlowMatchingLoss", "reduction": self.reduction}
 
 
 def compute_flow_matching_loss(

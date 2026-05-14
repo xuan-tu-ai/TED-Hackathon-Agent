@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -15,9 +16,11 @@ import dspy
 import json
 import re
 from .hitl import HitlResult, hitl_check as perform_hitl_check
-from .llm_config import get_lm
+from .llm_config import get_lm, get_llm_config
+from .rag_tools import QueryPMCardsTool
 from .session_trace import SessionTraceWriter
 from .skills import LoadSkillTool, SKILLS_BASE
+from ..seed import create_session_factory
 
 logging.basicConfig(
     level=logging.INFO,
@@ -48,23 +51,23 @@ class AgentStep:
     timestamp: datetime = field(default_factory=datetime.now)
 
 class AgentStepSignature(dspy.Signature):
-    """You are a Painting Robot Diagnostic Agent. Your job is to analyze incidents and determine the root cause by invoking necessary skills and tools.
-    Follow the rules in SYSTEM_PROMPT.
-    If you haven't loaded 'routing' skill yet, your very first action MUST be load_skill with parameter 'routing'.
-    When you determine the root cause, load 'create_plan' to create a diagnostic plan with atomic tasks.
-    Follow the plan step-by-step. Only after ALL plan items are executed, output action='complete'.
-    Do NOT guess. If you need to search past incidents, use query_pm_cards.
-    If you need human approval, use hitl_check.
-    When all plan items are done and HITL checkpoints cleared (if any), output action='complete' and action_input='summary'.
+    """You are a Painting Robot Diagnostic Agent. Your job is to analyze incidents and determine the root cause.
+    You MUST follow the 'Planning First' principle:
+    1. Your very first action MUST be load_skill('create_plan').
+    2. Once the plan is created, follow the plan tasks sequentially (Routing -> Diagnosis -> Action).
+    3. Load subsequent skills (like 'routing' or 'diagnose_surge') as specified in your plan.
+    4. Only after ALL plan items are executed, output action='complete'.
     """
     system_prompt = dspy.InputField(desc="The core AGENTS.md rules.")
     incident_context = dspy.InputField(desc="The current incident context.")
     loaded_skills = dspy.InputField(desc="The contents of the skills you have loaded so far.")
+    available_skills = dspy.InputField(desc="List of all available skills and their metadata. Choose from these ONLY.")
+    current_plan = dspy.InputField(desc="The current diagnostic plan and task statuses. Follow this roadmap.")
     past_steps = dspy.InputField(desc="Previous actions and their observations. Pay close attention to what you already did.")
-    
+
     reasoning = dspy.OutputField(desc="Your thought process for what to do next based on the incident context and past steps.")
-    action = dspy.OutputField(desc="The tool to call. Must be exactly one of: load_skill, query_pm_cards, verify_surface_defect, query_db, hitl_check, complete.")
-    action_input = dspy.OutputField(desc="The argument for the tool. A string or JSON depending on the tool.")
+    action = dspy.OutputField(desc="The tool to call. Must be exactly one of: load_skill, query_pm_cards, verify_surface_defect, query_db, hitl_check, update_task_status, create_plan, complete.")
+    action_input = dspy.OutputField(desc="The argument for the tool. \n- load_skill: 'skill_name'\n- update_task_status: '{\"task_id\": 1, \"status\": \"completed\"}'\n- create_plan: Use only to initialize or radically change the roadmap.\n- complete: 'summary_text'. Use ONLY when ALL plan tasks are 'completed'.")
 
 class DiagnosticAgent:
     SYSTEM_PROMPT: ClassVar[str] = AGENTS_MD.read_text(encoding="utf-8")
@@ -75,6 +78,8 @@ class DiagnosticAgent:
         "verify_surface_defect",
         "query_db",
         "hitl_check",
+        "update_task_status",
+        "create_plan",
     ]
 
     def __init__(self):
@@ -94,6 +99,27 @@ class DiagnosticAgent:
         self.current_skill: str | None = None
         self.current_plan: dict[str, Any] | None = None
         self.current_task_index: int = 0
+        self.loaded_skills_set: set[str] = set()
+        self.skill_catalog: str = self._load_skill_catalog()
+
+    def _load_skill_catalog(self) -> str:
+        catalog = []
+        skills_dir = SKILLS_BASE
+        if not skills_dir.exists():
+            return "No skills found."
+
+        for skill_dir in skills_dir.iterdir():
+            if skill_dir.is_dir():
+                skill_md = skill_dir / "SKILL.md"
+                if skill_md.exists():
+                    content = skill_md.read_text(encoding="utf-8")
+                    match = re.search(r"---(.*?)---", content, re.DOTALL)
+                    if match:
+                        metadata = match.group(1).strip()
+                        catalog.append(f"- Skill: {skill_dir.name}\n  Metadata: {metadata}")
+                    else:
+                        catalog.append(f"- Skill: {skill_dir.name} (No metadata found)")
+        return "\n\n".join(catalog)
 
     def start_session(self, incident: DiagnosticIncident) -> str:
         self.session_id = f"sess-{incident.incident_id}"
@@ -105,6 +131,7 @@ class DiagnosticAgent:
         self.current_skill = None
         self.current_plan = None
         self.current_task_index = 0
+        self.loaded_skills_set = set()
         self._trace_writer = SessionTraceWriter(incident.incident_id)
         logger.info(f"Session {self.session_id} started for incident {incident.incident_id}")
         return self.session_id
@@ -216,9 +243,43 @@ class DiagnosticAgent:
                     },
                 })
 
-            hitl_event.wait(timeout=300)
+            event_was_set = hitl_event.wait(timeout=300)
 
             state.remove_hitl_event(result.queue_id)
+
+            if not event_was_set:
+                self.state = "failed"
+                return {
+                    "blocked": True,
+                    "permanently_blocked": False,
+                    "queue_id": result.queue_id,
+                    "action": action,
+                    "reason": f"Timeout waiting for HITL approval on '{action}' (300s elapsed)",
+                    "severity": result.severity,
+                    "resolved": False,
+                    "timeout": True,
+                }
+
+            from ..db.models import HitlQueue
+            _db_url = os.getenv("DATABASE_URL") or "sqlite+pysqlite:///../data/demo.db"
+            _session = create_session_factory(_db_url)()
+            try:
+                entry = _session.get(HitlQueue, result.queue_id)
+                entry_status = entry.status if entry else None
+            finally:
+                _session.close()
+
+            if entry is None or entry_status in ("REJECTED", "EXPIRED"):
+                self.state = "failed"
+                return {
+                    "blocked": True,
+                    "permanently_blocked": False,
+                    "queue_id": result.queue_id,
+                    "action": action,
+                    "reason": f"HITL action '{action}' was {entry_status.lower() if entry_status else 'entry not found'}",
+                    "severity": result.severity,
+                    "resolved": False,
+                }
 
             self.state = "running"
 
@@ -243,63 +304,102 @@ class DiagnosticAgent:
         predictor = dspy.ChainOfThought(AgentStepSignature)
 
         plan_turn_count = 0
-        max_plan_turns = 3
-        has_routed = False
-        has_diagnosed = False
+        max_plan_turns = 5
         has_plan = False
+        past_steps_str = "None yet."
 
         while plan_turn_count < max_plan_turns and self.state not in ["blocked", "completed", "failed"]:
             plan_turn_count += 1
             past_steps_str = "\n".join(past_steps_list) if past_steps_list else "None yet."
 
+            phase_instruction = (
+                "CURRENT PHASE: PLANNING. "
+                "Your goal is to create a roadmap for this incident. Your very first action MUST be 'load_skill(\"create_plan\")'. "
+                "Do NOT perform routing or diagnosis until the plan is created."
+            )
+            full_prompt = f"{self.SYSTEM_PROMPT}\n\n{phase_instruction}"
+
+            logger.info(f"--- LLM Plan Turn {plan_turn_count} (Incident: {self.current_incident.incident_id if self.current_incident else 'unknown'}) ---")
             try:
-                with dspy.context(lm=lm):
+                with dspy.context(lm=lm, cache=False):
                     result = predictor(
-                        system_prompt=self.SYSTEM_PROMPT,
+                        system_prompt=full_prompt,
                         incident_context=incident_context,
+                        available_skills=self.skill_catalog,
                         loaded_skills=loaded_skills_content,
+                        current_plan=json.dumps(self.current_plan, indent=2) if self.current_plan else "No plan created yet.",
                         past_steps=past_steps_str
                     )
-                reasoning = result.reasoning
-                action = result.action.strip()
-                action_input = result.action_input.strip()
+
+                reasoning = getattr(result, 'reasoning', "No reasoning provided.")
+                reasoning = re.sub(r"<think>.*?</think>", "", reasoning, flags=re.DOTALL).strip()
+
+                raw_action = getattr(result, 'action', "").strip()
+                raw_input = getattr(result, 'action_input', "").strip()
+
+                if "{" in raw_input and "}" in raw_input:
+                    try:
+                        json_match = re.search(r"(\{.*\})", raw_input)
+                        json_str = json_match.group(1) if json_match else None
+                        if json_str:
+                            data = json.loads(json_str)
+                            if isinstance(data, dict):
+                                raw_input = data.get("skill_name") or data.get("query") or str(data)
+                    except: pass
+
+                if not raw_action and "(" in raw_input:
+                    match = re.match(r"(\w+)\((.*)\)", raw_input)
+                    if match:
+                        raw_action = match.group(1)
+                        raw_input = match.group(2)
+
+                action = raw_action
+                action_input = raw_input.strip("'\" ")
+
+                logger.info(f"Agent Thought: {reasoning[:80]}...")
+                logger.info(f"Agent Action: {action}({action_input})")
+
+                if not action:
+                    logger.warning(f"Empty action from LLM. Raw result: {result}")
+                    continue
+
             except Exception as e:
-                logger.error(f"DSPy prediction error in plan phase: {e}")
+                logger.error(f"LLM Call Failed: {e}")
                 self.step("error", f"LLM error: {e}")
                 self.state = "failed"
                 break
 
             skill_loaded = action_input if action == "load_skill" else None
-            self.step(action=f"{action}({action_input})", reasoning=reasoning, skill_loaded=skill_loaded)
+            step_info = self.step(action=f"{action}({action_input})", reasoning=reasoning, skill_loaded=skill_loaded)
+            current_step_id = step_info.step_id
 
             if action == "complete":
+                obs = "Diagnosis concluded. Ready for dispatch."
+                self._broadcast_observation(current_step_id, obs)
                 if not has_plan:
                     self._apply_default_plan()
                 self.state = "completed"
                 break
             elif action == "load_skill":
+                skill_name = action_input.split("/")[-1].replace(".md", "").strip()
                 try:
-                    content = self.load_skill(action_input)
-                    loaded_skills_content += f"\n--- SKILL: {action_input} ---\n{content}\n"
-                    obs = f"Loaded skill {action_input} successfully."
-                    loaded_skill_name = action_input.strip()
-                    if loaded_skill_name == "routing":
-                        has_routed = True
-                    elif loaded_skill_name not in ["routing", "create_plan"]:
-                        has_diagnosed = True
-                    elif loaded_skill_name == "create_plan":
+                    content = self.load_skill(skill_name)
+                    loaded_skills_content += f"\n--- SKILL: {skill_name} ---\n{content}\n"
+                    obs = f"Loaded skill {skill_name} successfully."
+                    self.loaded_skills_set.add(skill_name)
+                    if skill_name == "create_plan":
                         has_plan = True
                         self._broadcast_plan_created()
                 except Exception as e:
                     obs = f"Failed to load skill: {e}"
-                self._broadcast_observation(self.steps[-1].step_id, obs)
+                self._broadcast_observation(current_step_id, obs)
                 past_steps_list.append(f"Turn {plan_turn_count}: Action: {action}({action_input}) -> Observation: {obs}")
             else:
                 obs = f"Unexpected action in plan phase: {action}"
-                self._broadcast_observation(self.steps[-1].step_id, obs)
+                self._broadcast_observation(current_step_id, obs)
                 past_steps_list.append(f"Turn {plan_turn_count}: Action: {action}({action_input}) -> Observation: {obs}")
 
-            if has_routed and has_diagnosed and has_plan:
+            if has_plan:
                 break
 
         if plan_turn_count >= max_plan_turns and not has_plan:
@@ -308,11 +408,11 @@ class DiagnosticAgent:
 
         return loaded_skills_content, past_steps_str, past_steps_list
 
-    def _run_execute_phase(self, loaded_skills_content: str, past_steps_list: list[str]) -> list[str]:
+    def _run_execute_phase(self, incident_context: str, loaded_skills_content: str, past_steps_list: list[str]) -> list[str]:
         lm = get_lm()
         predictor = dspy.ChainOfThought(AgentStepSignature)
         execute_turn_count = 0
-        max_execute_turns = 10
+        max_execute_turns = 20
 
         while execute_turn_count < max_execute_turns and self.state not in ["blocked", "completed", "failed"]:
             execute_turn_count += 1
@@ -320,46 +420,106 @@ class DiagnosticAgent:
             if self.current_plan and self.current_task_index < len(self.current_plan["tasks"]):
                 current_task = self.current_plan["tasks"][self.current_task_index]
                 task_name = current_task.get("name", f"Task {self.current_task_index + 1}")
-                self._broadcast_plan_task_started(current_task.get("id", self.current_task_index + 1))
+                logger.info(f"Executing Task: {task_name}")
 
             past_steps_str = "\n".join(past_steps_list) if past_steps_list else "None yet."
 
+            current_task_info = ""
+            if self.current_plan and self.current_task_index < len(self.current_plan["tasks"]):
+                t = self.current_plan["tasks"][self.current_task_index]
+                current_task_info = f"CURRENT TASK: {t.get('name')} (Goal: Perform this task using available tools)."
+
+            phase_instruction = (
+                "CURRENT PHASE: EXECUTION. "
+                "Follow the plan items sequentially. Use tools (query_db, query_pm_cards, etc.) to gather evidence. "
+                f"{current_task_info}"
+            )
+            full_prompt = f"{self.SYSTEM_PROMPT}\n\n{phase_instruction}"
+
             try:
-                with dspy.context(lm=lm):
+                with dspy.context(lm=lm, cache=False):
                     result = predictor(
-                        system_prompt=self.SYSTEM_PROMPT,
-                        incident_context="",
+                        system_prompt=full_prompt,
+                        incident_context=incident_context,
+                        available_skills=self.skill_catalog,
                         loaded_skills=loaded_skills_content,
+                        current_plan=json.dumps(self.current_plan, indent=2) if self.current_plan else "Plan lost.",
                         past_steps=past_steps_str
                     )
-                reasoning = result.reasoning
-                action = result.action.strip()
-                action_input = result.action_input.strip()
+
+                reasoning = getattr(result, 'reasoning', "No reasoning provided.")
+                raw_action = getattr(result, 'action', "").strip()
+                raw_input = getattr(result, 'action_input', "").strip()
+
+                if not raw_action and "(" in raw_input:
+                    match = re.match(r"(\w+)\((.*)\)", raw_input)
+                    if match:
+                        raw_action = match.group(1)
+                        raw_input = match.group(2)
+
+                action = raw_action
+                action_input = raw_input.strip("'\"")
+
+                logger.info(f"Step Thought: {reasoning[:120]}...")
+                logger.info(f"Step Action: {action}({action_input})")
+
+                if not action:
+                    logger.warning(f"Empty action in execute phase. Raw: {result}")
+                    continue
+
             except Exception as e:
-                logger.error(f"DSPy prediction error in execute phase: {e}")
+                logger.error(f"LLM Call Failed in Execute Phase: {e}")
                 self.step("error", f"LLM error: {e}")
                 self.state = "failed"
                 break
 
+            reasoning = re.sub(r"<think>.*?</think>", "", reasoning, flags=re.DOTALL).strip()
+
             skill_loaded = action_input if action == "load_skill" else None
-            self.step(action=f"{action}({action_input})", reasoning=reasoning, skill_loaded=skill_loaded)
+            step_info = self.step(action=f"{action}({action_input})", reasoning=reasoning, skill_loaded=skill_loaded)
+            current_step_id = step_info.step_id
 
             if action == "complete":
+                summary = action_input
+                obs = f"FINAL DIAGNOSTIC SUMMARY:\n{summary}"
+                self._broadcast_observation(current_step_id, obs)
                 self.state = "completed"
+                past_steps_list.append(f"Turn {execute_turn_count}: Action: {action} -> Summary: {summary}")
                 break
-            elif action == "load_skill":
+            elif action == "update_task_status":
                 try:
-                    content = self.load_skill(action_input)
-                    loaded_skills_content += f"\n--- SKILL: {action_input} ---\n{content}\n"
-                    obs = f"Loaded skill {action_input} successfully."
+                    data = json.loads(action_input)
+                    t_id = data.get("task_id")
+                    t_status = data.get("status", "completed")
+                    self.update_plan_task(t_id, t_status)
+                    obs = f"Task {t_id} status updated to {t_status}."
+                except Exception as e:
+                    obs = f"Failed to update task: {e}"
+            elif action == "create_plan":
+                self._parse_plan_from_template()
+                obs = "Diagnostic plan created/reset based on template."
+            elif action == "load_skill":
+                skill_name = action_input.split("/")[-1].replace(".md", "").strip()
+                try:
+                    content = self.load_skill(skill_name)
+                    loaded_skills_content += f"\n--- SKILL: {skill_name} ---\n{content}\n"
+                    obs = f"Loaded skill {skill_name} successfully."
+                    self.loaded_skills_set.add(skill_name)
                 except Exception as e:
                     obs = f"Failed to load skill: {e}"
             elif action == "query_pm_cards":
-                from .rag_tools import QueryPMCardsTool
                 tool = QueryPMCardsTool()
                 obs = str(tool(action_input))
             elif action == "query_db":
-                obs = f"Queried DB with {action_input}. Returned 1 relevant row indicating recent anomaly."
+                if self.current_incident:
+                    obs = (
+                        f"DB Result for {action_input}: Found 1 row. "
+                        f"Robot {self.current_incident.robot_code} at {datetime.now().isoformat()} "
+                        f"showed {self.current_incident.sensor} peak {self.current_incident.anomaly_score * 1.2:.2f} "
+                        f"exceeding threshold 0.50."
+                    )
+                else:
+                    obs = f"DB Result for {action_input}: No active incident."
             elif action == "verify_surface_defect":
                 obs = f"Checked {action_input}. Found surface defects: orange_peel x14, thin_coat x5."
             elif action == "hitl_check":
@@ -372,13 +532,25 @@ class DiagnosticAgent:
             else:
                 obs = f"Unknown action: {action}"
 
-            self._broadcast_observation(self.steps[-1].step_id, obs)
-            past_steps_list.append(f"Turn {execute_turn_count}: Action: {action}({action_input}) -> Observation: {obs}")
+            self._broadcast_observation(current_step_id, obs)
+
+            if action == "complete":
+                pass
+            else:
+                past_steps_list.append(f"Turn {execute_turn_count}: Action: {action}({action_input}) -> Observation: {obs}")
+
+            if self.state in ("blocked", "failed"):
+                break
 
             if self.current_plan and self.current_task_index < len(self.current_plan["tasks"]):
                 task_id = self.current_plan["tasks"][self.current_task_index].get("id", self.current_task_index + 1)
                 self._broadcast_plan_task_completed(task_id)
                 self.current_task_index += 1
+
+            if execute_turn_count >= max_execute_turns and self.state == "running":
+                self.state = "failed"
+                self._broadcast_observation("system", "ERROR: Maximum execution turns (20) reached. Agent failed to complete the plan.")
+                break
 
         return past_steps_list
 
@@ -455,18 +627,42 @@ class DiagnosticAgent:
                 "task_id": task_id,
             })
 
-    def _broadcast_plan_task_completed(self, task_id: int) -> None:
-        if self.on_plan_task is not None:
-            self.on_plan_task({
-                "type": "plan_task_completed",
-                "incident_id": self.current_incident.incident_id if self.current_incident else None,
+    def update_plan_task(self, task_id: int | str, status: str):
+        if not self.current_plan:
+            return
+
+        str_id = str(task_id)
+        for idx, task in enumerate(self.current_plan.get("tasks", [])):
+            if str(task.get("id")) == str_id:
+                task["status"] = status
+                self._broadcast_plan_task_update(str_id, status)
+
+                if status == "completed" and idx == self.current_task_index:
+                    self.current_task_index += 1
+                break
+
+    def _broadcast_plan_task_update(self, task_id: str, status: str):
+        if self.on_step and self.current_incident:
+            self.on_step({
+                "type": "plan_task_update",
+                "incident_id": self.current_incident.incident_id,
                 "task_id": task_id,
+                "status": status
             })
+
+    def _broadcast_plan_task_completed(self, task_id: str):
+        self._broadcast_plan_task_update(task_id, "completed")
 
     def run_incident(self, incident: DiagnosticIncident) -> dict[str, Any]:
         self.start_session(incident)
 
-        incident_context = f"Family: {incident.abnormal_family}, Subtype: {incident.abnormal_subtype}, Sensor: {incident.sensor}, Score: {incident.anomaly_score}"
+        incident_context = (
+            f"Robot: {incident.robot_code}, "
+            f"Family: {incident.abnormal_family}, "
+            f"Subtype: {incident.abnormal_subtype}, "
+            f"Sensor: {incident.sensor}, "
+            f"Score: {incident.anomaly_score}"
+        )
 
         loaded_skills_content = ""
         past_steps_list = []
@@ -484,6 +680,9 @@ class DiagnosticAgent:
                 "steps": [],
             }
 
+        cfg = get_llm_config()
+        logger.info(f"Using LLM: {cfg.provider}/{cfg.model} (Base: {cfg.api_base})")
+
         self.state = "running"
 
         loaded_skills_content, past_steps_str, past_steps_list = self._run_plan_phase(
@@ -499,7 +698,7 @@ class DiagnosticAgent:
                 "steps": [s.step_id for s in self.steps],
             }
 
-        past_steps_list = self._run_execute_phase(loaded_skills_content, past_steps_list)
+        past_steps_list = self._run_execute_phase(incident_context, loaded_skills_content, past_steps_list)
 
         if self.state == "running":
             self.state = "failed"

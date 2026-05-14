@@ -41,7 +41,8 @@ class QueryPMCardsTool:
             return self._fallback_search(query, limit)
 
     def _fallback_search(self, query: str, limit: int) -> list[dict[str, Any]]:
-        db_url = "sqlite:///data/demo.db"
+        import os
+        db_url = os.getenv("DATABASE_URL", "sqlite+pysqlite:///../data/demo.db")
         sf = create_session_factory(db_url)
         session = sf()
 

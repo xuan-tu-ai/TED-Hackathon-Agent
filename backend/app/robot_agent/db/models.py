@@ -9,7 +9,7 @@ from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String, create_e
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+pysqlite:///data/demo.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+pysqlite:///../data/demo.db")
 
 
 class Base(DeclarativeBase):

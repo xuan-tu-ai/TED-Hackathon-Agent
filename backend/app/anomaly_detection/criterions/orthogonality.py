@@ -1,8 +1,10 @@
 import torch
 import torch.nn as nn
 
+from .base import BaseAnomalyDetectionLoss
 
-class OrthogonalityLoss(nn.Module):
+
+class OrthogonalityLoss(BaseAnomalyDetectionLoss):
     """Orthogonality regularization between global and local subspaces in z_pooled.
 
     Loss = || Z_g^T Z_l ||_F^2
@@ -44,6 +46,13 @@ class OrthogonalityLoss(nn.Module):
         loss = (gram ** 2).sum()
 
         return self.lambda_orth * loss
+
+    def get_metadata(self) -> dict:
+        return {
+            "type": "OrthogonalityLoss",
+            "d_model": self.d_model,
+            "lambda_orth": self.lambda_orth,
+        }
 
     def extra_repr(self) -> str:
         return f"d_model={self.d_model}, d_half={self.d_half}, lambda_orth={self.lambda_orth}"

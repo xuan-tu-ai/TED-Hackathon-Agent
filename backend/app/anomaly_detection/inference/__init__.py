@@ -1,6 +1,9 @@
+from app.anomaly_detection.inference.scorer import PreResultScorer
+from app.anomaly_detection.inference.analyzer import ThresholdAnalyzer
+from app.anomaly_detection.inference.applier import ResultApplier
+
 from app.anomaly_detection.inference.v6 import (
     PreResultInferencer,
-    ThresholdAnalyzer,
     ThresholdApplier,
     analyze_trigger_sources,
     visualize_feature_level_report_vq,
@@ -10,15 +13,18 @@ from app.anomaly_detection.inference.v6 import (
 from app.anomaly_detection.inference.v7 import V7PreResultInferencer, V7ThresholdApplier
 
 __all__ = [
-    # v6 (compatible with Databricks notebooks)
-    "PreResultInferencer",
+    # Unified (universal, all model paradigms)
+    "PreResultScorer",
     "ThresholdAnalyzer",
+    "ResultApplier",
+    # V6 legacy (full per-timestep maps, reconstruction-based)
+    "PreResultInferencer",
     "ThresholdApplier",
     "analyze_trigger_sources",
     "visualize_feature_level_report_vq",
     "_row_to_dict",
     "_sanitize_start_time",
-    # v7
+    # V7 legacy
     "V7PreResultInferencer",
     "V7ThresholdApplier",
 ]

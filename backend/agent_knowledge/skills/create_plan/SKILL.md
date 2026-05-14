@@ -39,5 +39,5 @@ When the plan is created, start executing the atomic tasks step-by-step. Make su
 - **Do NOT** modify the template structure
 - **Do NOT** skip any checklist items
 - **Do NOT** start executing actions before the plan is created
-- **Do NOT** output `complete` action until ALL plan items are executed and their Status = DONE
-- **Session Termination Rule:** A session is ONLY complete when every item in the plan has Status=DONE and all HITL checkpoints (if any) are cleared
+- **Manual Status Guard**: You MUST call `update_task_status(task_id, "completed")` for every task in your plan when finished.
+- **Session Termination Rule:** A session is ONLY complete when every item in the plan is marked as `completed` AND you provide a detailed final summary via the `complete` tool.

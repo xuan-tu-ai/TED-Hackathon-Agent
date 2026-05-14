@@ -65,7 +65,7 @@ def start_simulation(req: StartRequest) -> StartResponse:
     if state.get_status() != "idle":
         raise HTTPException(status_code=409, detail="Simulation already running")
 
-    db_url = os.getenv("DATABASE_URL") or "sqlite+pysqlite:///data/demo.db"
+    db_url = os.getenv("DATABASE_URL") or "sqlite+pysqlite:///../data/demo.db"
     _engine = SimulationEngine(db_url=db_url)
     broadcaster = get_broadcaster()
 

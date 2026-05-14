@@ -1,7 +1,7 @@
 import os
 import json
 import inspect
-from typing import Dict, Any
+from typing import Any, ClassVar, Dict, Protocol, runtime_checkable
 from abc import abstractmethod
 
 import torch
@@ -29,7 +29,22 @@ def filter_model_kwargs(model_cls, metadata: Dict[str, Any]) -> Dict:
     return kwargs
 
 
+@runtime_checkable
+class ModelConfig(Protocol):
+    """Protocol for model configuration dataclasses.
+
+    Any dataclass with these two methods satisfies the contract.
+    """
+    def to_dict(self) -> dict: ...
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "ModelConfig": ...
+
+
 class BaseAnomalyDetectionModel(nn.Module):
+    # Subclasses declare "window" (seq_len ≤ 64) or "macro" (seq_len > 64).
+    # Informational only — not used for dispatch.
+    PARADIGM: ClassVar[str] = "window"
 
     @property
     @abstractmethod
@@ -57,6 +72,21 @@ class BaseAnomalyDetectionModel(nn.Module):
 
     @abstractmethod
     def get_metadata(self) -> Dict[str, Any]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def compute_anomaly_score(
+        self, batch: dict
+    ) -> "torch.Tensor | dict[str, torch.Tensor]":
+        """Compute anomaly scores for a batch.
+
+        Args:
+            batch: dict with model inputs (same keys as required_input_args)
+
+        Returns:
+            Tensor [B] OR dict of named Tensor [B] or [B, C].
+            Higher value = more anomalous.
+        """
         raise NotImplementedError
 
     def save_manual_checkpoint(self, epoch: int, val_loss: float, folder_path: str, is_best: bool = False):

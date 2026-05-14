@@ -1,30 +1,7 @@
 import React from 'react';
+import CollapsibleStep from './CollapsibleStep.jsx';
 import HITLCard from './HITLCard.jsx';
 import PlanTracker from './PlanTracker.jsx';
-
-function CollapsibleStep({ step, stepNumber }) {
-    const { reasoning, action, observation } = step;
-
-    return (
-        <div className="chat-msg">
-            <div className="step-marker">Step {stepNumber}</div>
-            <div className="reasoning-box">{reasoning}</div>
-            {action !== 'complete' ? (
-                <div className="action-call">
-                    <span>🔧</span> {action}
-                </div>
-            ) : null}
-            {observation && (
-                <details className="observation-details">
-                    <summary className="observation-summary">
-                        📊 Observation: {observation.length > 50 ? observation.substring(0, 50) + '...' : observation}
-                    </summary>
-                    <div className="observation-content">{observation}</div>
-                </details>
-            )}
-        </div>
-    );
-}
 
 function EmptyState() {
     return (
@@ -45,6 +22,15 @@ function AgentHeader({ incidentId, robotId, type, status }) {
 }
 
 export default function ChatPanel({ activeIncident, agentSteps, hitlItems, onResolveHitl }) {
+    const chatBottomRef = React.useRef(null);
+
+    // Auto-scroll to bottom when new steps arrive
+    React.useEffect(() => {
+        if (chatBottomRef.current) {
+            chatBottomRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [agentSteps?.length, hitlItems?.length]);
+
     if (!activeIncident) {
         return (
             <div className="chat-panel">
@@ -74,11 +60,12 @@ export default function ChatPanel({ activeIncident, agentSteps, hitlItems, onRes
                 ))}
                 {hitlItems?.map((hitl, idx) => (
                     <HITLCard
-                        key={`hitl-${idx}`}
+                        key={`hitl-${hitl.queueId || idx}`}
                         hitl={hitl}
                         onResolve={onResolveHitl}
                     />
                 ))}
+                <div ref={chatBottomRef} />
             </div>
         </div>
     );

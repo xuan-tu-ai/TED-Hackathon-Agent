@@ -105,10 +105,12 @@ class CognitivePoller:
 
 
 def run_poller(
-    db_url: str = "sqlite:///data/demo.db",
+    db_url: str | None = None,
     poll_interval: int = 10,
     robots: list[str] | None = None,
 ) -> None:
+    import os
+    db_url = db_url or os.getenv("DATABASE_URL", "sqlite+pysqlite:///../data/demo.db")
     poller = CognitivePoller(
         db_url=db_url,
         robots=robots,
