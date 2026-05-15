@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 load_dotenv()
 
-from ..agent.hitl import get_pending_entries, resolve_hitl_entry
+from ..agent.hitl import get_pending_entries, resolve_hitl_entry, resolve_hitl_entry_and_set_event
 
 
 class ResolutionStatus(str, Enum):
@@ -48,6 +48,7 @@ class PendingListResponse(BaseModel):
 
 
 router = APIRouter(prefix="/api/hitl", tags=["hitl"])
+sim_router = APIRouter(prefix="/api/sim", tags=["hitl"])
 
 
 @router.get("/pending", response_model=PendingListResponse)
@@ -83,3 +84,41 @@ def resolve_queue(request: ResolveRequest) -> ResolveResponse:
 def get_pending_entries_ids() -> list[str]:
     entries = get_pending_entries()
     return [e["id"] for e in entries]
+
+
+class HitlResolveRequest(BaseModel):
+    queue_id: str
+    status: str
+    resolved_by: str
+
+
+class HitlResolveResponse(BaseModel):
+    success: bool
+    queue_id: str
+    status: str
+
+
+@sim_router.post("/hitl/{queue_id}/approve", response_model=HitlResolveResponse)
+def approve_hitl(queue_id: str, req: HitlResolveRequest) -> HitlResolveResponse:
+    resolved = resolve_hitl_entry_and_set_event(
+        queue_id=queue_id,
+        status="APPROVED",
+        resolved_by=req.resolved_by,
+    )
+    if not resolved:
+        raise HTTPException(status_code=404, detail="HITL entry not found")
+
+    return HitlResolveResponse(success=True, queue_id=queue_id, status="APPROVED")
+
+
+@sim_router.post("/hitl/{queue_id}/reject", response_model=HitlResolveResponse)
+def reject_hitl(queue_id: str, req: HitlResolveRequest) -> HitlResolveResponse:
+    resolved = resolve_hitl_entry_and_set_event(
+        queue_id=queue_id,
+        status="REJECTED",
+        resolved_by=req.resolved_by,
+    )
+    if not resolved:
+        raise HTTPException(status_code=404, detail="HITL entry not found")
+
+    return HitlResolveResponse(success=True, queue_id=queue_id, status="REJECTED")

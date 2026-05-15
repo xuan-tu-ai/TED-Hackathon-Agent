@@ -40,7 +40,7 @@ def test_agent_start_session():
 
     session_id = agent.start_session(incident)
     assert session_id == "sess-INC-001"
-    assert agent.state == "running"
+    assert agent.state == "idle"
     assert agent.current_incident == incident
 
 

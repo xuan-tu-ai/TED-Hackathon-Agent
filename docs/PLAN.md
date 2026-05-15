@@ -8,8 +8,8 @@
 Current test count: **~180+ tests** across anomaly detection (Sprint 1), agent system (Sprint 2), and codebase unification (Sprint 3).
 
 ## Active Sprints
-- [Sprint 5](docs/sprint-plans/sprint-5.md) — *Planned* — ChatPanel bubble-based UI redesign (Issue 4)
-- [Sprint 6](docs/sprint-plans/sprint-6.md) — *Planned* — Backend concern separation & refactor (Issue 3)
+- [Sprint 5](docs/sprint-plans/sprint-5.md) — *Completed* — ChatPanel bubble-based UI redesign (Issue 4)
+- [Sprint 6](docs/sprint-plans/sprint-6.md) — *Completed* — Backend concern separation & refactor (Issue 3)
 
 ## Completed Sprints
 - [Sprint 0](docs/sprint-plans/sprint-0.md) — *Completed* — Project structure, directories, `__init__.py` files
@@ -24,8 +24,8 @@ Current test count: **~180+ tests** across anomaly detection (Sprint 1), agent s
 - [x] **M3:** Anomaly Detection Codebase Unification (Sprint 3)
 - [x] **M4:** Frontend React Dashboard (Sprint 2)
 - [x] **M5:** HITL Bug Fix — Rejection & Timeout Handling + Frontend SSE/HITL Fixes (Sprint 4)
-- [ ] **M6:** Chat Panel Bubble UI (Sprint 5)
-- [ ] **M7:** Backend Concern Separation (Sprint 6)
+- [x] **M6:** Chat Panel Bubble UI (Sprint 5)
+- [x] **M7:** Backend Concern Separation (Sprint 6)
 - [ ] **M8:** Real OT Data Integration
 - [ ] **M9:** Production Deployment & Hardening
 
@@ -67,8 +67,8 @@ frontend/                         ← React 18 + Vite + Zustand (SSE streaming, 
 | 2 | Agent System Migration | ✅ Done | FastAPI + DSPy agents (Triage, Diagnostic, Systemic) + Simulation Engine + Pollers + React Dashboard |
 | 3 | V6 Pattern Restructure | ✅ Done | `BaseAnomalyDetectionModel` + `ModelConfig` protocol + Universal inference (scorer/analyzer/applier) + Training restructure (raw/stat datasets, flow_matching/single_stage trainers) |
 | 4 | HITL Bug Fix + Frontend Fixes | ✅ Done | Fix hardcoded `"approve_plan"` bypass; add timeout/rejection handling; defense-in-depth; frontend SSE reconnection, Skip-to-Alert, stale closure fix, CollapsibleStep redesign; fix SSE ETIMEDOUT on first click (T12); fix double HITL approval card (T11) |
-| 5 | ChatPanel Bubble UI | 🔲 Planned | ThinkingBubble + ToolCallChip + InlineHITLCard components; bubble-based CSS; delete CollapsibleStep + HITLCard |
-| 6 | Backend Refactor + Knowledge Cleanup | 🔲 Planned | AgentEventEmitter, PlanManager, HitlGate; move HITL endpoints; fix all silent exception handlers (diagnostic_agent, memory); remove silent fallbacks + dead stubs; fix Planning-First contradiction; deduplicate HITL blocks ×5; LoadSkillTool validation; `_SKILL_TEMPLATE.md`; 15 new tests (T10 + T22 + T23) |
+| 5 | ChatPanel Bubble UI | ✅ Done | ThinkingBubble + ToolCallChip + InlineHITLCard components; bubble-based CSS; delete CollapsibleStep + HITLCard |
+| 6 | Backend Refactor + Knowledge Cleanup | ✅ Done | AgentEventEmitter, PlanManager, HitlGate; move HITL endpoints; fix all silent exception handlers (diagnostic_agent, memory); remove silent fallbacks + dead stubs; fix Planning-First contradiction; deduplicate HITL blocks ×5; LoadSkillTool validation; `_SKILL_TEMPLATE.md`; 15 new tests (T10 + T22 + T23) |
 
 ## Backlog / Future Work
 - **Real OT data integration** — Replace mock simulation with live paint-shop sensor data feed

@@ -1,12 +1,13 @@
 import React from 'react';
-import CollapsibleStep from './CollapsibleStep.jsx';
-import HITLCard from './HITLCard.jsx';
+import ThinkingBubble from './ThinkingBubble.jsx';
+import ToolCallChip from './ToolCallChip.jsx';
+import InlineHITLCard from './InlineHITLCard.jsx';
 import PlanTracker from './PlanTracker.jsx';
 
 function EmptyState() {
     return (
         <div className="empty-state">
-            <div className="empty-state-icon">📋</div>
+            <div className="empty-state-icon">{'\uD83D\uDCCB'}</div>
             <div className="empty-state-text">Select an incident to view agent diagnostics</div>
         </div>
     );
@@ -16,7 +17,7 @@ function AgentHeader({ incidentId, robotId, type, status }) {
     return (
         <div className="agent-panel-header">
             <div className="agent-incident-id">{incidentId}</div>
-            <div className="agent-incident-meta">{robotId} · {type} · {status}</div>
+            <div className="agent-incident-meta">{robotId} \u00B7 {type} \u00B7 {status}</div>
         </div>
     );
 }
@@ -24,7 +25,6 @@ function AgentHeader({ incidentId, robotId, type, status }) {
 export default function ChatPanel({ activeIncident, agentSteps, hitlItems, onResolveHitl }) {
     const chatBottomRef = React.useRef(null);
 
-    // Auto-scroll to bottom when new steps arrive
     React.useEffect(() => {
         if (chatBottomRef.current) {
             chatBottomRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -51,15 +51,24 @@ export default function ChatPanel({ activeIncident, agentSteps, hitlItems, onRes
                 <PlanTracker plan={activeIncident.plan} />
             )}
             <div className="chat-container">
-                {agentSteps.map((step, idx) => (
-                    <CollapsibleStep
-                        key={step.stepId || idx}
-                        step={step}
-                        stepNumber={idx + 1}
-                    />
-                ))}
+                {agentSteps.map((step, idx) => {
+                    const isRunning = step.observation === null;
+                    return (
+                        <div className="chat-step" key={step.stepId || idx}>
+                            <ThinkingBubble
+                                reasoning={step.reasoning}
+                                isRunning={isRunning}
+                            />
+                            <ToolCallChip
+                                toolName={step.toolName || (step.action ? step.action.split('(')[0] : 'unknown')}
+                                toolInput={step.toolInput || (step.action && step.action.includes('(') ? step.action.split('(')[1].replace(')', '') : '')}
+                                observation={step.observation}
+                            />
+                        </div>
+                    );
+                })}
                 {hitlItems?.map((hitl, idx) => (
-                    <HITLCard
+                    <InlineHITLCard
                         key={`hitl-${hitl.queueId || idx}`}
                         hitl={hitl}
                         onResolve={onResolveHitl}

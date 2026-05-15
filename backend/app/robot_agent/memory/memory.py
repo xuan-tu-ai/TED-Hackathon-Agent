@@ -190,7 +190,7 @@ class Tier3SemanticMemory:
             return results.get("documents", [[]])[0]
         except Exception as exc:
             logger.error(f"Tier3 query failed: {exc}")
-            return []
+            return [{"error": "Tier3 ChromaDB query failed", "detail": str(exc)}]
 
     def index_pm_card(self, card_id: str, text: str, metadata: dict[str, Any] | None = None) -> None:
         if not self._chromadb_available:

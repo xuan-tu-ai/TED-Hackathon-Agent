@@ -35,18 +35,6 @@ class StartResponse(BaseModel):
     total_ticks: int
 
 
-class HitlResolveRequest(BaseModel):
-    queue_id: str
-    status: str
-    resolved_by: str
-
-
-class HitlResolveResponse(BaseModel):
-    success: bool
-    queue_id: str
-    status: str
-
-
 def get_runner() -> SimulationRunner:
     global _state, _engine
     if _state is None or not hasattr(_state, "_running") or not _state._running:
@@ -147,31 +135,4 @@ async def stream_events() -> StreamingResponse:
     )
 
 
-@router.post("/hitl/{queue_id}/approve", response_model=HitlResolveResponse)
-def approve_hitl(queue_id: str, req: HitlResolveRequest) -> HitlResolveResponse:
-    from ..agent.hitl import resolve_hitl_entry_and_set_event
 
-    resolved = resolve_hitl_entry_and_set_event(
-        queue_id=queue_id,
-        status="APPROVED",
-        resolved_by=req.resolved_by,
-    )
-    if not resolved:
-        raise HTTPException(status_code=404, detail="HITL entry not found")
-
-    return HitlResolveResponse(success=True, queue_id=queue_id, status="APPROVED")
-
-
-@router.post("/hitl/{queue_id}/reject", response_model=HitlResolveResponse)
-def reject_hitl(queue_id: str, req: HitlResolveRequest) -> HitlResolveResponse:
-    from ..agent.hitl import resolve_hitl_entry_and_set_event
-
-    resolved = resolve_hitl_entry_and_set_event(
-        queue_id=queue_id,
-        status="REJECTED",
-        resolved_by=req.resolved_by,
-    )
-    if not resolved:
-        raise HTTPException(status_code=404, detail="HITL entry not found")
-
-    return HitlResolveResponse(success=True, queue_id=queue_id, status="REJECTED")

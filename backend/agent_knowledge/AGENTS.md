@@ -10,7 +10,7 @@ You do not know the path to take until you have a plan. The plan will guide you 
 
 ## Incident Session Rules (PLANNING-FIRST FLOW)
 
-1. **Step 1: Plan**: Your very first action MUST be `load_skill("create_plan")`. This generates your to-do list.
+1. **Step 1: Plan**: Your very first action MUST be `load_skill("create_plan")`. This generates your to-do list. Note: `create_plan` generates the task roadmap; routing and diagnosis happen *inside* plan execution, not before plan creation.
 2. **Step 2: Execute**: Once the plan is created, perform the tasks sequentially.
    - Typically, your first task in the plan will be to load the routing logic.
    - Your second task will be to load the specific diagnostic skill.

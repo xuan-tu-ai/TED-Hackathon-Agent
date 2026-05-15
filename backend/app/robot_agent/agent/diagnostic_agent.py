@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import logging
-import os
-import threading
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable, ClassVar
+from typing import Any, ClassVar
 
 from dotenv import load_dotenv
 
@@ -16,12 +14,13 @@ load_dotenv()
 import dspy
 import json
 import re
-from .hitl import HitlResult, hitl_check as perform_hitl_check
+from .event_emitter import AgentEventEmitter
+from .hitl_gate import HitlGate
+from .plan_manager import PlanManager
 from .llm_config import get_lm, get_llm_config
 from .rag_tools import QueryPMCardsTool
 from .session_trace import SessionTraceWriter
 from .skills import LoadSkillTool, SKILLS_BASE
-from ..seed import create_session_factory
 
 logging.basicConfig(
     level=logging.INFO,
@@ -67,7 +66,7 @@ class AgentStepSignature(dspy.Signature):
     past_steps = dspy.InputField(desc="Previous actions and their observations. Pay close attention to what you already did.")
 
     reasoning = dspy.OutputField(desc="Your thought process for what to do next based on the incident context and past steps.")
-    action = dspy.OutputField(desc="The tool to call. Must be exactly one of: load_skill, query_pm_cards, verify_surface_defect, query_db, hitl_check, update_task_status, create_plan, complete.")
+    action = dspy.OutputField(desc="The tool to call. Must be exactly one of: load_skill, query_pm_cards, hitl_check, update_task_status, create_plan, complete.")
     action_input = dspy.OutputField(desc="The argument for the tool. \n- load_skill: 'skill_name'\n- update_task_status: '{\"task_id\": 1, \"status\": \"completed\"}'\n- create_plan: Use only to initialize or radically change the roadmap.\n- complete: 'summary_text'. Use ONLY when ALL plan tasks are 'completed'.")
 
 class DiagnosticAgent:
@@ -76,11 +75,10 @@ class DiagnosticAgent:
     AVAILABLE_TOOLS: ClassVar[list[str]] = [
         "load_skill",
         "query_pm_cards",
-        "verify_surface_defect",
-        "query_db",
         "hitl_check",
         "update_task_status",
         "create_plan",
+        "complete",
     ]
 
     def __init__(self):
@@ -90,16 +88,11 @@ class DiagnosticAgent:
         self.steps: list[AgentStep] = []
         self.context: dict[str, Any] = {}
         self.state: str = "idle"
-        self.hitl_pending: dict[str, Any] = {}
         self._trace_writer: SessionTraceWriter | None = None
-        self.on_hitl_request: Callable[[dict[str, Any]], None] | None = None
-        self.on_step: Callable[[dict[str, Any]], None] | None = None
-        self.on_observation: Callable[[dict[str, Any]], None] | None = None
-        self.on_plan: Callable[[dict[str, Any]], None] | None = None
-        self.on_plan_task: Callable[[dict[str, Any]], None] | None = None
+        self.emitter = AgentEventEmitter()
+        self.plan = PlanManager(self.emitter)
+        self.hitl_gate = HitlGate(self.emitter)
         self.current_skill: str | None = None
-        self.current_plan: dict[str, Any] | None = None
-        self.current_task_index: int = 0
         self.loaded_skills_set: set[str] = set()
         self.skill_catalog: str = self._load_skill_catalog()
 
@@ -128,10 +121,12 @@ class DiagnosticAgent:
         self.steps = []
         self.context = {}
         self.state = "idle"
-        self.hitl_pending = {}
+        self.hitl_gate.hitl_pending = {}
+        self.hitl_gate.incident_id = incident.incident_id
+        self.hitl_gate.robot_code = incident.robot_code
         self.current_skill = None
-        self.current_plan = None
-        self.current_task_index = 0
+        self.plan.reset()
+        self.plan.set_incident_id(incident.incident_id)
         self.loaded_skills_set = set()
         self._trace_writer = SessionTraceWriter(incident.incident_id)
         logger.info(f"Session {self.session_id} started for incident {incident.incident_id}")
@@ -154,23 +149,23 @@ class DiagnosticAgent:
                 skill_loaded=skill_loaded,
             )
         
-        if self.on_step is not None:
-            parts = action.split("(", 1)
-            tool_name = parts[0]
-            tool_input = parts[1][:-1] if len(parts) > 1 and action.endswith(")") else ""
-            self.on_step({
-                "type": "agent_step",
-                "session_id": self.session_id,
-                "incident_id": self.current_incident.incident_id if self.current_incident else None,
-                "step_id": step.step_id,
-                "action": action,
-                "tool_name": tool_name,
-                "tool_input": tool_input,
-                "reasoning": reasoning,
-                "skill_loaded": skill_loaded,
-                "observation": None,
-                "timestamp": step.timestamp.isoformat(),
-            })
+        parts = action.split("(", 1)
+        tool_name = parts[0]
+        tool_input = parts[1][:-1] if len(parts) > 1 and action.endswith(")") else ""
+
+        self.emitter.emit_step({
+            "type": "agent_step",
+            "session_id": self.session_id,
+            "incident_id": self.current_incident.incident_id if self.current_incident else None,
+            "step_id": step.step_id,
+            "action": action,
+            "tool_name": tool_name,
+            "tool_input": tool_input,
+            "reasoning": reasoning,
+            "skill_loaded": skill_loaded,
+            "observation": None,
+            "timestamp": step.timestamp.isoformat(),
+        })
 
         if skill_loaded is not None:
             self.current_skill = skill_loaded
@@ -178,127 +173,75 @@ class DiagnosticAgent:
         return step
 
     def _broadcast_observation(self, step_id: str, observation: str) -> None:
-        if self.on_observation is not None:
-            self.on_observation({
-                "type": "agent_step_update",
-                "session_id": self.session_id,
-                "incident_id": self.current_incident.incident_id if self.current_incident else None,
-                "step_id": step_id,
-                "observation": observation,
-            })
+        self.emitter.emit_observation({
+            "type": "agent_step_update",
+            "session_id": self.session_id,
+            "incident_id": self.current_incident.incident_id if self.current_incident else None,
+            "step_id": step_id,
+            "observation": observation,
+        })
 
     def load_skill(self, skill_name: str) -> str:
         content = self.load_skill_tool(skill_name)
         return content
 
     def hitl_check(self, action: str, parameters: dict[str, Any], reasoning: str) -> dict[str, Any]:
-        if self.current_incident is None:
-            return {"error": "No active incident"}
+        incident_summary = ""
+        if self.current_incident:
+            incident_summary = (
+                f"Robot {self.current_incident.robot_code}, "
+                f"{self.current_incident.abnormal_family}/{self.current_incident.abnormal_subtype}, "
+                f"score={self.current_incident.anomaly_score}"
+            )
 
-        result = perform_hitl_check(
+        result = self.hitl_gate.check(
             action=action,
-            incident_id=self.current_incident.incident_id,
-            robot_code=self.current_incident.robot_code,
             parameters=parameters,
             reasoning=reasoning,
+            step_count=len(self.steps),
+            current_skill=self.current_skill,
+            incident_summary=incident_summary,
         )
 
-        if result.result == HitlResult.PERMANENTLY_BLOCKED:
-            self.state = "blocked"
-            return {
-                "blocked": True,
-                "permanently_blocked": True,
-                "action": action,
-                "reason": result.reason,
-            }
+        if result.get("permanently_blocked") or result.get("blocked"):
+            if result.get("timeout") or result.get("resolved") is False:
+                if result.get("timeout") or (
+                    not result.get("resolved") and not result.get("permanently_blocked")
+                ):
+                    self.state = "failed"
+                else:
+                    self.state = "blocked"
+            else:
+                self.state = "running" if result.get("resolved") else "blocked"
+        return result
 
-        if result.result == HitlResult.BLOCKED:
-            self.hitl_pending[action] = result.queue_id
+    def _parse_llm_output(self, result) -> tuple[str, str, str]:
+        reasoning = getattr(result, 'reasoning', "No reasoning provided.")
+        reasoning = re.sub(r"<think>.*?</think>", "", reasoning, flags=re.DOTALL).strip()
 
-            from ..simulation.state import get_simulation_state
-            state = get_simulation_state()
+        raw_action = getattr(result, 'action', "").strip()
+        raw_input = getattr(result, 'action_input', "").strip()
 
-            hitl_event = threading.Event()
-            state.set_hitl_event(result.queue_id, hitl_event)
-
-            self.state = "blocked"
-
-            if self.on_hitl_request is not None:
-                self.on_hitl_request({
-                    "type": "hitl_request",
-                    "queue_id": result.queue_id,
-                    "incident_id": self.current_incident.incident_id,
-                    "robot_code": self.current_incident.robot_code,
-                    "action": action,
-                    "parameters": parameters,
-                    "severity": result.severity,
-                    "reasoning": reasoning,
-                    "context": {
-                        "step_count": len(self.steps),
-                        "skill_in_use": self.current_skill,
-                        "incident_summary": (
-                            f"Robot {self.current_incident.robot_code}, "
-                            f"{self.current_incident.abnormal_family}/{self.current_incident.abnormal_subtype}, "
-                            f"score={self.current_incident.anomaly_score}"
-                        ),
-                    },
-                })
-
-            event_was_set = hitl_event.wait(timeout=300)
-
-            state.remove_hitl_event(result.queue_id)
-
-            if not event_was_set:
-                self.state = "failed"
-                return {
-                    "blocked": True,
-                    "permanently_blocked": False,
-                    "queue_id": result.queue_id,
-                    "action": action,
-                    "reason": f"Timeout waiting for HITL approval on '{action}' (300s elapsed)",
-                    "severity": result.severity,
-                    "resolved": False,
-                    "timeout": True,
-                }
-
-            from ..db.models import HitlQueue, get_default_db_url
-            _db_url = os.getenv("DATABASE_URL") or get_default_db_url()
-            _session = create_session_factory(_db_url)()
+        if "{" in raw_input and "}" in raw_input:
             try:
-                entry = _session.get(HitlQueue, result.queue_id)
-                entry_status = entry.status if entry else None
-            finally:
-                _session.close()
+                json_match = re.search(r"(\{.*\})", raw_input)
+                json_str = json_match.group(1) if json_match else None
+                if json_str:
+                    data = json.loads(json_str)
+                    if isinstance(data, dict):
+                        raw_input = data.get("skill_name") or data.get("query") or str(data)
+            except Exception as exc:
+                logger.debug("action_input JSON parse skipped: %s — treating as raw string", exc)
 
-            if entry is None or entry_status in ("REJECTED", "EXPIRED"):
-                self.state = "failed"
-                return {
-                    "blocked": True,
-                    "permanently_blocked": False,
-                    "queue_id": result.queue_id,
-                    "action": action,
-                    "reason": f"HITL action '{action}' was {entry_status.lower() if entry_status else 'entry not found'}",
-                    "severity": result.severity,
-                    "resolved": False,
-                }
+        if not raw_action and "(" in raw_input:
+            match = re.match(r"(\w+)\((.*)\)", raw_input)
+            if match:
+                raw_action = match.group(1)
+                raw_input = match.group(2)
 
-            self.state = "running"
-
-            return {
-                "blocked": True,
-                "permanently_blocked": False,
-                "queue_id": result.queue_id,
-                "action": action,
-                "reason": result.reason,
-                "severity": result.severity,
-                "resolved": True,
-            }
-
-        return {"allowed": True, "action": action}
-
-    def explore(self): pass
-    def plan(self): pass
-    def act(self): pass
+        action = raw_action
+        action_input = raw_input.strip("'\" ")
+        return reasoning, action, action_input
 
     def _run_plan_phase(self, incident_context: str, loaded_skills_content: str, past_steps_list: list[str]) -> tuple[str, str, list[str]]:
         lm = get_lm()
@@ -331,7 +274,7 @@ class DiagnosticAgent:
                         incident_context=incident_context,
                         available_skills=self.skill_catalog,
                         loaded_skills=loaded_skills_content,
-                        current_plan=json.dumps(self.current_plan, indent=2) if self.current_plan else "No plan created yet.",
+                        current_plan=json.dumps(self.plan.current_plan, indent=2) if self.plan.current_plan else "No plan created yet.",
                         past_steps=past_steps_str
                     )
                 elapsed = time.time() - t0
@@ -340,37 +283,14 @@ class DiagnosticAgent:
                 else:
                     logger.info("LLM plan response in %.1fms", elapsed * 1000)
 
-                reasoning = getattr(result, 'reasoning', "No reasoning provided.")
-                reasoning = re.sub(r"<think>.*?</think>", "", reasoning, flags=re.DOTALL).strip()
-
-                raw_action = getattr(result, 'action', "").strip()
-                raw_input = getattr(result, 'action_input', "").strip()
-
-                if "{" in raw_input and "}" in raw_input:
-                    try:
-                        json_match = re.search(r"(\{.*\})", raw_input)
-                        json_str = json_match.group(1) if json_match else None
-                        if json_str:
-                            data = json.loads(json_str)
-                            if isinstance(data, dict):
-                                raw_input = data.get("skill_name") or data.get("query") or str(data)
-                    except: pass
-
-                if not raw_action and "(" in raw_input:
-                    match = re.match(r"(\w+)\((.*)\)", raw_input)
-                    if match:
-                        raw_action = match.group(1)
-                        raw_input = match.group(2)
-
-                action = raw_action
-                action_input = raw_input.strip("'\" ")
+                reasoning, action, action_input = self._parse_llm_output(result)
 
                 logger.info(f"Plan turn {plan_turn_count}: {action}({action_input})")
 
                 if not action:
                     empty_action_count += 1
-                    logger.warning("Empty action from LLM in plan phase (attempt %d/%d). Raw result: reasoning=%s action=%r action_input=%r",
-                                   empty_action_count, max_empty_actions, reasoning[:200] if reasoning else "NONE", raw_action, raw_input)
+                    logger.warning("Empty action from LLM in plan phase (attempt %d/%d). reasoning=%s action=%r",
+                                   empty_action_count, max_empty_actions, reasoning[:200] if reasoning else "NONE", action)
                     if empty_action_count >= max_empty_actions:
                         logger.error("LLM returned empty action %d times in plan phase — stopping", max_empty_actions)
                         self.state = "failed"
@@ -432,21 +352,21 @@ class DiagnosticAgent:
         while execute_turn_count < max_execute_turns and self.state not in ["blocked", "completed", "failed"]:
             execute_turn_count += 1
 
-            if self.current_plan and self.current_task_index < len(self.current_plan["tasks"]):
-                current_task = self.current_plan["tasks"][self.current_task_index]
-                task_name = current_task.get("name", f"Task {self.current_task_index + 1}")
+            if self.plan.current_plan and self.plan.current_task_index < len(self.plan.current_plan["tasks"]):
+                current_task = self.plan.current_plan["tasks"][self.plan.current_task_index]
+                task_name = current_task.get("name", f"Task {self.plan.current_task_index + 1}")
                 logger.info(f"Executing Task: {task_name}")
 
             past_steps_str = "\n".join(past_steps_list) if past_steps_list else "None yet."
 
             current_task_info = ""
-            if self.current_plan and self.current_task_index < len(self.current_plan["tasks"]):
-                t = self.current_plan["tasks"][self.current_task_index]
+            if self.plan.current_plan and self.plan.current_task_index < len(self.plan.current_plan["tasks"]):
+                t = self.plan.current_plan["tasks"][self.plan.current_task_index]
                 current_task_info = f"CURRENT TASK: {t.get('name')} (Goal: Perform this task using available tools)."
 
             phase_instruction = (
                 "CURRENT PHASE: EXECUTION. "
-                "Follow the plan items sequentially. Use tools (query_db, query_pm_cards, etc.) to gather evidence. "
+                "Follow the plan items sequentially. Use tools (query_pm_cards, hitl_check, etc.) to gather evidence. "
                 f"{current_task_info}"
             )
             full_prompt = f"{self.SYSTEM_PROMPT}\n\n{phase_instruction}"
@@ -459,7 +379,7 @@ class DiagnosticAgent:
                         incident_context=incident_context,
                         available_skills=self.skill_catalog,
                         loaded_skills=loaded_skills_content,
-                        current_plan=json.dumps(self.current_plan, indent=2) if self.current_plan else "Plan lost.",
+                        current_plan=json.dumps(self.plan.current_plan, indent=2) if self.plan.current_plan else "Plan lost.",
                         past_steps=past_steps_str
                     )
                 elapsed = time.time() - t0
@@ -468,25 +388,14 @@ class DiagnosticAgent:
                 else:
                     logger.info("LLM execute response in %.1fms", elapsed * 1000)
 
-                reasoning = getattr(result, 'reasoning', "No reasoning provided.")
-                raw_action = getattr(result, 'action', "").strip()
-                raw_input = getattr(result, 'action_input', "").strip()
-
-                if not raw_action and "(" in raw_input:
-                    match = re.match(r"(\w+)\((.*)\)", raw_input)
-                    if match:
-                        raw_action = match.group(1)
-                        raw_input = match.group(2)
-
-                action = raw_action
-                action_input = raw_input.strip("'\"")
+                reasoning, action, action_input = self._parse_llm_output(result)
 
                 logger.info(f"Step action: {action}({action_input})")
 
                 if not action:
                     empty_action_count += 1
-                    logger.warning("Empty action from LLM in execute phase (attempt %d/%d). Raw result: reasoning=%s action=%r action_input=%r",
-                                   empty_action_count, max_empty_actions, reasoning[:200] if reasoning else "NONE", raw_action, raw_input)
+                    logger.warning("Empty action from LLM in execute phase (attempt %d/%d). reasoning=%s action=%r",
+                                   empty_action_count, max_empty_actions, reasoning[:200] if reasoning else "NONE", action)
                     if empty_action_count >= max_empty_actions:
                         logger.error("LLM returned empty action %d times — stopping agent", max_empty_actions)
                         self.state = "failed"
@@ -498,8 +407,6 @@ class DiagnosticAgent:
                 self.step("error", f"LLM error: {e}")
                 self.state = "failed"
                 break
-
-            reasoning = re.sub(r"<think>.*?</think>", "", reasoning, flags=re.DOTALL).strip()
 
             skill_loaded = action_input if action == "load_skill" else None
             step_info = self.step(action=f"{action}({action_input})", reasoning=reasoning, skill_loaded=skill_loaded)
@@ -536,15 +443,12 @@ class DiagnosticAgent:
             elif action == "query_pm_cards":
                 tool = QueryPMCardsTool()
                 obs = str(tool(action_input))
-            elif action == "query_db":
-                obs = f"Error: query_db tool not implemented: {action_input}"
-            elif action == "verify_surface_defect":
-                obs = f"Error: verify_surface_defect tool not implemented: {action_input}"
             elif action == "hitl_check":
                 try:
                     params = json.loads(action_input)
-                except Exception:
-                    params = {"raw": action_input}
+                except Exception as exc:
+                    logger.warning("hitl_check param JSON parse failed: %s", exc)
+                    params = {"raw": action_input, "parse_error": str(exc)}
                 res = self.hitl_check(action="approve_plan", parameters=params, reasoning=reasoning)
                 obs = str(res)
             else:
@@ -563,10 +467,10 @@ class DiagnosticAgent:
             if self.state in ("blocked", "failed"):
                 break
 
-            if self.current_plan and self.current_task_index < len(self.current_plan["tasks"]):
-                task_id = self.current_plan["tasks"][self.current_task_index].get("id", self.current_task_index + 1)
+            if self.plan.current_plan and self.plan.current_task_index < len(self.plan.current_plan["tasks"]):
+                task_id = self.plan.current_plan["tasks"][self.plan.current_task_index].get("id", self.plan.current_task_index + 1)
                 self._broadcast_plan_task_completed(task_id)
-                self.current_task_index += 1
+                self.plan.current_task_index += 1
 
             if execute_turn_count >= max_execute_turns and self.state == "running":
                 self.state = "failed"
@@ -576,91 +480,35 @@ class DiagnosticAgent:
         return past_steps_list
 
     def _infer_task_type(self, name: str) -> str:
-        name_lower = name.lower()
-        if "load" in name_lower or "skill" in name_lower:
-            return "skill"
-        elif "diagnos" in name_lower or "check" in name_lower or "query" in name_lower:
-            return "diagnose"
-        elif "hitl" in name_lower or "approval" in name_lower:
-            return "hitl"
-        elif "dispatch" in name_lower or "send" in name_lower or "formulate" in name_lower or "action" in name_lower:
-            return "action"
-        elif "evaluate" in name_lower or "determine" in name_lower:
-            return "assess"
-        else:
-            return "diagnose"
+        return self.plan._infer_task_type(name)
 
     def _broadcast_plan_created(self) -> None:
-        if self.on_plan is not None and self.current_plan is not None:
-            self.on_plan({
+        if self.plan.current_plan is not None:
+            self.emitter.emit_plan({
                 "type": "plan_created",
                 "incident_id": self.current_incident.incident_id if self.current_incident else None,
-                "tasks": self.current_plan["tasks"],
+                "tasks": self.plan.current_plan["tasks"],
             })
 
     def _parse_plan_from_template(self) -> None:
-        template_path = SKILLS_BASE / "create_plan" / "_template.md"
-        if not template_path.exists():
-            logger.error("Plan template not found at %s — agent failed", template_path)
+        if not self.plan.parse_from_template():
             self.state = "failed"
-            return
-
-        content = template_path.read_text(encoding="utf-8")
-        tasks = []
-        task_id = 1
-        for line in content.splitlines():
-            if "- [ ]" in line or "- [x]" in line:
-                match = re.search(r"\*\*(Item \d+:)\s*(.*?)\.", line)
-                if match:
-                    name = match.group(2).strip()
-                    tasks.append({
-                        "id": task_id,
-                        "name": name,
-                        "type": self._infer_task_type(name),
-                        "status": "pending",
-                    })
-                    task_id += 1
-
-        if not tasks:
-            logger.error("Plan template has no parseable tasks — agent failed")
-            self.state = "failed"
-            return
-
-        self.current_plan = {"tasks": tasks}
 
     def _broadcast_plan_task_started(self, task_id: int) -> None:
-        if self.on_plan_task is not None:
-            self.on_plan_task({
-                "type": "plan_task_started",
-                "incident_id": self.current_incident.incident_id if self.current_incident else None,
-                "task_id": task_id,
-            })
+        self.emitter.emit_plan_task({
+            "type": "plan_task_started",
+            "incident_id": self.current_incident.incident_id if self.current_incident else None,
+            "task_id": task_id,
+        })
 
     def update_plan_task(self, task_id: int | str, status: str):
-        if not self.current_plan:
-            return
-
-        str_id = str(task_id)
-        for idx, task in enumerate(self.current_plan.get("tasks", [])):
-            if str(task.get("id")) == str_id:
-                task["status"] = status
-                self._broadcast_plan_task_update(str_id, status)
-
-                if status == "completed" and idx == self.current_task_index:
-                    self.current_task_index += 1
-                break
+        self.plan.update_task(task_id, status)
 
     def _broadcast_plan_task_update(self, task_id: str, status: str):
-        if self.on_step and self.current_incident:
-            self.on_step({
-                "type": "plan_task_update",
-                "incident_id": self.current_incident.incident_id,
-                "task_id": task_id,
-                "status": status
-            })
+        self.plan._broadcast_plan_task_update(task_id, status)
 
     def _broadcast_plan_task_completed(self, task_id: str):
-        self._broadcast_plan_task_update(task_id, "completed")
+        self.plan._broadcast_plan_task_completed(task_id)
 
     def run_incident(self, incident: DiagnosticIncident) -> dict[str, Any]:
         self.start_session(incident)

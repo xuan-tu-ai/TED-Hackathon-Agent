@@ -1,12 +1,14 @@
 # Diagnostic Plan Template
 
 ## Plan Items
-- [ ] **Item 1:** Check signal history and anomalies.
-- [ ] **Item 2:** Query PM cards and past maintenance records.
-- [ ] **Item 3:** Evaluate root cause based on evidence.
-- [ ] **Item 4:** Determine severity.
-- [ ] **Item 5:** Formulate recommended actions.
-- [ ] **Item 6:** Call `hitl_check` if any action is HIGH or CRITICAL severity.
+- [ ] **Item 1:** Load routing skill and determine diagnostic path.
+- [ ] **Item 2:** Load the appropriate diagnose skill (diagnose_surge / diagnose_dropout / etc.).
+- [ ] **Item 3:** Check signal history and anomalies.
+- [ ] **Item 4:** Query PM cards and past maintenance records.
+- [ ] **Item 5:** Evaluate root cause based on evidence.
+- [ ] **Item 6:** Determine severity.
+- [ ] **Item 7:** Formulate recommended actions.
+- [ ] **Item 8:** Call `hitl_check` if any action is HIGH or CRITICAL severity.
 
 ---
 
@@ -27,6 +29,8 @@
 | Item 4 | PENDING | - |
 | Item 5 | PENDING | - |
 | Item 6 | PENDING | - |
+| Item 7 | PENDING | - |
+| Item 8 | PENDING | - |
 
 ---
 

@@ -30,5 +30,6 @@ def test_load_skill_tool_call():
 
 def test_load_skill_tool_unknown():
     tool = LoadSkillTool()
-    with pytest.raises(FileNotFoundError):
-        tool("unknown_skill")
+    result = tool("unknown_skill")
+    assert isinstance(result, str)
+    assert "not found" in result.lower()

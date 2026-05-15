@@ -15,7 +15,7 @@ os.environ["DATABASE_URL"] = get_default_db_url()
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import hitl_router, incidents_router, simulation_router
+from .api import hitl_router, hitl_sim_router, incidents_router, simulation_router
 from .db import init_db
 
 
@@ -34,6 +34,7 @@ app.add_middleware(
 )
 
 app.include_router(hitl_router)
+app.include_router(hitl_sim_router)
 app.include_router(incidents_router)
 app.include_router(simulation_router)
 

@@ -52,9 +52,8 @@ ELSE:
 Once routed to the correct diagnostic skill:
 1. Load the skill via `load_skill("<skill_name>")`
 2. Follow the diagnostic steps in that skill
-3. Before executing diagnostic steps, load `create_plan` skill
-4. Execute the diagnostic plan using the template in `create_plan`
-5. Only output `complete` when ALL plan items are done
+3. Execute the diagnostic plan using the template in `create_plan`
+4. Only output `complete` when ALL plan items are done
 
 ## Session Termination Rule
 A session is ONLY complete when:

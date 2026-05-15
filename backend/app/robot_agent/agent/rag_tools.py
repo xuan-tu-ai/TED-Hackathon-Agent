@@ -3,8 +3,6 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 from ..chroma.client import get_collection
-from ..db import create_session_factory
-from ..db.models import PMCard
 
 
 class QueryPMCardsTool:
@@ -17,9 +15,9 @@ class QueryPMCardsTool:
             try:
                 count = collection.count()
                 if count == 0:
-                    return self._fallback_search(query, limit)
-            except Exception:
-                return self._fallback_search(query, limit)
+                    return [{"error": "ChromaDB collection is empty", "detail": "pm_cards"}]
+            except Exception as exc:
+                return [{"error": "ChromaDB unavailable", "detail": str(exc)}]
 
             results = collection.query(query_texts=[query], n_results=limit)
             documents = results.get("documents", [[]])[0]
@@ -27,7 +25,7 @@ class QueryPMCardsTool:
             ids = results.get("ids", [[]])[0]
 
             if not documents:
-                return self._fallback_search(query, limit)
+                return [{"error": "No results from ChromaDB", "detail": query}]
 
             cards = []
             for i, doc in enumerate(documents):
@@ -37,42 +35,8 @@ class QueryPMCardsTool:
                     "metadata": metadatas[i] if i < len(metadatas) else {},
                 })
             return cards
-        except Exception:
-            return self._fallback_search(query, limit)
-
-    def _fallback_search(self, query: str, limit: int) -> list[dict[str, Any]]:
-        import os
-        from ..db.models import get_default_db_url
-        db_url = os.getenv("DATABASE_URL", get_default_db_url())
-        sf = create_session_factory(db_url)
-        session = sf()
-
-        query_lower = query.lower()
-        cards = (
-            session.query(PMCard)
-            .filter(
-                (PMCard.cause.ilike(f"%{query_lower}%")) |
-                (PMCard.symptom.ilike(f"%{query_lower}%")) |
-                (PMCard.action.ilike(f"%{query_lower}%")) |
-                (PMCard.sensor.ilike(f"%{query_lower}%"))
-            )
-            .limit(limit)
-            .all()
-        )
-
-        results = []
-        for card in cards:
-            results.append({
-                "id": card.card_id,
-                "sensor": card.sensor,
-                "robot_code": card.robot_code,
-                "cause": card.cause,
-                "symptom": card.symptom,
-                "action": card.action,
-            })
-
-        session.close()
-        return results
+        except Exception as exc:
+            return [{"error": "ChromaDB unavailable", "detail": str(exc)}]
 
 
 class IndexPMCardsTool:

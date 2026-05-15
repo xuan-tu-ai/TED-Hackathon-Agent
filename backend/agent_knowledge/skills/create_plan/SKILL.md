@@ -1,17 +1,17 @@
 ---
 name: create_plan
-description: Guides the agent to generate a structured diagnostic plan with atomic tasks. Use ONLY after routing is complete.
+description: Guides the agent to generate a structured diagnostic plan with atomic tasks. Use FIRST, before any routing or diagnosis.
 required_tools: [load_skill]
 ---
 
 # Create Plan Skill
 
 ## Purpose
-This skill guides the agent to generate a structured diagnostic plan following the standardized template. Use this skill after routing to plan the atomic tasks for diagnosis.
+This skill guides the agent to generate a structured diagnostic plan following the standardized template. Use this skill FIRST, before any routing or diagnosis. This skill creates the task roadmap that drives all subsequent steps.
 
 ## When to Use
-1. After loading the `routing` skill and determining the correct diagnostic path
-2. Before starting any diagnosis or executing actions
+1. At the very start of any new incident session
+2. Before loading the `routing` skill or any diagnostic skill
 
 ## Steps
 
@@ -23,11 +23,7 @@ Ensure you have:
 - [ ] Robot ID (`robot_code`)
 - [ ] Incident ID (`incident_id`)
 - [ ] Signal anomaly details (family, subtype, sensor, score)
-- [ ] Product defect verification status
-- [ ] Severity level (from `evaluate_severity`)
-- [ ] Root cause candidate(s)
-- [ ] Recommended action(s)
-- [ ] Evidence references
+- [ ] Severity hint (from incident context field `severity_hint`, not a tool call)
 
 ### Step 3: Create the Plan
 Populate `_template.md` with the planned atomic tasks. Do NOT deviate from the template format.

@@ -202,11 +202,11 @@ class SimulationRunner:
 
         try:
             agent = DiagnosticAgent()
-            agent.on_hitl_request = self._broadcast
-            agent.on_step = self._broadcast
-            agent.on_observation = self._broadcast
-            agent.on_plan = self._broadcast
-            agent.on_plan_task = self._broadcast
+            agent.emitter.on_hitl_request = self._broadcast
+            agent.emitter.on_step = self._broadcast
+            agent.emitter.on_observation = self._broadcast
+            agent.emitter.on_plan = self._broadcast
+            agent.emitter.on_plan_task = self._broadcast
 
             result = agent.run_incident(inc)
 
