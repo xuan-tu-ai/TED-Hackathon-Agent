@@ -17,7 +17,7 @@ DB_PATH = DATA_DIR / "demo.db"
 SQL_PATH = SQL_DIR / "seed_snapshot.sql"
 
 
-def seed_all(session, days: int = 45) -> dict[str, int]:
+def seed_all(session, days: int = 30) -> dict[str, int]:
     perception_count = seed_perception_results(session, days=days)
     pm_cards_count = seed_pm_cards(session)
     maintenance_count = seed_maintenance_events(session)

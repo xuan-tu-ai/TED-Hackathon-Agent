@@ -164,8 +164,10 @@ class SimulationRunner:
             if self._stop_event.is_set():
                 break
 
-            time.sleep(0.3)  # Small gap to avoid UI flood
-            self._submit_to_executor(inc)
+            try:
+                self._submit_to_executor(inc)
+            except Exception as e:
+                logger.exception("Dispatcher failed for %s: %s", inc.incident_id, e)
 
     def _submit_incident(self, inc: DiagnosticIncident) -> None:
         self._incident_queue.put_nowait(inc)
@@ -194,6 +196,8 @@ class SimulationRunner:
             logger.info(f"Incident {inc.incident_id} queued (position {queue_pos})")
 
     def _launch_agent(self, inc: DiagnosticIncident) -> None:
+        logger.info("Agent _launch_agent invoked for %s", inc.incident_id)
+        logger.info("Agent STARTED for incident %s (robot %s)", inc.incident_id, inc.robot_code)
         self.state.set_active_incident(inc.incident_id)
 
         try:
@@ -280,7 +284,7 @@ class SimulationRunner:
             self._dispatcher_thread.join(timeout=5)
             self._dispatcher_thread = None
 
-        self._agent_executor.shutdown(wait=False)
+        self._agent_executor.shutdown(wait=False, cancel_futures=True)
         self.state.set_status("idle")
         self.state.reset()
         logger.info("Simulation runner stopped")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -260,8 +261,8 @@ class DiagnosticAgent:
                     "timeout": True,
                 }
 
-            from ..db.models import HitlQueue
-            _db_url = os.getenv("DATABASE_URL") or "sqlite+pysqlite:///../data/demo.db"
+            from ..db.models import HitlQueue, get_default_db_url
+            _db_url = os.getenv("DATABASE_URL") or get_default_db_url()
             _session = create_session_factory(_db_url)()
             try:
                 entry = _session.get(HitlQueue, result.queue_id)
@@ -307,6 +308,8 @@ class DiagnosticAgent:
         max_plan_turns = 5
         has_plan = False
         past_steps_str = "None yet."
+        empty_action_count = 0
+        max_empty_actions = 3
 
         while plan_turn_count < max_plan_turns and self.state not in ["blocked", "completed", "failed"]:
             plan_turn_count += 1
@@ -321,6 +324,7 @@ class DiagnosticAgent:
 
             logger.info(f"--- LLM Plan Turn {plan_turn_count} (Incident: {self.current_incident.incident_id if self.current_incident else 'unknown'}) ---")
             try:
+                t0 = time.time()
                 with dspy.context(lm=lm, cache=False):
                     result = predictor(
                         system_prompt=full_prompt,
@@ -330,6 +334,11 @@ class DiagnosticAgent:
                         current_plan=json.dumps(self.current_plan, indent=2) if self.current_plan else "No plan created yet.",
                         past_steps=past_steps_str
                     )
+                elapsed = time.time() - t0
+                if elapsed < 0.05:
+                    logger.error("LLM plan response in %.1fms — TOO FAST, not a real API call! cache=False may be ignored by DSPy.", elapsed * 1000)
+                else:
+                    logger.info("LLM plan response in %.1fms", elapsed * 1000)
 
                 reasoning = getattr(result, 'reasoning', "No reasoning provided.")
                 reasoning = re.sub(r"<think>.*?</think>", "", reasoning, flags=re.DOTALL).strip()
@@ -356,15 +365,20 @@ class DiagnosticAgent:
                 action = raw_action
                 action_input = raw_input.strip("'\" ")
 
-                logger.info(f"Agent Thought: {reasoning[:80]}...")
-                logger.info(f"Agent Action: {action}({action_input})")
+                logger.info(f"Plan turn {plan_turn_count}: {action}({action_input})")
 
                 if not action:
-                    logger.warning(f"Empty action from LLM. Raw result: {result}")
+                    empty_action_count += 1
+                    logger.warning("Empty action from LLM in plan phase (attempt %d/%d). Raw result: reasoning=%s action=%r action_input=%r",
+                                   empty_action_count, max_empty_actions, reasoning[:200] if reasoning else "NONE", raw_action, raw_input)
+                    if empty_action_count >= max_empty_actions:
+                        logger.error("LLM returned empty action %d times in plan phase — stopping", max_empty_actions)
+                        self.state = "failed"
+                        break
                     continue
 
             except Exception as e:
-                logger.error(f"LLM Call Failed: {e}")
+                logger.exception("LLM call failed in plan phase")
                 self.step("error", f"LLM error: {e}")
                 self.state = "failed"
                 break
@@ -374,12 +388,11 @@ class DiagnosticAgent:
             current_step_id = step_info.step_id
 
             if action == "complete":
-                obs = "Diagnosis concluded. Ready for dispatch."
-                self._broadcast_observation(current_step_id, obs)
                 if not has_plan:
-                    self._apply_default_plan()
-                self.state = "completed"
-                break
+                    logger.error("LLM called 'complete' without creating a plan — agent failed")
+                    self.state = "failed"
+                    break
+                obs = "Diagnosis concluded. Ready for dispatch."
             elif action == "load_skill":
                 skill_name = action_input.split("/")[-1].replace(".md", "").strip()
                 try:
@@ -403,8 +416,8 @@ class DiagnosticAgent:
                 break
 
         if plan_turn_count >= max_plan_turns and not has_plan:
-            logger.warning("Plan phase reached max turns without plan, applying default")
-            self._apply_default_plan()
+            logger.error("Plan phase reached max turns without creating a plan — agent failed")
+            self.state = "failed"
 
         return loaded_skills_content, past_steps_str, past_steps_list
 
@@ -413,6 +426,8 @@ class DiagnosticAgent:
         predictor = dspy.ChainOfThought(AgentStepSignature)
         execute_turn_count = 0
         max_execute_turns = 20
+        empty_action_count = 0
+        max_empty_actions = 3
 
         while execute_turn_count < max_execute_turns and self.state not in ["blocked", "completed", "failed"]:
             execute_turn_count += 1
@@ -437,6 +452,7 @@ class DiagnosticAgent:
             full_prompt = f"{self.SYSTEM_PROMPT}\n\n{phase_instruction}"
 
             try:
+                t0 = time.time()
                 with dspy.context(lm=lm, cache=False):
                     result = predictor(
                         system_prompt=full_prompt,
@@ -446,6 +462,11 @@ class DiagnosticAgent:
                         current_plan=json.dumps(self.current_plan, indent=2) if self.current_plan else "Plan lost.",
                         past_steps=past_steps_str
                     )
+                elapsed = time.time() - t0
+                if elapsed < 0.05:
+                    logger.error("LLM execute response in %.1fms — TOO FAST, not a real API call! cache=False may be ignored by DSPy.", elapsed * 1000)
+                else:
+                    logger.info("LLM execute response in %.1fms", elapsed * 1000)
 
                 reasoning = getattr(result, 'reasoning', "No reasoning provided.")
                 raw_action = getattr(result, 'action', "").strip()
@@ -460,15 +481,20 @@ class DiagnosticAgent:
                 action = raw_action
                 action_input = raw_input.strip("'\"")
 
-                logger.info(f"Step Thought: {reasoning[:120]}...")
-                logger.info(f"Step Action: {action}({action_input})")
+                logger.info(f"Step action: {action}({action_input})")
 
                 if not action:
-                    logger.warning(f"Empty action in execute phase. Raw: {result}")
+                    empty_action_count += 1
+                    logger.warning("Empty action from LLM in execute phase (attempt %d/%d). Raw result: reasoning=%s action=%r action_input=%r",
+                                   empty_action_count, max_empty_actions, reasoning[:200] if reasoning else "NONE", raw_action, raw_input)
+                    if empty_action_count >= max_empty_actions:
+                        logger.error("LLM returned empty action %d times — stopping agent", max_empty_actions)
+                        self.state = "failed"
+                        break
                     continue
 
             except Exception as e:
-                logger.error(f"LLM Call Failed in Execute Phase: {e}")
+                logger.exception("LLM call failed in execute phase")
                 self.step("error", f"LLM error: {e}")
                 self.state = "failed"
                 break
@@ -511,17 +537,9 @@ class DiagnosticAgent:
                 tool = QueryPMCardsTool()
                 obs = str(tool(action_input))
             elif action == "query_db":
-                if self.current_incident:
-                    obs = (
-                        f"DB Result for {action_input}: Found 1 row. "
-                        f"Robot {self.current_incident.robot_code} at {datetime.now().isoformat()} "
-                        f"showed {self.current_incident.sensor} peak {self.current_incident.anomaly_score * 1.2:.2f} "
-                        f"exceeding threshold 0.50."
-                    )
-                else:
-                    obs = f"DB Result for {action_input}: No active incident."
+                obs = f"Error: query_db tool not implemented: {action_input}"
             elif action == "verify_surface_defect":
-                obs = f"Checked {action_input}. Found surface defects: orange_peel x14, thin_coat x5."
+                obs = f"Error: verify_surface_defect tool not implemented: {action_input}"
             elif action == "hitl_check":
                 try:
                     params = json.loads(action_input)
@@ -530,7 +548,10 @@ class DiagnosticAgent:
                 res = self.hitl_check(action="approve_plan", parameters=params, reasoning=reasoning)
                 obs = str(res)
             else:
-                obs = f"Unknown action: {action}"
+                obs = f"Error: Unknown action: {action}"
+                logger.error("LLM returned unknown action: %s — stopping agent", action)
+                self.state = "failed"
+                break
 
             self._broadcast_observation(current_step_id, obs)
 
@@ -554,18 +575,6 @@ class DiagnosticAgent:
 
         return past_steps_list
 
-    def _apply_default_plan(self) -> None:
-        default_plan = {
-            "tasks": [
-                {"id": 1, "name": "Load routing skill", "type": "skill", "status": "completed"},
-                {"id": 2, "name": "Run diagnosis", "type": "diagnose", "status": "completed"},
-                {"id": 3, "name": "HITL approval", "type": "hitl", "status": "pending"},
-                {"id": 4, "name": "Dispatch action", "type": "action", "status": "pending"},
-            ]
-        }
-        self.current_plan = default_plan
-        self._broadcast_plan_created()
-
     def _infer_task_type(self, name: str) -> str:
         name_lower = name.lower()
         if "load" in name_lower or "skill" in name_lower:
@@ -582,8 +591,6 @@ class DiagnosticAgent:
             return "diagnose"
 
     def _broadcast_plan_created(self) -> None:
-        if self.current_plan is None:
-            self._parse_plan_from_template()
         if self.on_plan is not None and self.current_plan is not None:
             self.on_plan({
                 "type": "plan_created",
@@ -594,7 +601,8 @@ class DiagnosticAgent:
     def _parse_plan_from_template(self) -> None:
         template_path = SKILLS_BASE / "create_plan" / "_template.md"
         if not template_path.exists():
-            self._apply_default_plan()
+            logger.error("Plan template not found at %s — agent failed", template_path)
+            self.state = "failed"
             return
 
         content = template_path.read_text(encoding="utf-8")
@@ -614,7 +622,8 @@ class DiagnosticAgent:
                     task_id += 1
 
         if not tasks:
-            self._apply_default_plan()
+            logger.error("Plan template has no parseable tasks — agent failed")
+            self.state = "failed"
             return
 
         self.current_plan = {"tasks": tasks}

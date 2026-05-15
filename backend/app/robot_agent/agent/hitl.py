@@ -6,14 +6,9 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
-from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
-from ..db.models import HitlQueue, create_session_factory
+from ..db.models import HitlQueue, create_session_factory, get_default_db_url
 
 
 BLOCKED_ACTIONS: frozenset[str] = frozenset({
@@ -63,7 +58,7 @@ def hitl_check(
     reasoning: str,
     db_url: str | None = None,
 ) -> HitlCheckResult:
-    db_url = db_url or os.getenv("DATABASE_URL") or "sqlite+pysqlite:///../data/demo.db"
+    db_url = db_url or os.getenv("DATABASE_URL") or get_default_db_url()
     if action in BLOCKED_ACTIONS:
         return HitlCheckResult(
             result=HitlResult.PERMANENTLY_BLOCKED,
@@ -117,7 +112,7 @@ def resolve_hitl_entry(
     resolved_by: str,
     db_url: str | None = None,
 ) -> bool:
-    db_url = db_url or os.getenv("DATABASE_URL") or "sqlite+pysqlite:///../data/demo.db"
+    db_url = db_url or os.getenv("DATABASE_URL") or get_default_db_url()
     session = create_session_factory(db_url)()
     try:
         entry = session.get(HitlQueue, queue_id)
@@ -152,7 +147,7 @@ def resolve_hitl_entry_and_set_event(
 
 
 def get_pending_entries(db_url: str | None = None) -> list[dict[str, Any]]:
-    db_url = db_url or os.getenv("DATABASE_URL") or "sqlite+pysqlite:///../data/demo.db"
+    db_url = db_url or os.getenv("DATABASE_URL") or get_default_db_url()
     session = create_session_factory(db_url)()
     try:
         entries = session.query(HitlQueue).filter(HitlQueue.status == "PENDING").all()

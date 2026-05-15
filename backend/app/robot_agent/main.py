@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+import logging
 import os
-from pathlib import Path
 
-os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite:///../data/demo.db")
+from dotenv import load_dotenv
+
+logger = logging.getLogger("startup")
+
+load_dotenv()
+
+from .db.models import get_default_db_url
+os.environ["DATABASE_URL"] = get_default_db_url()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from .api import hitl_router, incidents_router, simulation_router
 from .db import init_db
@@ -39,10 +45,21 @@ def health():
 
 @app.on_event("startup")
 def on_startup() -> None:
-    """Ensure all database tables exist on app startup."""
+    """Ensure all database tables exist and seed demo data if empty."""
     init_db()
 
-
-_ui_path = Path(__file__).resolve().parents[3] / "frontend"
-if _ui_path.exists():
-    app.mount("/ui", StaticFiles(directory=str(_ui_path), html=True), name="ui")
+    from sqlalchemy import func, select
+    from .db.models import PerceptionResult, create_session_factory
+    sf = create_session_factory()
+    session = sf()
+    try:
+        count = session.execute(select(func.count()).select_from(PerceptionResult)).scalar()
+        if count == 0:
+            logger.info("Database empty — seeding demo data (45 days)...")
+            from .seed import seed_all
+            counts = seed_all(session, days=30)
+            for table, c in counts.items():
+                logger.info("  %s: %s", table, c)
+            logger.info("Auto-seeding complete")
+    finally:
+        session.close()

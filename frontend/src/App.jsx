@@ -68,6 +68,7 @@ function DashboardHeader({ tick, totalTicks, onStop, onSkip }) {
 function App() {
     const [isRunning, setIsRunning] = React.useState(false);
     const [totalTicks, setTotalTicks] = React.useState(0);
+    const [clientErrors, setClientErrors] = React.useState([]);
     const sseRef = React.useRef(null);
 
     const {
@@ -99,32 +100,118 @@ function App() {
     const incidentsList = Object.values(incidents);
     const activeIncident = activeIncidentId ? incidents[activeIncidentId] : null;
 
-    const handleStart = async () => {
-        try {
-            const response = await fetch(`${API_BASE}/start`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ speed_factor: speed })
-            });
-            if (!response.ok) throw new Error('Failed to start simulation');
-            const data = await response.json();
-            setTotalTicks(data.total_ticks || 0);
-            setIsRunning(true);
+    const pushClientError = React.useCallback((context, err, detail) => {
+        const message = err instanceof Error ? err.message : String(err);
+        const detailText = detail
+            ? (typeof detail === 'string' ? detail : JSON.stringify(detail))
+            : '';
+        const entry = {
+            id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            time: new Date().toLocaleTimeString(),
+            context,
+            message,
+            detail: detailText
+        };
 
-            sseRef.current = createSSEConnection(handleSimEvent);
-            sseRef.current.connect();
+        console.error(`[${context}]`, err, detail);
+
+        setClientErrors(prev => [entry, ...prev].slice(0, 6));
+    }, []);
+
+    const clearClientErrors = React.useCallback(() => {
+        setClientErrors([]);
+    }, []);
+
+    const requestJson = React.useCallback(async (url, options, context) => {
+        try {
+            const response = await fetch(url, options);
+            const text = await response.text();
+            let data = null;
+
+            if (text) {
+                try {
+                    data = JSON.parse(text);
+                } catch (err) {
+                    data = { raw: text };
+                }
+            }
+
+            if (!response.ok) {
+                pushClientError(context, new Error(`HTTP ${response.status}`), text);
+                return { ok: false, status: response.status, data };
+            }
+
+            return { ok: true, status: response.status, data };
         } catch (err) {
-            console.error('Failed to start simulation:', err);
-            alert('Failed to start simulation: ' + err.message);
+            pushClientError(context, err);
+            return { ok: false, status: 0, data: null };
+        }
+    }, [pushClientError]);
+
+    const requestNoBody = React.useCallback(async (url, options, context) => {
+        try {
+            const response = await fetch(url, options);
+            if (!response.ok) {
+                const text = await response.text();
+                pushClientError(context, new Error(`HTTP ${response.status}`), text);
+                return false;
+            }
+            return true;
+        } catch (err) {
+            pushClientError(context, err);
+            return false;
+        }
+    }, [pushClientError]);
+
+    const errorPanel = clientErrors.length > 0 ? (
+        <div className="client-error-panel">
+            <div className="client-error-header">
+                <span>Client errors ({clientErrors.length})</span>
+                <button className="client-error-clear" onClick={clearClientErrors}>Clear</button>
+            </div>
+            <ul className="client-error-list">
+                {clientErrors.map((item) => (
+                    <li key={item.id} className="client-error-item">
+                        <div className="client-error-message">{item.message}</div>
+                        <div className="client-error-meta">{item.time} · {item.context}</div>
+                        {item.detail && <div className="client-error-detail">{item.detail}</div>}
+                    </li>
+                ))}
+            </ul>
+        </div>
+    ) : null;
+
+    const handleStart = async () => {
+        sseRef.current = createSSEConnection(handleSimEvent, null, pushClientError);
+        sseRef.current.connect();
+
+        for (let attempt = 0; attempt < 10; attempt++) {
+            try {
+                const result = await requestJson(`${API_BASE}/start`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ speed_factor: speed })
+                }, 'sim/start');
+                if (!result.ok) {
+                    throw new Error('Server returned ' + result.status);
+                }
+                console.info('[sim/start] OK', result.data);
+                setTotalTicks(result.data?.total_ticks || 0);
+                setIsRunning(true);
+                return;
+            } catch (err) {
+                if (attempt < 9) {
+                    await new Promise(r => setTimeout(r, 1000));
+                } else {
+                    sseRef.current.disconnect();
+                    alert('Cannot start simulation:\n\n' + err.message + '\n\nMake sure backend is running on port 8000:\n  uv run uvicorn app.robot_agent.main:app --reload --port 8000');
+                }
+            }
         }
     };
 
     const handleStop = async () => {
-        try {
-            await fetch(`${API_BASE}/stop`, { method: 'POST' });
-        } catch (err) {
-            console.error('Failed to stop simulation:', err);
-        }
+        await requestNoBody(`${API_BASE}/stop`, { method: 'POST' }, 'sim/stop');
         if (sseRef.current) {
             sseRef.current.disconnect();
             sseRef.current = null;
@@ -155,14 +242,13 @@ function App() {
                     type: event.alert_type,
                     status: 'ALERT'
                 });
-                // Use getState() to get the most recent value and avoid stale closure issues
                 const currentActiveId = useSimulationStore.getState().activeIncidentId;
                 if (!currentActiveId) {
                     selectIncident(event.incident_id);
                 }
                 break;
             case 'incident_queued':
-                updateIncidentStatus(event.incident_id, 'QUEUED', { queuePosition: event.queue_position });
+                updateIncidentStatus(event.incident_id, event.status === 'PROCESSING' ? 'PROCESSING' : 'QUEUED', { queuePosition: event.queue_position });
                 break;
             case 'auto_resolved':
                 updateIncidentStatus(event.incident_id, 'AUTO_RESOLVED');
@@ -202,7 +288,7 @@ function App() {
                 updateIncidentStatus(event.incident_id, 'HITL_WAIT');
                 break;
             case 'agent_done':
-                updateIncidentStatus(event.incident_id, 'COMPLETED');
+                updateIncidentStatus(event.incident_id, event.status === 'failed' ? 'FAILED' : 'COMPLETED');
                 break;
             case 'alert_storm_detected':
                 addAlert({ robotId: 'SYSTEM', message: `⚠️ ALERT STORM: ${event.alert_count} robots triggered!`, type: 'agent' });
@@ -214,29 +300,23 @@ function App() {
     }
 
     const handleResolveHitl = async (queueId, action) => {
-        try {
-            await fetch(`${API_BASE}/hitl/${queueId}/${action}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    queue_id: queueId,
-                    status: action === 'approve' ? 'APPROVED' : 'REJECTED',
-                    resolved_by: 'Supervisor'
-                })
-            });
+        const ok = await requestNoBody(`${API_BASE}/hitl/${queueId}/${action}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                queue_id: queueId,
+                status: action === 'approve' ? 'APPROVED' : 'REJECTED',
+                resolved_by: 'Supervisor'
+            })
+        }, `hitl/${action}`);
+        if (ok) {
             removeHitlItem(activeIncidentId, queueId);
             removeGlobalHitl(queueId);
-        } catch (err) {
-            console.error('Failed to resolve HITL:', err);
         }
     };
 
     const handleSkip = async () => {
-        try {
-            await fetch(`${API_BASE}/skip_to_alert`, { method: 'POST' });
-        } catch (err) {
-            console.error('Failed to skip to alert:', err);
-        }
+        await requestNoBody(`${API_BASE}/skip_to_alert`, { method: 'POST' }, 'sim/skip_to_alert');
     };
 
     const handleSpeedChange = (newSpeed) => {
@@ -246,6 +326,7 @@ function App() {
     if (!isRunning) {
         return (
             <div className="app">
+                {errorPanel}
                 <StartScreen
                     onStart={handleStart}
                     speed={speed}
@@ -257,7 +338,8 @@ function App() {
 
     return (
         <div className="app">
-            <HITLModal onViewIncident={selectIncident} />
+            {errorPanel}
+            <HITLModal onViewIncident={selectIncident} onError={pushClientError} />
             <header className="app-header">
                 <h1>🎨 Painting Robot Diagnostics</h1>
             </header>

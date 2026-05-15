@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 
-SESSION_DIR = Path("data/sessions")
+SESSION_DIR = Path(__file__).resolve().parents[4] / "data" / "sessions"
 
 
 class SessionTraceWriter:

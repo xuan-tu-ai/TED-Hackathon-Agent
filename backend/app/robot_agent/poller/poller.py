@@ -110,7 +110,8 @@ def run_poller(
     robots: list[str] | None = None,
 ) -> None:
     import os
-    db_url = db_url or os.getenv("DATABASE_URL", "sqlite+pysqlite:///../data/demo.db")
+    from ..db.models import get_default_db_url
+    db_url = db_url or os.getenv("DATABASE_URL", get_default_db_url())
     poller = CognitivePoller(
         db_url=db_url,
         robots=robots,

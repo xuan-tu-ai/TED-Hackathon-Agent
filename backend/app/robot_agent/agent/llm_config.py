@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
@@ -42,29 +41,27 @@ def get_llm_config() -> LLMConfig:
     return LLMConfig()
 
 
-def get_lm() -> "dspy.LM" | None:
-    """Create a DSPy LM instance. Returns None if not configured."""
+def get_lm() -> "dspy.LM | None":
     import dspy
     config = get_llm_config()
 
     if not config.is_configured:
-        print(f"[dspy] Warning: LLM {config.provider}/{config.model} not fully configured (no API key)")
+        print(f"[dspy] WARNING: LLM {config.provider}/{config.model} not configured (no API key)")
         return None
 
-    lm_kwargs = {"api_key": config.api_key}
+    lm_kwargs = {
+        "api_key": config.api_key,
+        "cache": False,
+        "max_retries": 0,
+    }
     if config.api_base:
         lm_kwargs["api_base"] = config.api_base
 
-    if config.provider == "openai":
-        return dspy.LM(config.model, **lm_kwargs)
-    elif config.provider == "anthropic":
-        return dspy.LM(f"anthropic/{config.model}", **lm_kwargs)
+    model_str = config.model
+    if config.provider == "anthropic":
+        model_str = f"anthropic/{config.model}"
     elif config.provider == "google":
-        return dspy.LM(f"google/{config.model}", **lm_kwargs)
-    else:
-        raise ValueError(f"Unknown provider: {config.provider}")
+        model_str = f"google/{config.model}"
 
-
-def configure_dspy() -> None:
-    """Legacy function - now does nothing. Use dspy.context(lm=get_lm()) instead."""
-    pass
+    print(f"[dspy] LM config: provider={config.provider} model={model_str} api_base={config.api_base}")
+    return dspy.LM(model_str, **lm_kwargs)

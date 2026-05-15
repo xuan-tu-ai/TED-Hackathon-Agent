@@ -1,18 +1,17 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import chromadb
 from chromadb.config import Settings
 
 
-CHROMA_DIR = Path(os.getenv("CHROMA_PERSIST_DIR", "./data/chroma_db"))
-CHROMA_DIR.mkdir(parents=True, exist_ok=True)
+_CHROMA_DIR = Path(__file__).resolve().parents[4] / "data" / "chroma_db"
+_CHROMA_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def get_client():
-    return chromadb.PersistentClient(path=str(CHROMA_DIR))
+    return chromadb.PersistentClient(path=str(_CHROMA_DIR))
 
 
 def get_collection(name: str = "pm_cards"):

@@ -1,12 +1,20 @@
-from __future__ import annotations
+"""Seed: exactly ONE alert fires, for R-07 paint_pressure spike at day 5.
+
+Design:
+- 47 robots x 30 days x 24h/day = 33,840 rows
+- ALL normal entries are IDENTICAL: shape=0.05 for every sensor
+- Only R-07 at day 5 hour 0: paint_pressure shape=0.88
+- No randomness in normal data -- L2 slope=0 for all non-spike robots
+- L2 escalates only at ticks 120-139 (20h window around day-5 spike)
+- DEBOUNCE_WINDOW_TICKS=24 limits to exactly ONE alert
+"""
 
 from datetime import UTC, datetime, timedelta
+from copy import deepcopy
 
-import numpy as np
 from sqlalchemy.orm import Session
 
 from ..db.models import PerceptionResult
-
 
 SENSORS = [
     "paint_pressure",
@@ -17,7 +25,7 @@ SENSORS = [
     "electro_pneumatic_output",
 ]
 
-SHAPE_THRESHOLDS = {
+THRESHOLDS = {
     "paint_pressure": 0.50,
     "air_motor_rotation_speed": 0.55,
     "high_pressure_voltage": 0.52,
@@ -27,120 +35,72 @@ SHAPE_THRESHOLDS = {
 }
 
 
-def _severity_from_score(score: float) -> str:
-    if score >= 0.85:
-        return "critical"
-    if score >= 0.65:
-        return "high"
-    if score >= 0.40:
-        return "medium"
+def _normal_scores():
+    return {s: {"shape": 0.05, "win": 0.04, "error_steps": []} for s in SENSORS}
+
+
+def _score(per_sensor: dict) -> float:
+    ratios = [float(v["shape"]) / THRESHOLDS[s] for s, v in per_sensor.items()]
+    return float(min(max(ratios), 1.0))
+
+
+def _dominant(per_sensor: dict) -> str:
+    return max(per_sensor.items(), key=lambda x: (len(x[1]["error_steps"]), float(x[1]["shape"])))[0]
+
+
+def _severity(score: float) -> str:
+    if score >= 0.85: return "critical"
+    if score >= 0.65: return "high"
+    if score >= 0.40: return "medium"
     return "low"
 
 
-def _dominant_sensor(per_sensor_scores: dict[str, dict[str, float | list[int]]]) -> str:
-    return max(
-        per_sensor_scores.items(),
-        key=lambda item: (
-            len(item[1]["error_steps"]),
-            float(item[1]["shape"]),
-        ),
-    )[0]
-
-
-def _normalized_score(per_sensor_scores: dict[str, dict[str, float | list[int]]]) -> float:
-    ratios = [
-        float(values["shape"]) / SHAPE_THRESHOLDS[sensor]
-        for sensor, values in per_sensor_scores.items()
-    ]
-    return float(np.clip(max(ratios), 0.0, 1.0))
-
-
-def _gen_error_steps(rng: np.random.Generator, center: int, spread: int, count: int) -> list[int]:
-    raw = rng.normal(loc=center, scale=spread, size=count)
-    clipped = np.clip(raw.astype(int), 0, 239)
-    return sorted(set(int(x) for x in clipped))
-
-
-def seed_perception_results(session: Session, days: int = 45) -> int:
-    """45 days. No warmup — anomalies from day 0. Different robots & sensors than before."""
-    rng = np.random.default_rng(20260501)
-
+def seed_perception_results(session: Session, days: int = 30) -> int:
     robots = [f"R-{idx:02d}" for idx in range(1, 48)]
-    cycles_per_day = 60
     now = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
-    start_day = now - timedelta(days=days)
+    start = now - timedelta(days=days)
 
-    rows: list[PerceptionResult] = []
+    total = 0
+    batch: list[PerceptionResult] = []
 
     for day_idx in range(days):
-        day_start = start_day + timedelta(days=day_idx)
-        progress = day_idx / max(days - 1, 1)
-
-        for cycle_idx in range(cycles_per_day):
-            observed_at = day_start + timedelta(minutes=cycle_idx * 24)
+        for hour in range(24):
+            observed = start + timedelta(days=day_idx, hours=hour)
 
             for robot in robots:
-                per_sensor: dict[str, dict[str, float | list[int]]] = {}
+                if robot == "R-07" and day_idx == 5 and hour == 0:
+                    per_sensor = _normal_scores()
+                    per_sensor["paint_pressure"] = {"shape": 0.88, "win": 0.78, "error_steps": list(range(100, 150))}
+                    score = _score(per_sensor)
+                    dom = "paint_pressure"
+                    sev = "critical"
+                    anom = True
+                else:
+                    per_sensor = _normal_scores()
+                    score = 0.10
+                    dom = _dominant(per_sensor)
+                    sev = "low"
+                    anom = False
 
-                # Default: Normal health
-                for sensor in SENSORS:
-                    per_sensor[sensor] = {
-                        "shape": float(np.clip(rng.normal(0.05, 0.01), 0.01, 0.10)),
-                        "win": float(np.clip(rng.normal(0.04, 0.01), 0.01, 0.09)),
-                        "error_steps": _gen_error_steps(rng, center=120, spread=80, count=1),
-                    }
+                batch.append(PerceptionResult(
+                    event_id=f"evt-{robot}-d{day_idx:02d}-h{hour:02d}",
+                    robot_code=robot,
+                    program_number=100 + (int(robot[-2:]) % 7),
+                    observed_at=observed,
+                    abnormal_type=dom,
+                    abnormal_score=score,
+                    severity_hint=sev,
+                    is_file_anomaly=anom,
+                    per_sensor_scores=per_sensor,
+                ))
+                total += 1
 
-                is_file_anomaly = False
+                if len(batch) >= 5000:
+                    session.add_all(batch)
+                    session.flush()
+                    batch.clear()
 
-                if robot == "R-03":
-                    # L1 Burst — paint_flow_rate, immediate dense anomalies
-                    if rng.random() < 0.65:
-                        shape = float(np.clip(0.60 + rng.normal(0.0, 0.04), 0.45, 0.92))
-                        per_sensor["paint_flow_rate"] = {
-                            "shape": shape,
-                            "win": shape * 0.82,
-                            "error_steps": _gen_error_steps(rng, center=110, spread=25, count=9),
-                        }
-                        is_file_anomaly = True
+    if batch:
+        session.add_all(batch)
 
-                elif robot == "R-04":
-                    # L2 Escalation — high_pressure_current, gradual worsening
-                    shape = float(np.clip(0.30 + progress * 0.55 + rng.normal(0.0, 0.02), 0.10, 0.93))
-                    per_sensor["high_pressure_current"] = {
-                        "shape": shape,
-                        "win": shape * 0.87,
-                        "error_steps": _gen_error_steps(rng, center=115, spread=22, count=int(4 + progress * 12)),
-                    }
-                    is_file_anomaly = True
-
-                elif robot == "R-05":
-                    # L1 Burst — electro_pneumatic_output, intermittent spikes
-                    if rng.random() < 0.55:
-                        shape = float(np.clip(0.58 + rng.normal(0.0, 0.06), 0.40, 0.88))
-                        per_sensor["electro_pneumatic_output"] = {
-                            "shape": shape,
-                            "win": shape * 0.83,
-                            "error_steps": _gen_error_steps(rng, center=95, spread=35, count=7),
-                        }
-                        is_file_anomaly = True
-
-                abnormal_score = _normalized_score(per_sensor)
-                abnormal_type = _dominant_sensor(per_sensor)
-                severity_hint = _severity_from_score(abnormal_score)
-
-                rows.append(
-                    PerceptionResult(
-                        event_id=f"evt-{robot}-d{day_idx:02d}-c{cycle_idx:03d}",
-                        robot_code=robot,
-                        program_number=100 + (int(robot[-2:]) % 7),
-                        observed_at=observed_at,
-                        abnormal_type=abnormal_type,
-                        abnormal_score=abnormal_score,
-                        severity_hint=severity_hint,
-                        is_file_anomaly=is_file_anomaly,
-                        per_sensor_scores=per_sensor,
-                    )
-                )
-
-    session.add_all(rows)
-    return len(rows)
+    return total

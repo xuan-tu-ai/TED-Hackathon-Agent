@@ -6,12 +6,9 @@ import logging
 import os
 from typing import Any
 
-from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-
-load_dotenv()
 
 from ..simulation import (
     EventBroadcaster,
@@ -62,27 +59,38 @@ def start_simulation(req: StartRequest) -> StartResponse:
     global _state, _engine
     state = get_simulation_state()
 
-    if state.get_status() != "idle":
-        raise HTTPException(status_code=409, detail="Simulation already running")
+    state.reset()
+    state.set_status("idle")
 
-    db_url = os.getenv("DATABASE_URL") or "sqlite+pysqlite:///../data/demo.db"
-    _engine = SimulationEngine(db_url=db_url)
-    broadcaster = get_broadcaster()
+    from ..db import init_db
+    from ..db.models import get_default_db_url
+    db_url = os.getenv("DATABASE_URL") or get_default_db_url()
 
-    def on_event_sync(event: dict[str, Any]) -> None:
-        # Called from SimulationRunner background thread — sync, no event loop needed.
-        broadcaster.broadcast(event)
+    logger.info("Starting simulation with DB: %s", db_url)
+    try:
+        init_db()
+        _engine = SimulationEngine(db_url=db_url)
+        broadcaster = get_broadcaster()
 
-    _state = SimulationRunner(
-        engine=_engine,
-        state=state,
-        speed_factor=req.speed_factor,
-        on_event=on_event_sync,
-    )
-    _state.start()
+        def on_event_sync(event: dict[str, Any]) -> None:
+            broadcaster.broadcast(event)
 
-    timeline = _engine.get_timeline()
-    return StartResponse(status="running", total_ticks=len(timeline))
+        _state = SimulationRunner(
+            engine=_engine,
+            state=state,
+            speed_factor=req.speed_factor,
+            on_event=on_event_sync,
+        )
+        _state.start()
+
+        timeline = _engine.get_timeline()
+        logger.info("Simulation started with %d ticks", len(timeline))
+        return StartResponse(status="running", total_ticks=len(timeline))
+    except Exception:
+        logger.exception("Failed to start simulation")
+        _state = None
+        _engine = None
+        raise HTTPException(status_code=500, detail="Failed to start simulation")
 
 
 @router.post("/pause")

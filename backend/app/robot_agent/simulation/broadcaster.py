@@ -48,6 +48,8 @@ class EventBroadcaster:
                 queue.put_nowait(event)
             except asyncio.QueueFull:
                 dead.add(queue)
+            except Exception:
+                dead.add(queue)
 
         if dead:
             with self._lock:

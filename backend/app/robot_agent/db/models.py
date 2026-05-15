@@ -1,15 +1,36 @@
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String, create_engine
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+pysqlite:///../data/demo.db")
+logger_db = logging.getLogger(__name__)
+
+
+def get_default_db_url() -> str:
+    root = Path(__file__).resolve().parents[4]
+    return f"sqlite+pysqlite:///{root / 'data' / 'demo.db'}"
+
+
+DATABASE_URL = get_default_db_url()
+
+_engine_cache: dict[str, Engine] = {}
+
+
+def get_db_engine(db_url: str | None = None) -> Engine:
+    key = db_url or DATABASE_URL
+    if key not in _engine_cache:
+        _engine_cache[key] = create_engine(key)
+        logger_db.debug("Created DB engine: %s", key)
+    return _engine_cache[key]
 
 
 class Base(DeclarativeBase):
@@ -147,16 +168,16 @@ class HitlQueue(Base):
 
 
 def create_db_engine(db_url: str | None = None):
-    return create_engine(db_url or DATABASE_URL)
+    return get_db_engine(db_url)
 
 
 def create_session_factory(db_url: str | None = None):
-    engine = create_db_engine(db_url)
+    engine = get_db_engine(db_url)
     return sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
 
 def init_db(engine=None) -> None:
-    db_engine = engine or create_db_engine()
+    db_engine = engine or get_db_engine()
     Base.metadata.create_all(db_engine)
 
 

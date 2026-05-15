@@ -30,6 +30,74 @@ body {
     min-height: 100vh;
 }
 
+.client-error-panel {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    width: min(420px, 92vw);
+    background-color: rgba(15, 23, 42, 0.95);
+    border: 1px solid var(--accent-red);
+    border-radius: 10px;
+    padding: 0.75rem 0.85rem;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+    z-index: 9999;
+}
+
+.client-error-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--accent-red);
+    margin-bottom: 0.5rem;
+}
+
+.client-error-clear {
+    background: transparent;
+    border: 1px solid var(--accent-red);
+    color: var(--accent-red);
+    padding: 0.15rem 0.5rem;
+    border-radius: 6px;
+    font-size: 0.7rem;
+    cursor: pointer;
+}
+
+.client-error-list {
+    list-style: none;
+    max-height: 240px;
+    overflow-y: auto;
+    padding-right: 0.25rem;
+}
+
+.client-error-item {
+    padding: 0.4rem 0.35rem 0.45rem;
+    border-bottom: 1px dashed rgba(239, 68, 68, 0.4);
+}
+
+.client-error-item:last-child {
+    border-bottom: none;
+}
+
+.client-error-message {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.15rem;
+}
+
+.client-error-meta {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+}
+
+.client-error-detail {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    margin-top: 0.2rem;
+    white-space: pre-wrap;
+}
+
 .app-header {
     background-color: var(--bg-secondary);
     padding: 1rem 2rem;
@@ -1096,6 +1164,9 @@ details[open] .result-summary::before {
     border-radius: 8px;
     width: 100%;
     max-width: 480px;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
     box-shadow: 0 0 40px rgba(245, 158, 11, 0.3);
     animation: hitl-pulse-border 2s ease-in-out infinite;
 }
@@ -1113,6 +1184,7 @@ details[open] .result-summary::before {
     background-color: var(--bg-tertiary);
     border-bottom: 1px solid var(--border-color);
     border-radius: 6px 6px 0 0;
+    flex-shrink: 0;
 }
 
 .hitl-modal-pulse {
@@ -1134,6 +1206,9 @@ details[open] .result-summary::before {
 
 .hitl-modal-body {
     padding: 1rem;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
 }
 
 .hitl-modal-row {
@@ -1180,6 +1255,7 @@ details[open] .result-summary::before {
     gap: 0.5rem;
     padding: 1rem;
     border-top: 1px solid var(--border-color);
+    flex-shrink: 0;
 }
 
 .hitl-modal-nav {
@@ -1187,6 +1263,7 @@ details[open] .result-summary::before {
     justify-content: space-between;
     padding: 0.75rem 1rem;
     border-top: 1px solid var(--border-color);
+    flex-shrink: 0;
 }
 
 .hitl-modal-nav button {

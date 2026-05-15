@@ -1,7 +1,7 @@
 import React from 'react';
 import { useSimulationStore } from '../stores/useSimulationStore.js';
 
-export default function HITLModal({ onViewIncident }) {
+export default function HITLModal({ onViewIncident, onError }) {
     const { globalHitlQueue, selectIncident, removeGlobalHitl } = useSimulationStore();
     const [currentIndex, setCurrentIndex] = React.useState(0);
 
@@ -12,29 +12,41 @@ export default function HITLModal({ onViewIncident }) {
 
     const handleApprove = async (queueId) => {
         try {
-            await fetch(`/api/sim/hitl/${queueId}/approve`, {
+            const response = await fetch(`/api/sim/hitl/${queueId}/approve`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ queue_id: queueId, status: 'APPROVED', resolved_by: 'Supervisor' })
             });
+            if (!response.ok) {
+                const text = await response.text();
+                onError && onError('hitl/approve', new Error(`HTTP ${response.status}`), text);
+                return;
+            }
             removeGlobalHitl(queueId);
             if (currentIndex >= total - 1) setCurrentIndex(Math.max(0, currentIndex - 1));
         } catch (err) {
             console.error('Failed to approve HITL:', err);
+            onError && onError('hitl/approve', err);
         }
     };
 
     const handleReject = async (queueId) => {
         try {
-            await fetch(`/api/sim/hitl/${queueId}/reject`, {
+            const response = await fetch(`/api/sim/hitl/${queueId}/reject`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ queue_id: queueId, status: 'REJECTED', resolved_by: 'Supervisor' })
             });
+            if (!response.ok) {
+                const text = await response.text();
+                onError && onError('hitl/reject', new Error(`HTTP ${response.status}`), text);
+                return;
+            }
             removeGlobalHitl(queueId);
             if (currentIndex >= total - 1) setCurrentIndex(Math.max(0, currentIndex - 1));
         } catch (err) {
             console.error('Failed to reject HITL:', err);
+            onError && onError('hitl/reject', err);
         }
     };
 
