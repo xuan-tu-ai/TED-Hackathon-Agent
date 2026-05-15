@@ -2,7 +2,7 @@ import React from 'react';
 import { useSimulationStore } from '../stores/useSimulationStore.js';
 
 export default function HITLModal({ onViewIncident, onError }) {
-    const { globalHitlQueue, selectIncident, removeGlobalHitl } = useSimulationStore();
+    const { globalHitlQueue, selectIncident, removeGlobalHitl, removeHitlItem } = useSimulationStore();
     const [currentIndex, setCurrentIndex] = React.useState(0);
 
     if (globalHitlQueue.length === 0) return null;
@@ -23,6 +23,7 @@ export default function HITLModal({ onViewIncident, onError }) {
                 return;
             }
             removeGlobalHitl(queueId);
+            removeHitlItem(current.incident_id, queueId);
             if (currentIndex >= total - 1) setCurrentIndex(Math.max(0, currentIndex - 1));
         } catch (err) {
             console.error('Failed to approve HITL:', err);
@@ -43,6 +44,7 @@ export default function HITLModal({ onViewIncident, onError }) {
                 return;
             }
             removeGlobalHitl(queueId);
+            removeHitlItem(current.incident_id, queueId);
             if (currentIndex >= total - 1) setCurrentIndex(Math.max(0, currentIndex - 1));
         } catch (err) {
             console.error('Failed to reject HITL:', err);

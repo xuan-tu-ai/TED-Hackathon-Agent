@@ -72,6 +72,10 @@ T5 + T6 (tests) ←────────────────────�
 ## Estimated Time
 ~4 hours
 
+### Phase 6: Frontend Bug Fixes (Issues from 2026-05-15)
+- [x] T11: In `frontend/src/components/HITLModal.jsx`, import `removeHitlItem` from the Zustand store and call it with `(current.incident_id, queueId)` after successful approve **and** reject — so the duplicate HITLCard in ChatPanel is removed at the same time the modal closes. (Fixes Issue 2: double approve area)
+- [x] T12: In `frontend/src/App.jsx`, restructure `handleStart()` to create and connect the SSE `EventSource` only **after** the `POST /api/sim/start` call succeeds, so the EventSource is never created against an unreachable backend. (Fixes Issue 1: ETIMEDOUT on first click)
+
 ## Status: COMPLETED ✓
 
-All 4 Phase 1-3 fixes implemented, all 21 HITL tests passing. Pre-existing circular import in `anomaly_detection` layers unrelated to Sprint 4.
+T1-T10: backend HITL fixes + tests. T11-T12: frontend bug fixes (double HITL card, SSE ETIMEDOUT) filed 2026-05-15.

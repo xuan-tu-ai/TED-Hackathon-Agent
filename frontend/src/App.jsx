@@ -182,9 +182,6 @@ function App() {
     ) : null;
 
     const handleStart = async () => {
-        sseRef.current = createSSEConnection(handleSimEvent, null, pushClientError);
-        sseRef.current.connect();
-
         for (let attempt = 0; attempt < 10; attempt++) {
             try {
                 const result = await requestJson(`${API_BASE}/start`, {
@@ -196,6 +193,10 @@ function App() {
                     throw new Error('Server returned ' + result.status);
                 }
                 console.info('[sim/start] OK', result.data);
+                // Connect SSE only after backend confirms it is running, so the
+                // EventSource is never created against an unreachable server.
+                sseRef.current = createSSEConnection(handleSimEvent, null, pushClientError);
+                sseRef.current.connect();
                 setTotalTicks(result.data?.total_ticks || 0);
                 setIsRunning(true);
                 return;
@@ -203,7 +204,6 @@ function App() {
                 if (attempt < 9) {
                     await new Promise(r => setTimeout(r, 1000));
                 } else {
-                    sseRef.current.disconnect();
                     alert('Cannot start simulation:\n\n' + err.message + '\n\nMake sure backend is running on port 8000:\n  uv run uvicorn app.robot_agent.main:app --reload --port 8000');
                 }
             }
