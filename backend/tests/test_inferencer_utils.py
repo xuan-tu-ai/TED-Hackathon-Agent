@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from app.anomaly_detection_v6.inference import utils
+from app.anomaly_detection.inference.reconstruction import utils
 
 
 def test_row_to_dict_from_dict():

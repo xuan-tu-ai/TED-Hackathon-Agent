@@ -31,6 +31,25 @@ class SupportedAnomalyDetectionModels(Enum):
     GLC_ANOMALY_MASKFORMER = GLCAnomalyMaskFormer
 
 
+class ReconstructionModels(Enum):
+    """Models using reconstruction-based inference (window pre_result, percentile threshold)."""
+    V1_VAE = V1VAEAnomalyDetectionModel
+    V5_VQ = V5VQAnomalyDetectionModel
+    V5_VQ_FILE = V5VQFileAnomalyDetectionModel
+    V6_VQ = V6VQAnomalyDetectionModel
+    V6_RVQ = V6RVQAnomalyDetectionModel
+
+
+class FlowMatchingModels(Enum):
+    """Models using flow-matching inference (NLL score, MAD threshold, macro-window)."""
+    GLC_FLOW_V7 = GLCFlowV7
+
+
+class MaskFormerModels(Enum):
+    """Models using MaskFormer inference (dual heatmap, percentile threshold, macro-window)."""
+    GLC_ANOMALY_MASKFORMER = GLCAnomalyMaskFormer
+
+
 def create_model(
     model_type: "SupportedAnomalyDetectionModels | str",
     metadata: "Dict[str, Any] | ModelConfig | None" = None,

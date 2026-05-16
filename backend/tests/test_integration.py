@@ -4,7 +4,7 @@ import torch
 from app.anomaly_detection.models.factory import create_model, count_parameters
 from app.anomaly_detection.schemas import GLCFlowConfig
 from app.anomaly_detection.layers.scorer import MADThreshold, AnomalyScorer
-from app.anomaly_detection.training import GLCFlowTrainer
+from app.anomaly_detection.training import FlowMatchingTrainer
 
 
 def create_glc_flow_v7():
@@ -106,22 +106,22 @@ class TestDetectAnomalyPipeline:
 
 
 class TestEndToEndWithTrainer:
-    """End-to-end tests using GLCFlowTrainer with the full pipeline."""
+    """End-to-end tests using FlowMatchingTrainer with the full pipeline."""
 
     def test_trainer_initialization_with_default_config(self):
-        trainer = GLCFlowTrainer()
+        trainer = FlowMatchingTrainer()
         assert trainer.model is not None
         assert trainer.config is not None
         assert trainer.config.d_model == 128
 
     def test_trainer_initialization_with_custom_config(self):
         config = GLCFlowConfig(d_model=64, transformer_layers=2)
-        trainer = GLCFlowTrainer(config)
+        trainer = FlowMatchingTrainer(config)
         assert trainer.model.d_model == 64
         assert trainer.model.transformer_layers == 2
 
     def test_train_stage1_single_epoch(self):
-        trainer = GLCFlowTrainer()
+        trainer = FlowMatchingTrainer()
         train_data = [{"input": torch.randn(4, 6, 240)} for _ in range(4)]
 
         history = trainer.train_stage1(train_data, epochs=1, lr=1e-3)
@@ -130,7 +130,7 @@ class TestEndToEndWithTrainer:
         assert len(history["loss"]) == 1
 
     def test_train_stage2_single_epoch(self):
-        trainer = GLCFlowTrainer()
+        trainer = FlowMatchingTrainer()
         train_data = [{"input": torch.randn(4, 6, 240)} for _ in range(4)]
 
         history = trainer.train_stage2(train_data, epochs=1, lr=1e-3)
@@ -139,7 +139,7 @@ class TestEndToEndWithTrainer:
         assert len(history["loss"]) == 1
 
     def test_full_training_pipeline_runs(self):
-        trainer = GLCFlowTrainer()
+        trainer = FlowMatchingTrainer()
         train_data = [{"input": torch.randn(4, 6, 240)} for _ in range(8)]
 
         h1 = trainer.train_stage1(train_data, epochs=1, lr=1e-3)
@@ -151,7 +151,7 @@ class TestEndToEndWithTrainer:
         assert h2["loss"][0] > 0
 
     def test_evaluate_returns_structured_result(self):
-        trainer = GLCFlowTrainer()
+        trainer = FlowMatchingTrainer()
 
         normal_files = [{"input": torch.randn(1, 6, 240)} for _ in range(8)]
         anomaly_files = [{"input": torch.randn(1, 6, 240)} for _ in range(8)]
@@ -165,7 +165,7 @@ class TestEndToEndWithTrainer:
         assert 0.0 <= result.auprc <= 1.0
 
     def test_evaluate_with_pretrained_threshold(self):
-        trainer = GLCFlowTrainer()
+        trainer = FlowMatchingTrainer()
 
         normal_files = [{"input": torch.randn(1, 6, 240)} for _ in range(8)]
         anomaly_files = [{"input": torch.randn(1, 6, 240)} for _ in range(8)]

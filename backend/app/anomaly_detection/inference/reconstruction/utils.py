@@ -6,7 +6,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from pyspark.sql import functions as F
 
-import app.anomaly_detection_v6.constants as constants
+import app.anomaly_detection.constants as constants
 
 
 def _row_to_dict(row: Any) -> dict:
@@ -23,23 +23,27 @@ def _sanitize_start_time(value: Any) -> str:
     return str(value).replace(":", "_").replace(" ", "_").replace("/", "_")
 
 
-def analyze_trigger_sources(spark, result_table: str, sensors: Sequence[str] | None = None) -> dict:
+def analyze_trigger_sources(
+    spark, result_table: str, sensors: Sequence[str] | None = None
+) -> dict:
     sensors = list(sensors) if sensors is not None else list(constants.SENSORS)
     df = spark.table(result_table).filter(F.col("is_file_anomaly") == True)
     total_anomalies = df.count()
 
     if total_anomalies == 0:
         print(f"No anomalies found in {result_table}")
-        return {
-            "total_anomalies": 0,
-            "file_stats": {},
-            "sensor_stats": {}
-        }
+        return {"total_anomalies": 0, "file_stats": {}, "sensor_stats": {}}
 
     file_stats_row = df.select(
-        F.sum(F.when(F.col("is_shape_triggered") & F.col("is_win_triggered"), 1).otherwise(0)).alias("both"),
-        F.sum(F.when(F.col("is_shape_triggered") & ~F.col("is_win_triggered"), 1).otherwise(0)).alias("shape_only"),
-        F.sum(F.when(~F.col("is_shape_triggered") & F.col("is_win_triggered"), 1).otherwise(0)).alias("win_only"),
+        F.sum(
+            F.when(F.col("is_shape_triggered") & F.col("is_win_triggered"), 1).otherwise(0)
+        ).alias("both"),
+        F.sum(
+            F.when(F.col("is_shape_triggered") & ~F.col("is_win_triggered"), 1).otherwise(0)
+        ).alias("shape_only"),
+        F.sum(
+            F.when(~F.col("is_shape_triggered") & F.col("is_win_triggered"), 1).otherwise(0)
+        ).alias("win_only"),
     ).collect()[0]
 
     file_stats = {
@@ -52,12 +56,17 @@ def analyze_trigger_sources(spark, result_table: str, sensors: Sequence[str] | N
     print(f"TRIGGER SOURCE ANALYSIS: {result_table}")
     print(f"Total anomalous files: {total_anomalies}")
     print("File-level trigger breakdown:")
-    print(f"  Both shape & win: {file_stats['both']} ({file_stats['both'] / total_anomalies * 100:.1f}%)")
-    print(f"  Shape only:       {file_stats['shape_only']} ({file_stats['shape_only'] / total_anomalies * 100:.1f}%)")
-    print(f"  Win only:         {file_stats['win_only']} ({file_stats['win_only'] / total_anomalies * 100:.1f}%)")
+    print(
+        f"  Both shape & win: {file_stats['both']} ({file_stats['both'] / total_anomalies * 100:.1f}%)"
+    )
+    print(
+        f"  Shape only:       {file_stats['shape_only']} ({file_stats['shape_only'] / total_anomalies * 100:.1f}%)"
+    )
+    print(
+        f"  Win only:         {file_stats['win_only']} ({file_stats['win_only'] / total_anomalies * 100:.1f}%)"
+    )
 
     sensor_stats = {}
-
     print("Per-sensor trigger breakdown:")
     for s in sensors:
         sensor_row = df.select(
@@ -84,7 +93,7 @@ def analyze_trigger_sources(spark, result_table: str, sensors: Sequence[str] | N
     return {
         "total_anomalies": total_anomalies,
         "file_stats": file_stats,
-        "sensor_stats": sensor_stats
+        "sensor_stats": sensor_stats,
     }
 
 
@@ -94,7 +103,7 @@ def visualize_feature_level_report_vq(
     gold_table_name: str,
     feature_ids: Sequence[int] | None = None,
     save_dir: str | None = None,
-    k_skip: int = 1
+    k_skip: int = 1,
 ) -> None:
     row = _row_to_dict(result_row)
     feature_ids = list(feature_ids) if feature_ids is not None else list(range(constants.NUM_SENSORS))
@@ -107,9 +116,9 @@ def visualize_feature_level_report_vq(
     file_data = (
         spark.table(gold_table_name)
         .where(
-            (F.col("robot_code") == row["robot_code"]) &
-            (F.col("program_number") == row["program_number"]) &
-            (F.col("start_time") == row["start_time"])
+            (F.col("robot_code") == row["robot_code"])
+            & (F.col("program_number") == row["program_number"])
+            & (F.col("start_time") == row["start_time"])
         )
         .orderBy("window_start_serial")
         .toPandas()
@@ -127,7 +136,7 @@ def visualize_feature_level_report_vq(
 
     raw_all = np.array(
         [([0.0 if x is None else x for x in r]) for r in file_data["raw_values_array"]],
-        dtype=np.float32
+        dtype=np.float32,
     ).reshape(-1, C_all, W)[:, feature_ids, :]
 
     total_steps = int(serials.max() - min_s + W)
@@ -135,7 +144,7 @@ def visualize_feature_level_report_vq(
 
     for i in range(len(file_data)):
         t_off = int(serials[i] - min_s)
-        actual_from_gold[:, t_off:t_off + W] = raw_all[i]
+        actual_from_gold[:, t_off : t_off + W] = raw_all[i]
 
     actual_from_res = []
     recon_from_res = []
@@ -151,11 +160,12 @@ def visualize_feature_level_report_vq(
             print(f"Missing actual_raw_{s} in result_row")
         if len(actual_from_res[idx]) != total_steps:
             print(
-                f"Length mismatch {s}: result={len(actual_from_res[idx])}, "
-                f"gold={total_steps}"
+                f"Length mismatch {s}: result={len(actual_from_res[idx])}, gold={total_steps}"
             )
 
-    fig, axes = plt.subplots(len(sensor_names), 1, figsize=(24, 3 * len(sensor_names)), sharex=True)
+    fig, axes = plt.subplots(
+        len(sensor_names), 1, figsize=(24, 3 * len(sensor_names)), sharex=True
+    )
     if len(sensor_names) == 1:
         axes = [axes]
 
@@ -163,20 +173,28 @@ def visualize_feature_level_report_vq(
 
     for i, s in enumerate(sensor_names):
         ax = axes[i]
-        actual_sig = actual_from_res[i] if len(actual_from_res[i]) == total_steps else actual_from_gold[i]
+        actual_sig = (
+            actual_from_res[i] if len(actual_from_res[i]) == total_steps else actual_from_gold[i]
+        )
         recon_sig = recon_from_res[i]
 
         if recon_sig.size == 0:
             recon_sig = np.full_like(actual_sig, np.nan)
 
-        ax.plot(time_axis[: len(actual_sig)], actual_sig, label="Actual", color="#1f77b4", linewidth=1.5)
+        ax.plot(
+            time_axis[: len(actual_sig)],
+            actual_sig,
+            label="Actual",
+            color="#1f77b4",
+            linewidth=1.5,
+        )
         ax.plot(
             time_axis[: len(recon_sig)],
             recon_sig,
             label="AI Baseline (VQ)",
             color="#ff7f0e",
             linestyle="--",
-            linewidth=1.2
+            linewidth=1.2,
         )
 
         err_idx = [step - min_s for step in err_steps[i] if min_s <= step < min_s + total_steps]
@@ -188,7 +206,7 @@ def visualize_feature_level_report_vq(
                 facecolors="none",
                 edgecolors="red",
                 linewidths=1.2,
-                label="Fault Detected"
+                label="Fault Detected",
             )
 
         ax.set_title(s.upper(), fontweight="bold")

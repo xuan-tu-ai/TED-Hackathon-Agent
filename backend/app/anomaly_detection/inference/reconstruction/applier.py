@@ -10,11 +10,11 @@ from pyspark import Broadcast
 import app.anomaly_detection.constants as constants
 
 
-class ThresholdApplier:
+class ReconThresholdApplier:
     """Apply per-sensor thresholds to pre-result score maps to produce
     err_steps, is_file_anomaly, and trigger_source per sensor.
 
-    Compatible with v1-v6 PreResultInferencer output.
+    Compatible with ReconPreResult output (reconstruction-based models v1-v6).
     Designed for Databricks: returns a Pandas UDF.
     """
 

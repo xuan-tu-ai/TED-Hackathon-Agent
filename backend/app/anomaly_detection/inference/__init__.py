@@ -1,33 +1,38 @@
-from app.anomaly_detection.inference.scorer import PreResultScorer
-from app.anomaly_detection.inference.analyzer import ThresholdAnalyzer
-from app.anomaly_detection.inference.applier import ResultApplier
-
-from app.anomaly_detection.inference.v6 import (
-    PreResultInferencer,
-    ThresholdApplier,
+from app.anomaly_detection.inference.reconstruction import (
+    ReconPreResult,
+    ReconThresholdCreator,
+    ReconThresholdApplier,
     analyze_trigger_sources,
     visualize_feature_level_report_vq,
     _row_to_dict,
     _sanitize_start_time,
 )
-from app.anomaly_detection.inference.v7 import V7PreResultInferencer, V7ThresholdApplier
-from app.anomaly_detection.inference.maskformer import MaskFormerHeatmapScorer
+from app.anomaly_detection.inference.flow_matching import (
+    FlowMatchingPreResult,
+    FlowMatchingThresholdCreator,
+    FlowMatchingApplier,
+)
+from app.anomaly_detection.inference.maskformer import (
+    MaskFormerPreResult,
+    MaskFormerThresholdCreator,
+    MaskFormerApplier,
+)
 
 __all__ = [
-    # Unified (universal, all model paradigms)
-    "PreResultScorer",
-    "ThresholdAnalyzer",
-    "ResultApplier",
-    # V6 legacy (full per-timestep maps, reconstruction-based)
-    "PreResultInferencer",
-    "ThresholdApplier",
+    # Reconstruction methodology (v1-v6: recon error + percentile + window)
+    "ReconPreResult",
+    "ReconThresholdCreator",
+    "ReconThresholdApplier",
     "analyze_trigger_sources",
     "visualize_feature_level_report_vq",
     "_row_to_dict",
     "_sanitize_start_time",
-    # V7 legacy
-    "V7PreResultInferencer",
-    "V7ThresholdApplier",
-    # MaskFormer
-    "MaskFormerHeatmapScorer",
+    # Flow matching methodology (GLCFlowV7: CNF NLL + MAD + macro-window)
+    "FlowMatchingPreResult",
+    "FlowMatchingThresholdCreator",
+    "FlowMatchingApplier",
+    # MaskFormer methodology (GLCAnomalyMaskFormer: dual heatmap + percentile + macro-window)
+    "MaskFormerPreResult",
+    "MaskFormerThresholdCreator",
+    "MaskFormerApplier",
 ]

@@ -5,63 +5,57 @@ import pandas as pd
 
 from pyspark.sql.types import (
     StructType, StructField, StringType, IntegerType,
-    FloatType, ArrayType, BooleanType
+    FloatType, ArrayType,
 )
 from pyspark import Broadcast
 
-import app.anomaly_detection_v6.constants as constants
-from app.anomaly_detection_v6.models import SupportedAnomalyDetectionModels, create_model
+import app.anomaly_detection.constants as constants
+from app.anomaly_detection.models import SupportedAnomalyDetectionModels, create_model
 
-class PreResultInferencer:
+
+class ReconPreResult:
+    """Compute and store raw score maps WITHOUT applying thresholds.
+    Output is used to experiment with different threshold configurations.
+
+    Compatible with reconstruction-based models v1-v6 (VQ/RVQ bottleneck).
+    Designed for Databricks: takes broadcasted metadata + state_dict, returns a Pandas UDF.
     """
-    Inference class that computes and stores raw score maps WITHOUT applying thresholds.
-    Output can be used to experiment with different threshold configurations.
-    """
-    def __init__(self, model_version: SupportedAnomalyDetectionModels,
-                 metadata_broadcast: Broadcast[dict],
-                 state_dict_broadcast: Broadcast[dict],
-                 quantile: float,
-                 k_skip: int = 1):
-        
+
+    def __init__(
+        self,
+        model_version: SupportedAnomalyDetectionModels,
+        metadata_broadcast: Broadcast[dict],
+        state_dict_broadcast: Broadcast[dict],
+        quantile: float,
+        k_skip: int = 1,
+    ):
         self.metadata = metadata_broadcast.value
         self.k_skip = k_skip
         self.quantile = quantile
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self._init_model(model_version, self.metadata, state_dict_broadcast.value, self.device)
         self._init_schema(self.quantile)
 
-    def _init_model(self, model_version: SupportedAnomalyDetectionModels,
-                    metadata: dict,
-                    state_dict: dict,
-                    device: str | torch.device):
+    def _init_model(self, model_version, metadata, state_dict, device):
         self.model = create_model(model_version, metadata)
         self.model.load_state_dict(state_dict)
         self.model.to(device).eval()
 
     def _init_schema(self, quantile: float):
-        pq = f"p{quantile*100:.0f}"
+        pq = f"p{quantile * 100:.0f}"
+        q = quantile * 100
         self.schema = StructType([
             StructField("robot_code", StringType()),
             StructField("program_number", IntegerType()),
             StructField("start_time", StringType()),
-            
-            # Aggregate scores
-            StructField(f'{pq}_shape_score', FloatType()),
-            StructField(f'{pq}_win_score', FloatType()),
-            
-            # Per-sensor scores
+            StructField(f"{pq}_shape_score", FloatType()),
+            StructField(f"{pq}_win_score", FloatType()),
             *[StructField(f"{pq}_shape_{s}", FloatType()) for s in constants.SENSORS],
             *[StructField(f"{pq}_win_{s}", FloatType()) for s in constants.SENSORS],
-            
-            # Raw score maps per sensor (for threshold experimentation)
             *[StructField(f"shape_map_{s}", ArrayType(FloatType())) for s in constants.SENSORS],
             *[StructField(f"win_map_{s}", ArrayType(FloatType())) for s in constants.SENSORS],
-            
-            # Actual and recon signals (for visualization)
             *[StructField(f"actual_raw_{s}", ArrayType(FloatType())) for s in constants.SENSORS],
             *[StructField(f"recon_raw_{s}", ArrayType(FloatType())) for s in constants.SENSORS],
-            
-            # Valid region info (for threshold application)
             StructField("valid_start_idx", IntegerType()),
             StructField("valid_end_idx", IntegerType()),
             StructField("min_serial", IntegerType()),
@@ -78,15 +72,14 @@ class PreResultInferencer:
         def inference_file(pdf: pd.DataFrame) -> pd.DataFrame:
             pdf = pdf.sort_values("window_start_serial")
             C = constants.NUM_SENSORS
-            pq = f"p{quantile*100:.0f}"
+            pq = f"p{quantile * 100:.0f}"
             q = quantile * 100
-            
-            # Handle short files
+
             if len(pdf) < 2 * k_skip:
                 res = {
-                    "robot_code": str(pdf['robot_code'].iloc[0]),
-                    "program_number": int(pdf['program_number'].iloc[0]),
-                    "start_time": str(pdf['window_start_time'].iloc[0]),
+                    "robot_code": str(pdf["robot_code"].iloc[0]),
+                    "program_number": int(pdf["program_number"].iloc[0]),
+                    "start_time": str(pdf["window_start_time"].iloc[0]),
                     f"{pq}_shape_score": 100.0,
                     f"{pq}_win_score": 100.0,
                     "valid_start_idx": 0,
@@ -102,48 +95,54 @@ class PreResultInferencer:
                     res[f"win_map_{s}"] = []
                     res[f"actual_raw_{s}"] = []
                     res[f"recon_raw_{s}"] = []
-                
                 return pd.DataFrame([res])
 
-            # Normal inference
-            serials = pdf['window_start_serial'].values.astype(int)
-            W = metadata['window_size']
-            
-            # Handle multiple variations of metadata config for stats features length
-            K_WIN = metadata.get('k_win') or metadata.get('num_win_stats_features') or metadata.get('num_stats_features')
-            
+            serials = pdf["window_start_serial"].values.astype(int)
+            W = metadata["window_size"]
+            K_WIN = (
+                metadata.get("k_win")
+                or metadata.get("num_win_stats_features")
+                or metadata.get("num_stats_features")
+            )
+
             raw = np.array(
-                [([0.0 if x is None else x for x in r]) for r in pdf['raw_values_array']],
-                dtype=np.float32
+                [([0.0 if x is None else x for x in r]) for r in pdf["raw_values_array"]],
+                dtype=np.float32,
             ).reshape(-1, C, W)
 
-            stats = pdf[constants.STATS_COLS].fillna(0).values.astype(np.float32).reshape(-1, C, K_WIN)
-            pos = (pdf['window_start_serial'].values.astype(float) / constants.NORMAL_WINDOW_SIZE).astype(np.float32).reshape(-1, 1)
-            r_idx = pdf['robot_code'].values.astype(int)
-            p_idx = pdf['program_number'].values.astype(int)
+            stats = (
+                pdf[constants.STATS_COLS]
+                .fillna(0)
+                .values.astype(np.float32)
+                .reshape(-1, C, K_WIN)
+            )
+            pos = (
+                pdf["window_start_serial"].values.astype(float) / constants.NORMAL_WINDOW_SIZE
+            ).astype(np.float32).reshape(-1, 1)
+            r_idx = pdf["robot_code"].values.astype(int)
+            p_idx = pdf["program_number"].values.astype(int)
 
             with torch.no_grad():
                 inputs = {
-                    'raw_window': torch.from_numpy(raw).to(device),
-                    'stats': torch.from_numpy(stats).to(device),
-                    'rel_pos': torch.from_numpy(pos).to(device),
-                    'robot_idx': torch.from_numpy(r_idx).to(device),
-                    'program_idx': torch.from_numpy(p_idx).to(device)
+                    "raw_window": torch.from_numpy(raw).to(device),
+                    "stats": torch.from_numpy(stats).to(device),
+                    "rel_pos": torch.from_numpy(pos).to(device),
+                    "robot_idx": torch.from_numpy(r_idx).to(device),
+                    "program_idx": torch.from_numpy(p_idx).to(device),
                 }
-
                 outputs = model(inputs)
-                x_norm = outputs['x_norm']
-                recon_norm = outputs['recon_norm']
-                pred_win_stats_z = outputs.get('pred_win_stats_z') or outputs.get('pred_stats_z')
-                s_win_zscore = outputs.get('true_win_stats_z') or outputs.get('true_stats_z')
-                recon_raw_t = outputs['recon_raw']
+                x_norm = outputs["x_norm"]
+                recon_norm = outputs["recon_norm"]
+                pred_win_stats_z = outputs.get("pred_win_stats_z") or outputs.get("pred_stats_z")
+                s_win_zscore = outputs.get("true_win_stats_z") or outputs.get("true_stats_z")
+                recon_raw_t = outputs["recon_raw"]
 
                 shape_err_matrix = (recon_norm - x_norm) ** 2
                 win_err_matrix = torch.mean((pred_win_stats_z - s_win_zscore) ** 2, dim=2)
 
             min_s = int(serials[0])
             total_steps = int(serials[-1] - min_s + W)
-            weight_func = windows.gaussian(W, std=W/4)
+            weight_func = windows.gaussian(W, std=W / 4)
 
             shape_accum = np.zeros((C, total_steps))
             win_accum = np.zeros((C, total_steps))
@@ -156,12 +155,15 @@ class PreResultInferencer:
             for i in range(len(pdf)):
                 t_off = serials[i] - min_s
                 for c in range(C):
-                    shape_accum[c, t_off:t_off+W] += shape_err_matrix[i, c].cpu().numpy() * weight_func
-                    win_accum[c, t_off:t_off+W] += win_err_matrix[i, c].cpu().numpy() * weight_func
-                    weight_accum[c, t_off:t_off+W] += weight_func
-                    
-                    actual_final[c, t_off:t_off+W] = raw[i, c]
-                    recon_accum[c, t_off:t_off+W] += recon_raw_np[i, c] * weight_func
+                    shape_accum[c, t_off : t_off + W] += (
+                        shape_err_matrix[i, c].cpu().numpy() * weight_func
+                    )
+                    win_accum[c, t_off : t_off + W] += (
+                        win_err_matrix[i, c].cpu().numpy() * weight_func
+                    )
+                    weight_accum[c, t_off : t_off + W] += weight_func
+                    actual_final[c, t_off : t_off + W] = raw[i, c]
+                    recon_accum[c, t_off : t_off + W] += recon_raw_np[i, c] * weight_func
 
             final_shape_map = shape_accum / (weight_accum + 1e-6)
             final_win_map = win_accum / (weight_accum + 1e-6)
@@ -169,28 +171,28 @@ class PreResultInferencer:
 
             valid_start_idx = int(serials[k_skip] - min_s)
             valid_end_idx = int(serials[-1 - k_skip] - min_s + W)
-            
+
             valid_mask = np.zeros(total_steps, dtype=bool)
             valid_mask[valid_start_idx:valid_end_idx] = True
 
-            # Build result WITHOUT threshold application
             res = {
-                "robot_code": str(pdf['robot_code'].iloc[0]),
-                "program_number": int(pdf['program_number'].iloc[0]),
-                "start_time": str(pdf['window_start_time'].iloc[0]),
+                "robot_code": str(pdf["robot_code"].iloc[0]),
+                "program_number": int(pdf["program_number"].iloc[0]),
+                "start_time": str(pdf["window_start_time"].iloc[0]),
                 f"{pq}_shape_score": float(np.percentile(final_shape_map[:, valid_mask], q)),
                 f"{pq}_win_score": float(np.percentile(final_win_map[:, valid_mask], q)),
                 "valid_start_idx": valid_start_idx,
                 "valid_end_idx": valid_end_idx,
                 "min_serial": min_s,
-                "total_steps": total_steps
+                "total_steps": total_steps,
             }
 
             for c in range(C):
                 s = constants.SENSORS[c]
-                res[f"{pq}_shape_{s}"] = float(np.percentile(final_shape_map[c, valid_mask], q))
+                res[f"{pq}_shape_{s}"] = float(
+                    np.percentile(final_shape_map[c, valid_mask], q)
+                )
                 res[f"{pq}_win_{s}"] = float(np.percentile(final_win_map[c, valid_mask], q))
-                
                 res[f"shape_map_{s}"] = final_shape_map[c].tolist()
                 res[f"win_map_{s}"] = final_win_map[c].tolist()
                 res[f"actual_raw_{s}"] = actual_final[c].tolist()

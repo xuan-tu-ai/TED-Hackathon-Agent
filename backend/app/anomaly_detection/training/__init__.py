@@ -12,15 +12,8 @@ from app.anomaly_detection.training.flow_matching_trainer import (
     Evaluator,
     EvalResult,
 )
-
 from app.anomaly_detection.training.maskformer_trainer import (
     MaskFormerTrainer,
     MaskFormerEvaluator,
     MaskFormerTrainerRunner,
 )
-
-# Backward-compat aliases
-RobotMosaicDataset = StatWindowMosaicDataset
-RobotTorchDataset = RawWindowDataset
-V6Trainer = SingleStageTrainer
-GLCFlowTrainer = FlowMatchingTrainer

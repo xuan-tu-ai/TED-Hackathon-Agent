@@ -5,10 +5,9 @@ from app.anomaly_detection.training import (
     Stage1Trainer,
     Stage2Trainer,
     Evaluator,
-    GLCFlowTrainer,
+    FlowMatchingTrainer,
     EvalResult,
 )
-from app.anomaly_detection.training import _glc_config_to_metadata
 from app.anomaly_detection.models.factory import create_model
 from app.anomaly_detection.layers.scorer import MADThreshold
 
@@ -159,22 +158,22 @@ class TestEvaluator:
         assert result.threshold > 0
 
 
-class TestGLCFlowTrainer:
+class TestFlowMatchingTrainer:
     def test_initialization(self):
-        trainer = GLCFlowTrainer()
+        trainer = FlowMatchingTrainer()
         assert trainer.model is not None
         assert trainer.stage1_trainer is None
         assert trainer.stage2_trainer is None
 
     def test_initialization_with_metadata(self):
         from app.anomaly_detection.models.factory import create_model
-        trainer = GLCFlowTrainer()
+        trainer = FlowMatchingTrainer()
         trainer.model = create_model("glc_flow_v7", metadata={"d_model": 64, "transformer_layers": 2})
         assert trainer.model.d_model == 64
         assert trainer.model.transformer_layers == 2
 
     def test_train_stage1_history_keys(self):
-        trainer = GLCFlowTrainer()
+        trainer = FlowMatchingTrainer()
 
         train_data = [
             {"input": torch.randn(4, 6, 240)}
@@ -187,7 +186,7 @@ class TestGLCFlowTrainer:
         assert len(history["loss"]) == 2
 
     def test_train_stage2_history_keys(self):
-        trainer = GLCFlowTrainer()
+        trainer = FlowMatchingTrainer()
 
         train_data = [
             {"input": torch.randn(4, 6, 240)}
@@ -200,7 +199,7 @@ class TestGLCFlowTrainer:
         assert len(history["loss"]) == 2
 
     def test_evaluate_returns_result(self):
-        trainer = GLCFlowTrainer()
+        trainer = FlowMatchingTrainer()
 
         normal_files = [{"input": torch.randn(1, 6, 240)} for _ in range(6)]
         anomaly_files = [{"input": torch.randn(1, 6, 240)} for _ in range(6)]
@@ -212,7 +211,7 @@ class TestGLCFlowTrainer:
         assert result.num_anomaly == 6
 
     def test_full_two_stage_pipeline(self):
-        trainer = GLCFlowTrainer()
+        trainer = FlowMatchingTrainer()
 
         train_data = [
             {"input": torch.randn(4, 6, 240)}
