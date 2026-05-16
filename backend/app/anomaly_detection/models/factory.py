@@ -8,8 +8,10 @@ from .v5_vq_file import V5VQFileAnomalyDetectionModel
 from .v6_vq import V6VQAnomalyDetectionModel
 from .v6_rvq import V6RVQAnomalyDetectionModel
 from .glc_flow_v7 import GLCFlowV7
+from .glc_anomaly_maskformer import GLCAnomalyMaskFormer
 
 _STR_TO_MODEL_CLS = {
+    "glc_anomaly_maskformer": GLCAnomalyMaskFormer,
     "glc_flow_v7": GLCFlowV7,
     "v6_rvq": V6RVQAnomalyDetectionModel,
     "v6_vq": V6VQAnomalyDetectionModel,
@@ -26,11 +28,12 @@ class SupportedAnomalyDetectionModels(Enum):
     V6_VQ = V6VQAnomalyDetectionModel
     V6_RVQ = V6RVQAnomalyDetectionModel
     GLC_FLOW_V7 = GLCFlowV7
+    GLC_ANOMALY_MASKFORMER = GLCAnomalyMaskFormer
 
 
 def create_model(
     model_type: "SupportedAnomalyDetectionModels | str",
-    config: "Dict[str, Any] | ModelConfig | None" = None,
+    metadata: "Dict[str, Any] | ModelConfig | None" = None,
 ) -> BaseAnomalyDetectionModel:
     if isinstance(model_type, str):
         if model_type not in _STR_TO_MODEL_CLS:
@@ -39,13 +42,13 @@ def create_model(
     else:
         model_cls = model_type.value
 
-    if config is None:
+    if metadata is None:
         return model_cls()
 
-    if not isinstance(config, dict):
-        config = config.to_dict()
+    if not isinstance(metadata, dict):
+        metadata = metadata.to_dict()
 
-    return model_cls.load_from_metadata(config)
+    return model_cls.load_from_metadata(metadata)
 
 
 def count_parameters(model: BaseAnomalyDetectionModel) -> int:

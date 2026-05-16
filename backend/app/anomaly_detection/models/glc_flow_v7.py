@@ -1,9 +1,9 @@
-from dataclasses import dataclass, field, fields
 from typing import ClassVar, Optional
 
 import torch
 import torch.nn as nn
 
+from app.anomaly_detection.schemas import GLCFlowV7Config
 from app.anomaly_detection.layers.revin import GlobalRevIN, PerPatchRevIN, compute_file_stats, compute_patch_stats
 from app.anomaly_detection.layers.patchify import Patchify, FlattenPatches
 from app.anomaly_detection.layers.encoders import PatchEncoderGlobal, PatchEncoderLocal, PositionalEmbedding
@@ -14,44 +14,6 @@ from app.anomaly_detection.criterions.dual_head import DualHeadLoss, GlobalHead,
 from app.anomaly_detection.criterions.orthogonality import OrthogonalityLoss
 from app.anomaly_detection.layers.cnf import CNF
 from app.anomaly_detection.models.base import BaseAnomalyDetectionModel
-
-
-@dataclass
-class GLCFlowV7Config:
-    """Model hyperparameters for GLCFlowV7.
-
-    Only contains init-time hyperparams. Computed fields (d_half, num_patches)
-    are excluded from to_dict() and recomputed on load.
-    """
-    num_sensors: int = 6
-    seq_len: int = 240
-    patch_size: int = 32
-    patch_stride: int = 16
-    d_model: int = 128
-    transformer_layers: int = 4
-    transformer_heads: int = 4
-    ffn_dim: int = 256
-    dropout: float = 0.1
-    time_emb_dim: int = 32
-    cnff_dim: int = 256
-    lambda_orth: float = 0.05
-    lambda_recon: float = 1.0
-
-    # computed — excluded from to_dict / from_dict
-    d_half: int = field(init=False)
-    num_patches: int = field(init=False)
-
-    def __post_init__(self) -> None:
-        self.d_half = self.d_model // 2
-        self.num_patches = (self.seq_len - self.patch_size) // self.patch_stride + 1
-
-    def to_dict(self) -> dict:
-        return {f.name: getattr(self, f.name) for f in fields(self) if f.init}
-
-    @classmethod
-    def from_dict(cls, d: dict) -> "GLCFlowV7Config":
-        valid = {f.name for f in fields(cls) if f.init}
-        return cls(**{k: v for k, v in d.items() if k in valid})
 
 
 class GLCFlowV7(BaseAnomalyDetectionModel, nn.Module):

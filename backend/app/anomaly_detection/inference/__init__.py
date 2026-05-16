@@ -11,6 +11,7 @@ from app.anomaly_detection.inference.v6 import (
     _sanitize_start_time,
 )
 from app.anomaly_detection.inference.v7 import V7PreResultInferencer, V7ThresholdApplier
+from app.anomaly_detection.inference.maskformer import MaskFormerHeatmapScorer
 
 __all__ = [
     # Unified (universal, all model paradigms)
@@ -27,4 +28,6 @@ __all__ = [
     # V7 legacy
     "V7PreResultInferencer",
     "V7ThresholdApplier",
+    # MaskFormer
+    "MaskFormerHeatmapScorer",
 ]

@@ -6,9 +6,11 @@ import torch
 from torch.utils.data import Dataset
 
 try:
-    from streaming import MDSWriter, StreamingDataset
+    from streaming import MDSWriter, StreamingDataset as _StreamingDataset
     HAS_MOSAIC = True
 except ImportError:
+    MDSWriter = None  # type: ignore[assignment]
+    _StreamingDataset = object  # type: ignore[assignment,misc]
     HAS_MOSAIC = False
 
 try:
@@ -62,7 +64,7 @@ class StatWindowDataset(Dataset):
         return item
 
 
-class StatWindowMosaicDataset(StreamingDataset):
+class StatWindowMosaicDataset(_StreamingDataset):
     """Streaming MosaicML dataset for windows with full statistical context.
 
     Outputs: {raw_window, stats, rel_pos, robot_idx, program_idx}

@@ -1,7 +1,12 @@
 from torch.utils.data import DataLoader
 
-import mlflow
-import mlflow.pytorch
+try:
+    import mlflow
+    import mlflow.pytorch
+    HAS_MLFLOW = True
+except ImportError:
+    mlflow = None  # type: ignore[assignment]
+    HAS_MLFLOW = False
 from tqdm.auto import tqdm
 import torch
 import torch.optim as optim

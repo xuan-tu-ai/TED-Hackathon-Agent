@@ -6,9 +6,10 @@ import torch
 from torch.utils.data import Dataset
 
 try:
-    from streaming import StreamingDataset
+    from streaming import StreamingDataset as _StreamingDataset
     HAS_MOSAIC = True
 except ImportError:
+    _StreamingDataset = object  # type: ignore[assignment,misc]
     HAS_MOSAIC = False
 
 
@@ -31,7 +32,7 @@ class RawWindowDataset(Dataset):
         return {"input": torch.from_numpy(self.windows[idx].copy())}
 
 
-class RawWindowMosaicDataset(StreamingDataset):
+class RawWindowMosaicDataset(_StreamingDataset):
     """Streaming MosaicML dataset for raw-only windows.
 
     Reads MDS shards from remote/local dir, outputs {input: Tensor[C, seq_len]}.
