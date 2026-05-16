@@ -449,7 +449,8 @@ class DiagnosticAgent:
                 except Exception as exc:
                     logger.warning("hitl_check param JSON parse failed: %s", exc)
                     params = {"raw": action_input, "parse_error": str(exc)}
-                res = self.hitl_check(action="approve_plan", parameters=params, reasoning=reasoning)
+                hitl_action = params.get("action", action_input) if isinstance(params, dict) else str(action_input)
+                res = self.hitl_check(action=hitl_action, parameters=params, reasoning=reasoning)
                 obs = str(res)
             else:
                 obs = f"Error: Unknown action: {action}"

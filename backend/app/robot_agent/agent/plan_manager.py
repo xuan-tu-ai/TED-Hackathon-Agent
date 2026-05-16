@@ -33,9 +33,9 @@ class PlanManager:
         task_id = 1
         for line in content.splitlines():
             if "- [ ]" in line or "- [x]" in line:
-                match = re.search(r"\*\*(Item \d+:)\*\*\s*(.*?)\.", line)
+                match = re.search(r"\*\*(Item \d+:)\*\*\s*(.+)", line)
                 if match:
-                    name = match.group(2).strip()
+                    name = match.group(2).strip().rstrip(".")
                     tasks.append({
                         "id": task_id,
                         "name": name,
