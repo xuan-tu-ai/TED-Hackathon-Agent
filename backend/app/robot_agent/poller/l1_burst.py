@@ -1,3 +1,15 @@
+"""L1 burst detection — short-term density-based anomaly detection.
+
+L1 (Level 1) detects burst anomalies by measuring the density of anomalous
+``PerceptionResult`` events within configurable time windows (1 h, 6 h, 24 h).
+A burst is declared when the event density per hour exceeds a configurable
+threshold.
+
+Functions:
+    detect_l1_burst: Single-window burst detection.
+    get_l1_summary: Multi-window (1 h / 6 h / 24 h) burst summary.
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta

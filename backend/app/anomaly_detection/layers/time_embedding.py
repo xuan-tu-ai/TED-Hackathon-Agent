@@ -1,3 +1,13 @@
+"""Sinusoidal time embedding for the Continuous Normalising Flow.
+
+Maps a continuous scalar ``t ∈ [0, 1]`` to a ``dim``-dimensional vector using
+sine/cosine functions at exponentially spaced frequencies (same positional
+encoding formula as "Attention Is All You Need", applied to continuous time).
+
+Both a module (:class:`SinusoidalTimeEmbedding`) and a convenience function
+(:func:`get_time_embedding`) are provided.
+"""
+
 import math
 import torch
 import torch.nn as nn

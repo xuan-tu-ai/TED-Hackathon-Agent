@@ -1,3 +1,9 @@
+"""MAD-based global threshold for flow-matching NLL scores.
+
+Computes threshold = median(scores) + multiplier * MAD(scores), robust
+to ~50% contamination. Fits from a torch Tensor or a Spark-collected
+pre-result DataFrame.
+"""
 from typing import Optional
 
 import torch
@@ -16,6 +22,14 @@ class FlowMatchingThresholdCreator:
         self.threshold: Optional[float] = None
 
     def fit(self, normal_scores: torch.Tensor) -> "FlowMatchingThresholdCreator":
+        """Fit MAD-based threshold from normal-file NLL scores.
+
+        Args:
+            normal_scores: Tensor of file-level NLL scores from normal files.
+
+        Returns:
+            Self for chaining.
+        """
         median = normal_scores.median()
         mad = (normal_scores - median).abs().median()
         self.threshold = (median + self.multiplier * mad).item()
@@ -31,10 +45,19 @@ class FlowMatchingThresholdCreator:
         return self.fit(scores)
 
     def to_dict(self) -> dict:
+        """Serialize threshold config to a JSON-compatible dict."""
         return {"threshold": self.threshold, "multiplier": self.multiplier}
 
     @classmethod
     def from_dict(cls, d: dict) -> "FlowMatchingThresholdCreator":
+        """Deserialize threshold config from a dict.
+
+        Args:
+            d: Dict with ``threshold`` and ``multiplier`` keys.
+
+        Returns:
+            Reconstituted instance.
+        """
         obj = cls(multiplier=d.get("multiplier", 3.0))
         obj.threshold = d.get("threshold")
         return obj

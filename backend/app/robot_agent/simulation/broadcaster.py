@@ -1,3 +1,15 @@
+"""Thread-safe SSE (Server-Sent Events) broadcaster for simulation events.
+
+:class:`EventBroadcaster` manages a set of ``asyncio.Queue`` subscribers that
+FastAPI endpoints consume as SSE streams. The :meth:`broadcast` method is
+synchronous and thread-safe — it acquires a ``threading.Lock`` — and is called
+from :class:`SimulationRunner`\'s background thread. The :meth:`subscribe` and
+:meth:`unsubscribe` methods are async and called from FastAPI coroutines.
+
+Dead queues (clients that have disconnected) are detected via ``QueueFull``
+exceptions and pruned after each broadcast cycle.
+"""
+
 from __future__ import annotations
 
 import asyncio

@@ -1,3 +1,32 @@
+"""Orthogonality regularisation between global and local latent subspaces.
+
+Let the pooled representation :math:`z_{\\text{pooled}} \\in \\mathbb{R}^{B
+\\times 2D}` be split into two halves:
+
+*   :math:`Z_g = z_{\\text{pooled}}[:, :D/2]` — **global** subspace (drift /
+    baseline information).
+*   :math:`Z_l = z_{\\text{pooled}}[:, D/2:]` — **local** subspace (spike /
+    transient information).
+
+The orthogonality loss penalises correlation between the two subspaces:
+
+.. math::
+
+    \\mathcal{L}_{\\text{orth}} =
+        \\lambda_{\\text{orth}} \\cdot \\| Z_g^\\top Z_l \\|_F^2
+
+where :math:`\\|\\cdot\\|_F` denotes the Frobenius norm and the Gram matrix
+:math:`Z_g^\\top Z_l \\in \\mathbb{R}^{D/2 \\times D/2}`.
+
+**Why this is needed:** Without orthogonality regularisation, the Transformer
+could allow information to "leak" between the two halves of the pooled vector,
+making disentangled spike-vs-drift detection unreliable.
+
+Taxonomy
+--------
+:class:`OrthogonalityLoss` is a **Stage-1, auxiliary regularisation** loss.
+"""
+
 import torch
 import torch.nn as nn
 

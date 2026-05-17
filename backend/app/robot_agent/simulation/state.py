@@ -1,3 +1,15 @@
+"""Thread-safe simulation state machine and singleton accessor.
+
+:class:`SimulationState` is a dataclass holding the mutable runtime state of
+the simulation loop — status, current simulation time, tick index, accumulated
+alerts, active incident id, speed factor, and human-in-the-loop (HITL) events.
+All read/write methods acquire an internal ``threading.Lock`` to allow safe
+access from the background runner thread and FastAPI request handlers.
+
+The module-level :func:`get_simulation_state` function provides a lazily
+initialized singleton shared across the application.
+"""
+
 from __future__ import annotations
 
 import threading

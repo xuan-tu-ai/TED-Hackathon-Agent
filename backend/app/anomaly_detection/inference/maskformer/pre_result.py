@@ -1,3 +1,10 @@
+"""Anomaly heatmap computation for MaskFormer models.
+
+Processes macro-windowed sensor data through a MaskFormer model to produce
+dual-criterion anomaly heatmaps, accumulates per-timestep scores across
+windows, and returns per-sensor heatmaps + a p{quantile} file-level score.
+Designed for Databricks Spark UDF execution.
+"""
 import torch
 import numpy as np
 import pandas as pd
@@ -46,6 +53,19 @@ class MaskFormerPreResult:
         k_skip: int = 1,
         fast: bool = True,
     ):
+        """Initialise pre-result computation with broadcasted model + metadata.
+
+        Args:
+            model_version: Enum selecting the MaskFormer model architecture.
+            metadata_broadcast: Spark broadcast with model metadata
+                (window_size, patch_size, patch_stride, etc.).
+            state_dict_broadcast: Spark broadcast with model weights.
+            quantile: Score quantile to extract as the file-level summary
+                (default 0.95 → ``p95_score``).
+            k_skip: Number of leading/trailing windows to exclude from the
+                valid region (default 1).
+            fast: If True, use fast approximate heatmap computation.
+        """
         self.metadata = metadata_broadcast.value
         self.k_skip = k_skip
         self.quantile = quantile
@@ -72,6 +92,15 @@ class MaskFormerPreResult:
         ])
 
     def make_inference_fn(self):
+        """Return a Pandas UDF that computes heatmaps for one file.
+
+        The returned function:
+        1. Groups windows by file (via sort on ``window_start_serial``).
+        2. Runs batched forward pass through the MaskFormer model.
+        3. Upsamples patch-level heatmaps via :func:`_heatmap_to_timestep_scores`.
+        4. Accumulates per-sensor timestep scores across windows.
+        5. Returns a single-row PDF with per-sensor heatmaps + p{quantile} score.
+        """
         model = self.model
         device = self.device
         k_skip = self.k_skip

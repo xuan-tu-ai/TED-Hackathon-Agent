@@ -1,4 +1,13 @@
-"""Simplified PM Cards: all relating to R-07 paint_pressure anomaly."""
+"""PM (Preventive Maintenance) Card definitions — prescriptive guidance lookup.
+
+Each :class:`PMCard` links a cause-symptom-action triple to a sensor and robot
+code, providing the diagnostic agent with expert-curated lookup knowledge for
+paint-pressure anomalies on robot R-07 (and one shared-manifold card).
+
+Functions:
+    seed_pm_cards: Insert all cards into the database session.
+"""
+
 from sqlalchemy.orm import Session
 
 from ..db.models import PMCard

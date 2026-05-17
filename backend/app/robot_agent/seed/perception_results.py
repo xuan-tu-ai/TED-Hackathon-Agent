@@ -1,12 +1,16 @@
-"""Seed: exactly ONE alert fires, for R-07 paint_pressure spike at day 5.
+"""Deterministic PerceptionResult seed — single R-07 spike for reproducible testing.
 
-Design:
-- 47 robots x 30 days x 24h/day = 33,840 rows
-- ALL normal entries are IDENTICAL: shape=0.05 for every sensor
-- Only R-07 at day 5 hour 0: paint_pressure shape=0.88
-- No randomness in normal data -- L2 slope=0 for all non-spike robots
-- L2 escalates only at ticks 120-139 (20h window around day-5 spike)
-- DEBOUNCE_WINDOW_TICKS=24 limits to exactly ONE alert
+Design principles:
+
+* 47 robots × *days* × 24 h = predictable row count (default 33 840 for 30 days)
+* All normal entries are identical: ``shape=0.05`` for every sensor
+* Exactly one anomaly: R-07 at day 5 hour 0, ``paint_pressure`` ``shape=0.88``
+* Zero randomness in normal data → L2 slope is exactly 0 for non-spike robots
+* L2 escalates only at ticks 120–139 (20 h window around the day-5 spike)
+* ``DEBOUNCE_WINDOW_TICKS=24`` in the runner limits to exactly one alert firing
+
+Functions:
+    seed_perception_results: Generate and insert perception-result rows.
 """
 
 from datetime import UTC, datetime, timedelta

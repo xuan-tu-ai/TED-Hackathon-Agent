@@ -1,3 +1,21 @@
+"""Public API for the training subpackage.
+
+Exports trainer classes, evaluators, dataset classes, and utility functions
+used across the anomaly detection training pipeline.
+
+Available constructors:
+  - SingleStageTrainer         — generic trainer for single-stage models (V1-V6).
+  - FlowMatchingTrainer        — two-stage trainer for GLC-Flow V7 (encoder + CNF).
+  - Stage1Trainer / Stage2Trainer — internal building blocks for the two stages.
+  - Evaluator / EvalResult     — evaluation harness and result container.
+  - MaskFormerTrainer          — minimax trainer for GLCAnomalyMaskFormer.
+  - MaskFormerEvaluator        — evaluation harness specific to MaskFormer.
+  - MaskFormerTrainerRunner    — top-level orchestrator (parallel to FlowMatchingTrainer).
+  - RawWindowDataset / RawWindowMosaicDataset    — raw-only datasets.
+  - StatWindowDataset / StatWindowMosaicDataset  — stat-context datasets.
+  - write_sdf_to_mds           — Spark-to-MDS serialisation helper.
+"""
+
 from app.anomaly_detection.training.datasets.raw import RawWindowDataset, RawWindowMosaicDataset
 from app.anomaly_detection.training.datasets.stat import (
     StatWindowDataset,

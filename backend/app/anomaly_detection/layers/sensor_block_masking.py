@@ -1,3 +1,11 @@
+"""Sensor-block masking strategy for the MaskFormer V7 training.
+
+Masks entire time columns across ALL sensors simultaneously, preventing
+cross-sensor shortcut learning.  If only one sensor at a time position is
+masked, the model could trivially reconstruct it from the other sensors
+(which are physically correlated — e.g. paint pressure and flow).
+"""
+
 import torch
 import torch.nn as nn
 

@@ -1,3 +1,13 @@
+"""Cognitive Poller — continuous polling loop for L1 / L2 anomaly detection.
+
+:class:`CognitivePoller` iterates over all robots at a configurable interval,
+evaluates L1 burst density (short-term) and L2 slope trends (long-term), and
+invokes a configurable alert handler callback when anomalies are detected.
+
+Designed for real-time monitoring alongside the live data pipeline. The
+module-level :func:`run_poller` function provides a convenient CLI entry point.
+"""
+
 from __future__ import annotations
 
 import logging

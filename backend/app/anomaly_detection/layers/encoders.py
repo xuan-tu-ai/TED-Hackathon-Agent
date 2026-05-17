@@ -1,3 +1,17 @@
+"""Dual-stream patch encoders and positional embeddings (V7 models).
+
+Provides the two independent patch encoder heads for the global and local
+streams:
+
+*   :class:`PatchEncoderGlobal` — projects globally-normalised patches to D/2.
+*   :class:`PatchEncoderLocal` — projects locally-normalised patches to D/2.
+*   :class:`PositionalEmbedding` — learnable position encoding for the
+    concatenated ``[B, 84, D]`` token sequence.
+
+The two encoders have **independent** weights, enabling the global stream to
+capture file-level drift while the local stream captures spike patterns.
+"""
+
 import torch
 import torch.nn as nn
 

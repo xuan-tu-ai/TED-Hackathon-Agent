@@ -1,3 +1,23 @@
+"""Anomaly-Attention (Xu et al., ICLR 2022) for the MaskFormer V7.
+
+Replaces the standard Transformer encoder with a block that computes two
+attention matrices:
+
+*   **Series Association** (A_s) — learned multi-head self-attention.
+*   **Prior Association** (A_p) — a fixed Gaussian kernel with learnable
+    per-head sigma.
+
+The symmetric KL divergence between A_s and A_p per token is the **association
+discrepancy** signal: normal tokens have broad A_s (global context) → high
+discrepancy; anomalous tokens have narrow A_s (local focus) → low discrepancy.
+
+.. note::
+   The minimax training logic (``forward_with_detach_mode``) is the contract
+   between this layer and the :class:`MaskFormerTrainer`.  The trainer
+   switches ``detach`` between ``"prior"`` (minimise phase) and
+   ``"series"`` (maximise phase) each step.
+"""
+
 from typing import Literal
 
 import torch

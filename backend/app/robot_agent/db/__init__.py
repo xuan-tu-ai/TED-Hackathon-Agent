@@ -1,3 +1,9 @@
+"""Database layer package for robot_agent.
+
+Re-exports SQLAlchemy models, session helpers, and initialisation
+utilities from the ``models`` module.
+"""
+
 from __future__ import annotations
 
 from .models import (

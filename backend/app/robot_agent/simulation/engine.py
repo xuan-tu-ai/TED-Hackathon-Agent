@@ -1,3 +1,14 @@
+"""SQL-backed simulation data engine — timeline generation and trigger evaluation.
+
+The :class:`SimulationEngine` queries the database to build a timeline of
+hourly ticks from distinct ``observed_at`` hours, fetches ``PerceptionResult``
+events per tick, and evaluates L1 burst / L2 slope trigger conditions for
+each of the 47 paint-shop robots.
+
+It serves as the data-access layer consumed by :class:`SimulationRunner` and
+is stateless beyond its cached timeline.
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta

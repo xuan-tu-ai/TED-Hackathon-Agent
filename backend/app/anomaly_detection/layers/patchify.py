@@ -1,3 +1,10 @@
+"""Patchify and FlattenPatches — time-series patch extraction utilities.
+
+Splits a continuous multi-sensor time-series window into overlapping
+patch tokens via ``tensor.unfold``, and provides a helper to flatten those
+patches into a form suitable for transformer encoder input.
+"""
+
 import torch
 import torch.nn as nn
 

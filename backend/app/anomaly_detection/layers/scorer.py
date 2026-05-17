@@ -1,3 +1,17 @@
+"""Anomaly scoring, thresholding, and localisation utilities.
+
+Provides the inference-time components for the GLC-Flow V7 model:
+
+*   :class:`MADThreshold` — robust threshold estimation using Median Absolute
+    Deviation (insensitive to up to 50% contamination).
+*   :class:`AnomalyScorer` — wraps a CNF to produce negative log-likelihood
+    scores (higher = more anomalous).
+*   :class:`PatchMasker` — zeroes individual (sensor, patch) regions for
+    perturbation-based localisation.
+*   :class:`PerturbationLoop` — runs 84 forward passes per file to identify
+    the root-cause (sensor, patch) of an anomaly.
+"""
+
 import torch
 import torch.nn as nn
 from typing import Optional

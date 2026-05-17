@@ -1,3 +1,17 @@
+"""Window datasets with full statistical context.
+
+These datasets yield windows of raw sensor values *plus* per-sensor
+statistics, relative position, robot indices, program indices, and
+optionally file-level statistics. Used by stat-context models (V1–V6).
+
+Classes:
+    StatWindowDataset       — In-memory torch Dataset.
+    StatWindowMosaicDataset — Streaming MosaicML variant.
+
+Functions:
+    write_sdf_to_mds        — Serialise a PySpark DataFrame to MDS shards.
+"""
+
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -114,6 +128,23 @@ if HAS_PYSPARK:
         feature_ids_to_select: List[int],
         enable_file_stats: bool = False,
     ):
+        """Convert a PySpark DataFrame of window data into MDS shards.
+
+        Each row is reshaped into sensor×window arrays and written as a
+        sample with keys ``raw_window``, ``stats``, ``rel_pos``,
+        ``robot_idx``, ``program_idx``, and optionally ``file_stats``.
+
+        Args:
+            sdf:                   PySpark DataFrame with columns matching
+                                   ``constants.STATS_COLS``, ``constants.FILE_STATS_COLS``,
+                                   ``window_start_serial``, ``robot_code``, ``program_number``.
+            split_name:            Sub-directory name (e.g. ``"train"``, ``"val"``).
+            mds_remote_dir:        Root directory for MDS output.
+            mds_columns:           Column schema dict for MDSWriter.
+            feature_ids_to_select: Indices of sensor features to keep.
+            enable_file_stats:     Whether to include file-level statistics.
+        """
+
         import app.anomaly_detection.constants as constants
 
         out_path = os.path.join(mds_remote_dir, split_name)

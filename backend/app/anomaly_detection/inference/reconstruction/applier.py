@@ -1,3 +1,9 @@
+"""Threshold applier for reconstruction dual-criterion scores.
+
+Takes a broadcasted per-sensor threshold dict (shape + win per sensor) and
+produces a Pandas UDF that identifies anomalous timesteps and trigger sources.
+Compatible with ReconPreResult output (reconstruction v1–v6 models).
+"""
 import numpy as np
 import pandas as pd
 
@@ -19,11 +25,20 @@ class ReconThresholdApplier:
     """
 
     def __init__(self, threshold_config_br: Broadcast[dict], quantile: float):
+        """Initialise applier with broadcasted per-sensor threshold config.
+
+        Args:
+            threshold_config_br: Spark broadcast containing per-sensor dicts
+                ``{sensor_name: {"shape": float, "win": float}}``.
+            quantile: Score quantile used during pre-result computation
+                (e.g. 0.95 → ``p95_shape_score`` / ``p95_win_score`` columns).
+        """
         self.threshold_config = threshold_config_br.value
         self.quantile = quantile
         self._init_schema(self.quantile)
 
     def _init_schema(self, quantile: float):
+        """Build the output StructType for the Pandas UDF."""
         pq = f"p{quantile * 100:.0f}"
         self.schema = StructType([
             StructField("robot_code", StringType()),
@@ -49,6 +64,12 @@ class ReconThresholdApplier:
         ])
 
     def make_apply_fn(self):
+        """Return a Pandas UDF that applies per-sensor shape/win thresholds.
+
+        The returned function maps a PDF with pre-results to a PDF with
+        ``err_steps_{s}``, ``trigger_source_{s}``, ``is_file_anomaly``,
+        ``is_shape_triggered``, ``is_win_triggered``, and raw signal arrays.
+        """
         thresh_dict = self.threshold_config
         quantile = self.quantile
 

@@ -1,3 +1,15 @@
+"""L2 slope detection — long-term trend-based anomaly escalation.
+
+L2 (Level 2) identifies progressive degradation by performing linear regression
+on daily-average ``abnormal_score`` over windows of 7, 14, and 30 days. A
+positive slope above a configurable threshold (``min_slope``) indicates an
+escalating trend; a negative slope indicates improving conditions.
+
+Functions:
+    detect_l2_slope: Single-window linear-regression slope detection.
+    get_l2_summary: Multi-window (7 d / 14 d / 30 d) trend summary.
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta

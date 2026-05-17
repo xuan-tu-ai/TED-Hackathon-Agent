@@ -1,3 +1,20 @@
+"""Primary diagnostic agent for single-robot anomaly incidents.
+
+Implements the **Planning-First** workflow:
+
+1. **Plan phase** — The agent loads the ``create_plan`` skill and builds a
+   task roadmap tailored to the incident.
+2. **Execute phase** — The agent follows the plan sequentially, using DSPy
+   tools (``load_skill``, ``query_pm_cards``, ``hitl_check``,
+   ``update_task_status``) to gather evidence and reach a diagnosis.
+3. **Completion** — Once all tasks are marked ``completed`` the agent outputs
+   a final summary.
+
+The :class:`DiagnosticAgent` is the central coordinator.  Use
+:func:`create_agent` to instantiate it and :meth:`DiagnosticAgent.run_incident`
+to process a single :class:`DiagnosticIncident`.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -33,6 +50,28 @@ HITL_RULES_MD = Path(__file__).resolve().parents[3] / "agent_knowledge" / "rules
 
 @dataclass
 class DiagnosticIncident:
+    """A single anomaly incident detected for one robot.
+
+    Parameters
+    ----------
+    incident_id : str
+        Unique identifier (e.g. ``"INC-20250501-001"``).
+    robot_code : str
+        Robot identifier (e.g. ``"R-07"``).
+    abnormal_family : str
+        High-level anomaly category (e.g. ``"paint_pressure"``).
+    abnormal_subtype : str
+        Specific anomaly subtype (e.g. ``"pressure_spike"``).
+    sensor : str
+        Sensor that triggered the alert.
+    anomaly_score : float
+        Severity / confidence score of the anomaly.
+    severity_hint : str
+        Human-readable severity label (e.g. ``"critical"``).
+    context : dict
+        Additional incident context from upstream perception.
+    """
+
     incident_id: str
     robot_code: str
     abnormal_family: str
@@ -44,6 +83,22 @@ class DiagnosticIncident:
 
 @dataclass
 class AgentStep:
+    """A single step recorded during an agent session.
+
+    Parameters
+    ----------
+    step_id : str
+        Unique step identifier (e.g. ``"sess-INC-001-step-1"``).
+    action : str
+        Tool call string (e.g. ``"load_skill(create_plan)"``).
+    skill_loaded : str | None
+        Skill name if the action was ``load_skill``.
+    reasoning : str
+        LLM-generated reasoning for this step.
+    timestamp : datetime
+        When the step was recorded.
+    """
+
     step_id: str
     action: str
     skill_loaded: str | None
@@ -51,12 +106,37 @@ class AgentStep:
     timestamp: datetime = field(default_factory=datetime.now)
 
 class AgentStepSignature(dspy.Signature):
-    """You are a Painting Robot Diagnostic Agent. Your job is to analyze incidents and determine the root cause.
-    You MUST follow the 'Planning First' principle:
-    1. Your very first action MUST be load_skill('create_plan').
-    2. Once the plan is created, follow the plan tasks sequentially (Routing -> Diagnosis -> Action).
-    3. Load subsequent skills (like 'routing' or 'diagnose_surge') as specified in your plan.
-    4. Only after ALL plan items are executed, output action='complete'.
+    """DSPy signature for the Paint Robot Diagnostic Agent.
+
+    Guides the LLM through the **Planning-First** workflow. The
+    agent is instructed to create a plan first, then execute tasks
+    sequentially using the available tools.
+
+    Inputs
+    ------
+    system_prompt : str
+        The core ``AGENTS.md`` rules.
+    incident_context : str
+        The current incident description.
+    loaded_skills : str
+        Contents of the skills loaded so far.
+    available_skills : str
+        Catalog of all available skills with metadata.
+    current_plan : str
+        The diagnostic plan as JSON with task statuses.
+    past_steps : str
+        Previous actions and observations.
+
+    Outputs
+    -------
+    reasoning : str
+        Thought process for the next action.
+    action : str
+        Tool to call (one of ``load_skill``, ``query_pm_cards``,
+        ``hitl_check``, ``update_task_status``, ``create_plan``,
+        ``complete``).
+    action_input : str
+        Argument for the chosen tool.
     """
     system_prompt = dspy.InputField(desc="The core AGENTS.md rules.")
     incident_context = dspy.InputField(desc="The current incident context.")
@@ -70,6 +150,25 @@ class AgentStepSignature(dspy.Signature):
     action_input = dspy.OutputField(desc="The argument for the tool. \n- load_skill: 'skill_name'\n- update_task_status: '{\"task_id\": 1, \"status\": \"completed\"}'\n- create_plan: Use only to initialize or radically change the roadmap.\n- complete: 'summary_text'. Use ONLY when ALL plan tasks are 'completed'.")
 
 class DiagnosticAgent:
+    """Orchestrates the Planning-First diagnostic workflow for a robot incident.
+
+    The agent proceeds in two phases:
+
+    - **Plan phase** — Loads ``create_plan`` skill and builds a task roadmap.
+    - **Execute phase** — Executes plan tasks using DSPy tools.
+
+    State transitions: ``idle`` → ``running`` → ``completed`` | ``blocked`` | ``failed``.
+
+    Attributes
+    ----------
+    SYSTEM_PROMPT : str
+        Content of ``AGENTS.md`` used as the system prompt.
+    TIER2_RULES : str
+        Human-in-the-loop escalation rules from ``hitl-rules.md``.
+    AVAILABLE_TOOLS : list[str]
+        Tool names the LLM may invoke.
+    """
+
     SYSTEM_PROMPT: ClassVar[str] = AGENTS_MD.read_text(encoding="utf-8")
     TIER2_RULES: ClassVar[str] = HITL_RULES_MD.read_text(encoding="utf-8")
     AVAILABLE_TOOLS: ClassVar[list[str]] = [
@@ -97,6 +196,11 @@ class DiagnosticAgent:
         self.skill_catalog: str = self._load_skill_catalog()
 
     def _load_skill_catalog(self) -> str:
+        """Build a human-readable catalog of available skills with metadata.
+
+        Reads each ``SKILL.md`` YAML frontmatter (``---...---``) and
+        returns a formatted string for inclusion in the DSPy prompt.
+        """
         catalog = []
         skills_dir = SKILLS_BASE
         if not skills_dir.exists():
@@ -116,6 +220,11 @@ class DiagnosticAgent:
         return "\n\n".join(catalog)
 
     def start_session(self, incident: DiagnosticIncident) -> str:
+        """Initialise a new diagnostic session for the given incident.
+
+        Resets all internal state, the plan, the HITL gate, and
+        prepares a :class:`SessionTraceWriter`. Returns the session ID.
+        """
         self.session_id = f"sess-{incident.incident_id}"
         self.current_incident = incident
         self.steps = []
@@ -133,6 +242,7 @@ class DiagnosticAgent:
         return self.session_id
 
     def step(self, action: str, reasoning: str, skill_loaded: str | None = None) -> AgentStep:
+        """Record an agent step, trace it, and broadcast via the event emitter."""
         step = AgentStep(
             step_id=f"{self.session_id}-step-{len(self.steps) + 1}",
             action=action,
@@ -173,6 +283,7 @@ class DiagnosticAgent:
         return step
 
     def _broadcast_observation(self, step_id: str, observation: str) -> None:
+        """Emit an observation update for a given step via the event bus."""
         self.emitter.emit_observation({
             "type": "agent_step_update",
             "session_id": self.session_id,
@@ -182,10 +293,19 @@ class DiagnosticAgent:
         })
 
     def load_skill(self, skill_name: str) -> str:
+        """Load a diagnostic skill's content by name.
+
+        Delegates to :class:`LoadSkillTool`.
+        """
         content = self.load_skill_tool(skill_name)
         return content
 
     def hitl_check(self, action: str, parameters: dict[str, Any], reasoning: str) -> dict[str, Any]:
+        """Run a human-in-the-loop check via the :class:`HitlGate`.
+
+        Returns the gate result and updates ``self.state`` to
+        ``blocked`` / ``failed`` / ``running`` accordingly.
+        """
         incident_summary = ""
         if self.current_incident:
             incident_summary = (
@@ -216,6 +336,11 @@ class DiagnosticAgent:
         return result
 
     def _parse_llm_output(self, result) -> tuple[str, str, str]:
+        """Extract reasoning, action, and action_input from a DSPy prediction.
+
+        Strips ``<think>...</think>`` tags from reasoning and attempts
+        to parse JSON-wrapped ``action_input`` values.
+        """
         reasoning = getattr(result, 'reasoning', "No reasoning provided.")
         reasoning = re.sub(r"<think>.*?</think>", "", reasoning, flags=re.DOTALL).strip()
 
@@ -244,6 +369,12 @@ class DiagnosticAgent:
         return reasoning, action, action_input
 
     def _run_plan_phase(self, incident_context: str, loaded_skills_content: str, past_steps_list: list[str]) -> tuple[str, str, list[str]]:
+        """Execute the planning sub-loop.
+
+        Runs up to 5 LLM turns forcing the agent to load the
+        ``create_plan`` skill and build a task roadmap. Returns
+        updated loaded-skills content and step history.
+        """
         lm = get_lm()
         predictor = dspy.ChainOfThought(AgentStepSignature)
 
@@ -342,6 +473,13 @@ class DiagnosticAgent:
         return loaded_skills_content, past_steps_str, past_steps_list
 
     def _run_execute_phase(self, incident_context: str, loaded_skills_content: str, past_steps_list: list[str]) -> list[str]:
+        """Execute the diagnosis sub-loop.
+
+        Follows the plan tasks sequentially (Routing → Diagnosis → Action),
+        using DSPy tools for evidence gathering.  Runs up to 20 turns
+        and stops when the agent calls ``complete`` or the state becomes
+        ``blocked`` / ``failed``.
+        """
         lm = get_lm()
         predictor = dspy.ChainOfThought(AgentStepSignature)
         execute_turn_count = 0
@@ -481,9 +619,11 @@ class DiagnosticAgent:
         return past_steps_list
 
     def _infer_task_type(self, name: str) -> str:
+        """Delegate task-type inference to the :class:`PlanManager`."""
         return self.plan._infer_task_type(name)
 
     def _broadcast_plan_created(self) -> None:
+        """Emit a ``plan_created`` event with the current task list."""
         if self.plan.current_plan is not None:
             self.emitter.emit_plan({
                 "type": "plan_created",
@@ -492,10 +632,12 @@ class DiagnosticAgent:
             })
 
     def _parse_plan_from_template(self) -> None:
+        """Parse the default plan template; sets state to ``failed`` on failure."""
         if not self.plan.parse_from_template():
             self.state = "failed"
 
     def _broadcast_plan_task_started(self, task_id: int) -> None:
+        """Emit a ``plan_task_started`` event for the given task."""
         self.emitter.emit_plan_task({
             "type": "plan_task_started",
             "incident_id": self.current_incident.incident_id if self.current_incident else None,
@@ -503,15 +645,38 @@ class DiagnosticAgent:
         })
 
     def update_plan_task(self, task_id: int | str, status: str):
+        """Update the status of a plan task via :class:`PlanManager`."""
         self.plan.update_task(task_id, status)
 
     def _broadcast_plan_task_update(self, task_id: str, status: str):
+        """Emit a plan-task status update event."""
         self.plan._broadcast_plan_task_update(task_id, status)
 
     def _broadcast_plan_task_completed(self, task_id: str):
+        """Emit a plan-task completed event."""
         self.plan._broadcast_plan_task_completed(task_id)
 
     def run_incident(self, incident: DiagnosticIncident) -> dict[str, Any]:
+        """Run the full Planning-First diagnostic pipeline for an incident.
+
+        The pipeline is:
+
+        1. Start a new session.
+        2. **Plan phase** — Load ``create_plan`` skill and build a roadmap.
+        3. **Execute phase** — Follow the plan tasks with DSPy tools.
+        4. Return a result dict with session status and step history.
+
+        Parameters
+        ----------
+        incident : DiagnosticIncident
+            The anomaly incident to diagnose.
+
+        Returns
+        -------
+        dict[str, Any]
+            Keys: ``session_id``, ``incident_id``, ``status``,
+            ``diagnose_skill_used``, ``steps``.
+        """
         self.start_session(incident)
 
         incident_context = (
@@ -570,4 +735,5 @@ class DiagnosticAgent:
         }
 
 def create_agent() -> DiagnosticAgent:
+    """Factory function that returns a new :class:`DiagnosticAgent` instance."""
     return DiagnosticAgent()

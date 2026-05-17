@@ -1,3 +1,11 @@
+"""Lightweight reconstruction decoder for the MaskFormer V7.
+
+Predicts per-patch RevIN-normalised patch values from Transformer output
+tokens.  Kept shallow (Linear → GELU → Linear) to avoid overfitting and to
+keep the decoder's task well-defined — it only needs to invert the patch
+encoder projection, not the full RevIN chain.
+"""
+
 import torch
 import torch.nn as nn
 

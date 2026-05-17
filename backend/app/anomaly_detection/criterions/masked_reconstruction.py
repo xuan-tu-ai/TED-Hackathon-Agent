@@ -1,3 +1,28 @@
+"""Masked-patch MSE reconstruction loss for anomaly-attention training.
+
+Computes the mean squared error exclusively on masked token positions.  The
+model is penalised only for tokens it was asked to reconstruct; unmasked
+(visible) positions are excluded from the gradient:
+
+.. math::
+
+    \\mathcal{L}_{\\text{mask}} =
+        \\frac{\\sum_{b,n} \\mathbb{1}_{\\text{masked}}(b,n) \\cdot
+              \\| \\hat{x}_{b,n} - x_{b,n} \\|^2}
+             {\\bigl(\\sum_{b,n} \\mathbb{1}_{\\text{masked}}(b,n)\\bigr)
+              \\cdot L + \\varepsilon}
+
+where :math:`\\mathbb{1}_{\\text{masked}}` is the boolean mask,
+:math:`\\hat{x}` are the decoder predictions, :math:`x` are the ground-truth
+patches, and :math:`L` is the patch length.
+
+Training paradigm
+-----------------
+This loss is used in **single-stage** (MaskFormer) training where the
+anomaly-attention mechanism jointly handles representation learning and
+anomaly separation via a minimax objective.
+"""
+
 import torch
 import torch.nn as nn
 

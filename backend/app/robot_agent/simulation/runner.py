@@ -1,3 +1,16 @@
+"""Simulation runner — background-thread tick loop with incident dispatch.
+
+:class:`SimulationRunner` drives the replay timeline obtained from
+:class:`SimulationEngine`, evaluates L1/L2 triggers per robot per tick,
+creates :class:`DiagnosticIncident` objects for alerts, performs triage,
+and dispatches incidents to the multi-agent pipeline via a thread-pool
+executor.
+
+Supports pause / resume, warp-to-first-alert, jump-to-tick, debounce
+(deduplication of repeated alerts per robot within a configurable window),
+and alert-storm detection.
+"""
+
 from __future__ import annotations
 
 import logging

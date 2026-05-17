@@ -1,3 +1,10 @@
+"""REST endpoints for human-in-the-loop (HITL) queue management.
+
+Lists pending HITL entries that require human approval or rejection,
+and provides resolution endpoints for both standalone and
+simulation-integrated workflows.
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

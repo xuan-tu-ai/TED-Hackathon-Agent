@@ -1,3 +1,10 @@
+"""ChromaDB persistent client wrapper.
+
+Creates / reuses a local persistent ChromaDB instance stored under
+``<project_root>/data/chroma_db/`` and exposes helpers to get or
+create named collections (primarily ``pm_cards``).
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

@@ -1,3 +1,16 @@
+"""Analysis and visualisation utilities for reconstruction inference results.
+
+Functions
+---------
+analyze_trigger_sources
+    Query a Spark result table for shape/win/both trigger breakdown.
+visualize_feature_level_report_vq
+    Plot actual vs reconstructed signals with overlaid fault steps.
+_row_to_dict
+    Normalise a Spark Row, pd.Series, or dict to a plain Python dict.
+_sanitize_start_time
+    Convert a timestamp string to a filesystem-safe filename fragment.
+"""
 import os
 from typing import Any, Sequence
 
@@ -20,12 +33,26 @@ def _row_to_dict(row: Any) -> dict:
 
 
 def _sanitize_start_time(value: Any) -> str:
+    """Convert a timestamp to a filesystem-safe string by replacing special chars."""
     return str(value).replace(":", "_").replace(" ", "_").replace("/", "_")
 
 
 def analyze_trigger_sources(
     spark, result_table: str, sensors: Sequence[str] | None = None
 ) -> dict:
+    """Analyse trigger-source breakdown from a Spark result table.
+
+    Queries a table produced by :class:`ReconThresholdApplier` and prints
+    per-file and per-sensor counts of shape-only, win-only, and both triggers.
+
+    Args:
+        spark: Active SparkSession.
+        result_table: Name of the Spark table containing applied results.
+        sensors: Subset of sensor names to analyse. Defaults to all sensors.
+
+    Returns:
+        Dict with ``total_anomalies``, ``file_stats``, and ``sensor_stats``.
+    """
     sensors = list(sensors) if sensors is not None else list(constants.SENSORS)
     df = spark.table(result_table).filter(F.col("is_file_anomaly") == True)
     total_anomalies = df.count()
@@ -105,6 +132,19 @@ def visualize_feature_level_report_vq(
     save_dir: str | None = None,
     k_skip: int = 1,
 ) -> None:
+    """Plot actual vs reconstructed signals with detected fault overlays.
+
+    Args:
+        spark: Active SparkSession.
+        result_row: A single result row (Spark Row, pd.Series, or dict)
+            from :class:`ReconThresholdApplier` output.
+        gold_table_name: Source Spark table containing raw window data
+            for the same file.
+        feature_ids: Indices of sensors to plot. Defaults to all sensors.
+        save_dir: If set, save the figure to this directory instead of
+            displaying it. Filename is ``{robot_code}_{program_number}_{start_time}.png``.
+        k_skip: Leading/trailing windows to skip for valid-region check.
+    """
     row = _row_to_dict(result_row)
     feature_ids = list(feature_ids) if feature_ids is not None else list(range(constants.NUM_SENSORS))
     if not feature_ids:

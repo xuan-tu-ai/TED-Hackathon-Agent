@@ -1,3 +1,10 @@
+"""Triage Agent — first-line filtering of incoming incidents.
+
+The Triage Agent evaluates each new incident and classifies it into one
+of three decisions: AUTO_RESOLVE (no action needed), QUEUE_FOR_DIAGNOSTIC
+(send to DiagnosticAgent), or CRITICAL_ESCALATE (immediate escalation).
+"""
+
 from __future__ import annotations
 
 import logging

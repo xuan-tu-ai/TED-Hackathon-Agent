@@ -1,3 +1,25 @@
+"""Dual-head decoder supervision and auxiliary decoder heads for Stage 1.
+
+During **Stage 1** (encoder pre-training) the Transformer is supervised by two
+lightweight MLP heads that decode the latent representation back into
+interpretable statistical summaries:
+
+*   :class:`GlobalHead` — predicts file-level statistics (mean, std, slope,
+    peak, RMS, range) from the ``[CLS]`` token.  This enforces learning of
+    drift / baseline patterns at the whole-file scale.
+*   :class:`LocalHead` — predicts patch-level maximum and minimum per sensor
+    from the patch tokens.  This enforces learning of spike patterns before
+    the max-pooling operation that collapses patches into the global summary.
+
+Without this explicit patch-level supervision, the Transformer could "smooth
+away" transient spikes because the CLS token is a learned summary — max-pooling
+alone would lose patch-level detail.
+
+Taxonomy
+--------
+:class:`DualHeadLoss` is a **Stage-1, encoder-supervision** loss.
+"""
+
 import torch
 import torch.nn as nn
 

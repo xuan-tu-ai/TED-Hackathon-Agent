@@ -1,3 +1,14 @@
+"""SQLAlchemy ORM models for the paint-shop diagnostic system.
+
+Defines the relational schema used by the robot_agent subsystem,
+covering perception results, maintenance history, preventive-maintenance
+(PM) cards, incidents, alerts, diagnostic reports, agent memory entries,
+and the human-in-the-loop (HITL) queue.
+
+Each model maps to a dedicated table recorded in the SQLite demo
+database at ``<project_root>/data/demo.db``.
+"""
+
 from __future__ import annotations
 
 import logging

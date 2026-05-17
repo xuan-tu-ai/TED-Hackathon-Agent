@@ -1,3 +1,10 @@
+"""Shape + window score map computation for reconstruction models.
+
+Processes macro-windowed sensor data through VQ/RVQ reconstruction models,
+computes dual-criterion (shape + window) per-timestep error maps using a
+Gaussian overlap-weighting scheme, and returns per-sensor score maps +
+p{quantile} file-level scores. Designed for Databricks Spark UDF execution.
+"""
 from scipy.signal import windows
 import torch
 import numpy as np
@@ -29,6 +36,18 @@ class ReconPreResult:
         quantile: float,
         k_skip: int = 1,
     ):
+        """Initialise pre-result computation with broadcasted model + metadata.
+
+        Args:
+            model_version: Enum selecting the reconstruction model architecture.
+            metadata_broadcast: Spark broadcast with model metadata
+                (window_size, k_win, normalisation params, etc.).
+            state_dict_broadcast: Spark broadcast with model weights.
+            quantile: Score quantile to extract as the file-level summary
+                (e.g. 0.95 → ``p95_shape_score`` / ``p95_win_score``).
+            k_skip: Number of leading/trailing windows to exclude from the
+                valid region (default 1).
+        """
         self.metadata = metadata_broadcast.value
         self.k_skip = k_skip
         self.quantile = quantile
@@ -63,6 +82,16 @@ class ReconPreResult:
         ])
 
     def make_inference_fn(self):
+        """Return a Pandas UDF that computes shape + win score maps for one file.
+
+        The returned function:
+        1. Groups windows by file (via sort on ``window_start_serial``).
+        2. Runs a single-batch forward pass through the reconstruction model.
+        3. Computes per-timestep shape (recon error) and window (stat z-score)
+           error maps with Gaussian overlap weighting.
+        4. Returns a single-row PDF with per-sensor score maps + p{quantile}
+           file-level shape and win scores.
+        """
         model = self.model
         device = self.device
         k_skip = self.k_skip

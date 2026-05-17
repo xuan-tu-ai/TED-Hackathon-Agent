@@ -1,3 +1,16 @@
+"""Entry-point script for demo database seeding and SQL snapshot export.
+
+:func:`run` creates a fresh SQLite database at ``data/demo.db``, seeds it with
+45 days of ``PerceptionResult`` data plus PM Cards and maintenance events, then
+dumps the full database as an SQL script to ``data/sql/seed_snapshot.sql``.
+
+Can be invoked directly: ``uv run python app/robot_agent/seed/run.py``.
+
+Functions:
+    seed_all: Seed perception results, PM cards, and maintenance events.
+    seed_demo_data: Alias for ``seed_all`` with default 45-day window.
+"""
+
 from __future__ import annotations
 
 import sqlite3

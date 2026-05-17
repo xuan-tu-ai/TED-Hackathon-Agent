@@ -1,3 +1,9 @@
+"""NLL anomaly score computation for flow-matching models.
+
+Processes macro-windowed sensor data through a CNF-based flow-matching model,
+accumulates per-timestep NLL scores across windows, and returns a p{quantile}
+file-level score. Designed for Databricks Spark UDF execution.
+"""
 import torch
 import numpy as np
 import pandas as pd
@@ -29,6 +35,18 @@ class FlowMatchingPreResult:
         quantile: float = 0.95,
         k_skip: int = 1,
     ):
+        """Initialise pre-result computation with broadcasted model + metadata.
+
+        Args:
+            model_version: Enum selecting the flow-matching model architecture.
+            metadata_broadcast: Spark broadcast with model metadata
+                (window_size, seq_len, normalisation params, etc.).
+            state_dict_broadcast: Spark broadcast with model weights.
+            quantile: Score quantile to extract as the file-level summary
+                (default 0.95 → ``p95_score``).
+            k_skip: Number of leading/trailing windows to exclude from the
+                valid region (default 1).
+        """
         self.metadata = metadata_broadcast.value
         self.k_skip = k_skip
         self.quantile = quantile
@@ -53,6 +71,14 @@ class FlowMatchingPreResult:
         ])
 
     def make_inference_fn(self):
+        """Return a Pandas UDF that computes NLL scores for one file.
+
+        The returned function:
+        1. Groups windows by file (via sort on ``window_start_serial``).
+        2. Runs batched forward pass through the CNF model.
+        3. Accumulates per-timestep NLL scores with uniform weighting.
+        4. Returns a single-row PDF with the p{quantile} file-level score.
+        """
         model = self.model
         device = self.device
         k_skip = self.k_skip

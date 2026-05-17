@@ -1,3 +1,11 @@
+"""REST endpoints for incident retrieval and agent execution.
+
+Provides listing of persisted incidents (with robot-code / severity
+filtering), a demo incident trigger that runs the diagnostic agent
+asynchronously, and per-incident trace access exposing the agent's
+reasoning steps.
+"""
+
 from __future__ import annotations
 
 import json

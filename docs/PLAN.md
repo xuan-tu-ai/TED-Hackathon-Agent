@@ -8,7 +8,7 @@
 Current test count: **~180+ tests** across anomaly detection (Sprint 1), agent system (Sprint 2), and codebase unification (Sprint 3).
 
 ## Active Sprints
-- [Sprint 7](docs/sprint-plans/sprint-7.md) — *Planned* — GLC-Anomaly-MaskFormer V7: Masked Predictive + Association Discrepancy dual-criterion anomaly detector
+- [Sprint 8](docs/sprint-plans/sprint-8.md) — *Planned* — Codebase Documentation: Google Style docstrings + module README.md for every sub-package
 
 ## Completed Sprints
 - [Sprint 0](docs/sprint-plans/sprint-0.md) — *Completed* — Project structure, directories, `__init__.py` files
@@ -18,6 +18,7 @@ Current test count: **~180+ tests** across anomaly detection (Sprint 1), agent s
 - [Sprint 4](docs/sprint-plans/sprint-4.md) — *Completed* — HITL auto-accept bug fix, rejection/timeout handling, defense-in-depth, frontend migration (SSE reconnection, Skip-to-Alert, stale closure fix, ChatPanel auto-scroll, CollapsibleStep redesign, PlanTracker improvements)
 - [Sprint 5](docs/sprint-plans/sprint-5.md) — *Completed* — ChatPanel bubble-based UI redesign (Issue 4)
 - [Sprint 6](docs/sprint-plans/sprint-6.md) — *Completed* — Backend concern separation & refactor (Issue 3)
+- [Sprint 7](docs/sprint-plans/sprint-7.md) — *Completed* — GLC-Anomaly-MaskFormer V7: Masked Predictive + Association Discrepancy dual-criterion anomaly detector
 
 ## Milestones
 - [x] **M1:** GLC-Flow V7 Model Implementation (Sprint 1)
@@ -27,9 +28,10 @@ Current test count: **~180+ tests** across anomaly detection (Sprint 1), agent s
 - [x] **M5:** HITL Bug Fix — Rejection & Timeout Handling + Frontend SSE/HITL Fixes (Sprint 4)
 - [x] **M6:** Chat Panel Bubble UI (Sprint 5)
 - [x] **M7:** Backend Concern Separation (Sprint 6)
-- [ ] **M8:** GLC-Anomaly-MaskFormer V7 — Dual-criterion (Masked Reconstruction + Association Discrepancy) detector (Sprint 7)
-- [ ] **M9:** Real OT Data Integration
-- [ ] **M10:** Production Deployment & Hardening
+- [x] **M8:** GLC-Anomaly-MaskFormer V7 — Dual-criterion (Masked Reconstruction + Association Discrepancy) detector (Sprint 7)
+- [ ] **M9:** Codebase Documentation — Google Style docstrings + module READMEs for the entire codebase (Sprint 8)
+- [ ] **M10:** Real OT Data Integration
+- [ ] **M11:** Production Deployment & Hardening
 
 ## Architecture Snapshot
 
@@ -71,7 +73,8 @@ frontend/                         ← React 18 + Vite + Zustand (SSE streaming, 
 | 4 | HITL Bug Fix + Frontend Fixes | ✅ Done | Fix hardcoded `"approve_plan"` bypass; add timeout/rejection handling; defense-in-depth; frontend SSE reconnection, Skip-to-Alert, stale closure fix, CollapsibleStep redesign; fix SSE ETIMEDOUT on first click (T12); fix double HITL approval card (T11) |
 | 5 | ChatPanel Bubble UI | ✅ Done | ThinkingBubble + ToolCallChip + InlineHITLCard components; bubble-based CSS; delete CollapsibleStep + HITLCard |
 | 6 | Backend Refactor + Knowledge Cleanup | ✅ Done | AgentEventEmitter, PlanManager, HitlGate; move HITL endpoints; fix all silent exception handlers (diagnostic_agent, memory); remove silent fallbacks + dead stubs; fix Planning-First contradiction; deduplicate HITL blocks ×5; LoadSkillTool validation; `_SKILL_TEMPLATE.md`; 15 new tests (T10 + T22 + T23) |
-| 7 | GLC-Anomaly-MaskFormer V7 | 📝 Planned | New model (`GLCAnomalyMaskFormer`) implementing Masked Predictive + Association Discrepancy; reuses V7 RevIN/Patchify/encoders + OrthogonalityLoss + MADThreshold; new layers (MaskToken, SensorBlockMasking, AnomalyAttention, ReconstructionDecoder, ContextEmbedding); new criterions (MaskedReconstructionLoss, AssociationDiscrepancyLoss); single-stage minimax trainer; dual-scoring inference (recon × discrepancy heatmap); 5 new test files |
+| 7 | GLC-Anomaly-MaskFormer V7 | ✅ Done | New model (`GLCAnomalyMaskFormer`) implementing Masked Predictive + Association Discrepancy; reuses V7 RevIN/Patchify/encoders + OrthogonalityLoss + MADThreshold; new layers (MaskToken, SensorBlockMasking, AnomalyAttention, ReconstructionDecoder, ContextEmbedding); new criterions (MaskedReconstructionLoss, AssociationDiscrepancyLoss); single-stage minimax trainer; dual-scoring inference (recon × discrepancy heatmap); 5 new test files |
+| 8 | Codebase Documentation | 📝 Planned | Google Style docstrings for every class/function/file across `anomaly_detection/` (48 files), `robot_agent/` (40 files), `agent_knowledge/`; module README.md files (18+) for each sub-package explaining structure, development patterns, and design rationale |
 
 ## Backlog / Future Work
 - **Real OT data integration** — Replace mock simulation with live paint-shop sensor data feed

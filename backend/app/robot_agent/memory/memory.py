@@ -1,3 +1,17 @@
+"""Tiered memory system for the diagnostic agent.
+
+Implements a four-tier memory contract:
+
+- **Tier 0 (Context Compaction):**  Summarises and prunes long sessions
+  when the turn count exceeds ``MAX_TURNS_BEFORE_COMPACTION``.
+- **Tier 1 (Session Memory):**  Logs every agent reasoning turn to a
+  JSONL file keyed by session ID.
+- **Tier 2 (Project Rules):**  Reads persisted Markdown rule files from
+  ``agent_knowledge/rules/``.
+- **Tier 3 (Semantic Memory):**  Queries PM cards indexed in ChromaDB
+  via vector similarity.
+"""
+
 from __future__ import annotations
 
 import json

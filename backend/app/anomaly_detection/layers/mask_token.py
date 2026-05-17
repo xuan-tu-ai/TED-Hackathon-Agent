@@ -1,3 +1,10 @@
+"""Learnable [MASK] token for masked predictive modelling (MaskFormer V7).
+
+Follows the same convention as :class:`CLSToken` in ``transformer.py``:
+a single ``[1, 1, D]`` parameter is broadcast to ``[B, N, D]`` at call time
+and replaces positions where ``mask == True``.
+"""
+
 import torch
 import torch.nn as nn
 

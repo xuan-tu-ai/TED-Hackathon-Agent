@@ -1,3 +1,17 @@
+"""Layer modules — reusable neural network components.
+
+This package provides the building blocks for all anomaly detection models,
+organised into three groups:
+
+1. **Normalisation & Patchification** — ``revin``, ``patchify``, ``preprocessing``
+2. **Encoding & Transformation** — ``encoders``, ``transformer``,
+   ``feature_extraction``, ``backbone``, ``time_embedding``
+3. **Detection Heads** — ``cnf`` (flow matching), ``scorer`` (thresholding),
+   ``anomaly_attention`` (MaskFormer), ``bottleneck`` (VAE/VQ),
+   ``context_embedding``, ``mask_token``, ``sensor_block_masking``,
+   ``reconstruction_decoder``
+"""
+
 from .revin import GlobalRevIN, PerPatchRevIN, RevINStat, compute_file_stats, compute_patch_stats
 from .patchify import Patchify, FlattenPatches
 from .encoders import PatchEncoderGlobal, PatchEncoderLocal, PositionalEmbedding

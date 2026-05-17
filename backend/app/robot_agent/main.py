@@ -1,3 +1,18 @@
+"""FastAPI application factory for the PaintBot Diagnostic Agent API.
+
+Initialises the FastAPI application with CORS middleware, includes all
+route routers (HITL, incidents, simulation), and auto-seeds the database
+with demo data on first startup.
+
+Environment variables
+---------------------
+DATABASE_URL : str
+    SQLAlchemy database URL (defaults to ``sqlite+pysqlite:///data/demo.db``
+    via :func:`.db.models.get_default_db_url`).
+LM_PROVIDER, LM_MODEL, LM_API_KEY : str
+    Configured in :mod:`app.robot_agent.agent.llm_config` for DSPy.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -41,12 +56,18 @@ app.include_router(simulation_router)
 
 @app.get("/api/health")
 def health():
+    """Return a simple health-check response (``{"status": "ok"}``)."""
     return {"status": "ok"}
 
 
 @app.on_event("startup")
 def on_startup() -> None:
-    """Ensure all database tables exist and seed demo data if empty."""
+    """Ensure all database tables exist and seed demo data if empty.
+
+    On first run (when the ``perception_results`` table is empty) the
+    function calls :func:`.seed.seed_all` to populate 30 days of
+    synthetic sensor data across all 47 robots.
+    """
     init_db()
 
     from sqlalchemy import func, select

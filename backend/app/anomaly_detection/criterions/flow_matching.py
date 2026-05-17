@@ -1,3 +1,34 @@
+"""Conditional Flow Matching (CFM) loss for training Continuous Normalising Flows.
+
+Mathematical formulation
+------------------------
+Given a noise sample :math:`z_0 \\sim \\mathcal{N}(0, I)` and a data sample
+:math:`z_1 \\sim p_{\\text{data}}`, the straight-line probability path is:
+
+.. math::
+
+    z_t = (1 - t) \\cdot z_0 + t \\cdot z_1, \\quad t \\in [0, 1].
+
+The CFM objective regresses the predicted vector field against the constant
+target :math:`z_1 - z_0`:
+
+.. math::
+
+    \\mathcal{L}_{\\text{FM}} =
+        \\mathbb{E}_{t \\sim U[0,1],\\, z_0 \\sim \\mathcal{N}(0,I),\\,
+                    z_1 \\sim p_{\\text{data}}}
+        \\bigl[ \\| v_\\theta(z_t, t) - (z_1 - z_0) \\|^2 \\bigr]
+
+Unlike score-matching (diffusion models), the target does **not** depend on a
+score function — it is simply the displacement vector :math:`z_1 - z_0`.
+
+Training paradigm
+-----------------
+This loss is used in **Stage 2** of the GLC-Flow-V7 pipeline: after the
+encoder is frozen, the CNF head is trained to maximise the likelihood of the
+pooled representation via this MSE objective.
+"""
+
 import torch
 import torch.nn as nn
 

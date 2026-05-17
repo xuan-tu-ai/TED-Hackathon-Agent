@@ -1,9 +1,42 @@
+"""Configuration dataclasses for anomaly detection models.
+
+This module holds typed configuration dataclasses used across the
+anomaly detection pipeline, including model hyperparameters
+(GLCFlowV7Config), normalisation metadata (RevINStat), and patch
+statistics (PatchStats).
+"""
+
 from dataclasses import dataclass, field, fields
 
 
 @dataclass
 class GLCFlowV7Config:
-    """Model hyperparameters for GLCFlowV7."""
+    """Model hyperparameters for GLC-Flow V7.
+
+    Attributes:
+        num_sensors: Number of input sensor channels (default 6).
+        seq_len: Length of the macro-window (time-steps) fed to the model.
+        patch_size: Width of each non-overlapping patch that a local encoder
+            operates on.
+        patch_stride: Stride between consecutive patches (controls patch
+            overlap / density).
+        d_model: Transformer backbone hidden dimension.
+        transformer_layers: Number of transformer encoder layers.
+        transformer_heads: Number of attention heads per layer.
+        ffn_dim: Feed-forward network hidden dimension inside each
+            transformer block.
+        dropout: Dropout probability applied throughout the model.
+        time_emb_dim: Dimension of the sinusoidal time embedding fed to the
+            CNF vector field.
+        cnff_dim: Hidden dimension of the CNF vector-field MLP.
+        lambda_orth: Weight for the orthogonality regularisation loss term.
+        lambda_recon: Weight for the reconstruction loss term in dual-head
+            training.
+        d_half: Computed as ``d_model // 2``; used for split encodings
+            (half to global, half to local).
+        num_patches: Number of patches derived from ``seq_len``, ``patch_size``,
+            and ``patch_stride``.
+    """
     num_sensors: int = 6
     seq_len: int = 240
     patch_size: int = 32
@@ -22,14 +55,30 @@ class GLCFlowV7Config:
     num_patches: int = field(init=False)
 
     def __post_init__(self) -> None:
+        """Compute derived fields after initialisation."""
         self.d_half = self.d_model // 2
         self.num_patches = (self.seq_len - self.patch_size) // self.patch_stride + 1
 
     def to_dict(self) -> dict:
+        """Serialize init-only fields to a plain dictionary.
+
+        Returns:
+            dict mapping field name → value for every field that can be
+            passed to the constructor.
+        """
         return {f.name: getattr(self, f.name) for f in fields(self) if f.init}
 
     @classmethod
     def from_dict(cls, d: dict) -> "GLCFlowV7Config":
+        """Create an instance from a dictionary, ignoring unknown keys.
+
+        Args:
+            d: Dictionary that may contain arbitrary keys; only those matching
+                init fields of this dataclass are consumed.
+
+        Returns:
+            New :class:`GLCFlowV7Config` instance.
+        """
         valid = {f.name for f in fields(cls) if f.init}
         return cls(**{k: v for k, v in d.items() if k in valid})
 
@@ -40,7 +89,12 @@ GLCFlowConfig = GLCFlowV7Config
 
 @dataclass
 class RevINStat:
-    """Statistics computed during RevIN normalization, used for inverse transform."""
+    """Statistics computed during RevIN normalisation, used for inverse transform.
+
+    Attributes:
+        mean: Per-channel mean of the input window.
+        std: Per-channel standard deviation of the input window.
+    """
 
     mean: float
     std: float
@@ -48,7 +102,21 @@ class RevINStat:
 
 @dataclass
 class PatchStats:
-    """Auxiliary target for dual-head reconstruction loss."""
+    """Auxiliary target for the dual-head reconstruction loss.
+
+    Stores per-patch statistics computed by :func:`compute_patch_stats`
+    that the local reconstruction head tries to predict.
+
+    Attributes:
+        file_mean: Mean of the file-level sensor data for this patch's file.
+        file_std: Std of the file-level sensor data.
+        file_slope: Linear trend (slope) of the file-level sensor data.
+        file_peak: Peak (maximum absolute value) of the file-level data.
+        file_rms: Root-mean-square of the file-level data.
+        file_range: ``max - min`` of the file-level data.
+        patch_max: Maximum value within this individual patch.
+        patch_min: Minimum value within this individual patch.
+    """
 
     file_mean: float
     file_std: float

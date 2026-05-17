@@ -1,3 +1,17 @@
+"""Reversible Instance Normalisation (RevIN) layers.
+
+Provides two normalisation strategies used by V7 models:
+
+*   :class:`GlobalRevIN` — per-file z-score normalisation over the full
+    sequence length (240 steps).  Catches baseline drift without amplifying
+    small deviations on flat lines.
+*   :class:`PerPatchRevIN` — per-patch min-max normalisation to ``[-1, 1]``.
+    Preserves the amplitude of local spikes relative to the patch's own range.
+
+Helper functions :func:`compute_file_stats` and :func:`compute_patch_stats`
+produce auxiliary targets for the V7 stage-1 training heads.
+"""
+
 import torch
 import torch.nn as nn
 from dataclasses import dataclass

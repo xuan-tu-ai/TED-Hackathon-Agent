@@ -1,3 +1,32 @@
+"""Association discrepancy loss for minimax anomaly-attention training.
+
+Computes the mean symmetric KL divergence between the prior and series
+association matrices, averaged over the batch, layers, and tokens.  This
+module **only** measures the magnitude of the discrepancy; the sign and
+stop-gradient logic are applied by the trainer (see below).
+
+Minimax training protocol
+-------------------------
+The Anomaly-Transformer uses a two-phase minimax loop controlled by the
+trainer (not this module):
+
+*   **Phase A (minimise)** — the trainer applies
+    :math:`-\\lambda_{\\text{assoc}} \\cdot \\mathcal{L}_{\\text{assoc}}`
+    with ``detach_mode="prior"``, so the prior's gradient is detached and only
+    the series branch (Q/K/V) is updated as a **discriminator**.
+*   **Phase B (maximise)** — the trainer applies
+    :math:`+\\lambda_{\\text{assoc}} \\cdot \\mathcal{L}_{\\text{assoc}}`
+    with ``detach_mode="series"``, so only the prior (sigma) receives
+    gradients as a **generator**.
+
+This adversarial game encourages the model to separate normal and anomalous
+patterns in the association space.
+
+Taxonomy
+--------
+:class:`AssociationDiscrepancyLoss` is a **single-stage, minimax** loss.
+"""
+
 import torch
 import torch.nn as nn
 

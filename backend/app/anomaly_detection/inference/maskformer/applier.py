@@ -1,3 +1,9 @@
+"""Threshold applier for MaskFormer dual heatmap scores.
+
+Takes a broadcasted threshold dictionary (global + per-sensor) and produces
+a Pandas UDF that compares per-file p{quantile}_score and per-sensor heatmap
+max against respective thresholds. Compatible with MaskFormerPreResult output.
+"""
 import numpy as np
 import pandas as pd
 
@@ -21,11 +27,20 @@ class MaskFormerApplier:
     """
 
     def __init__(self, threshold_config_br: Broadcast[dict], quantile: float):
+        """Initialise applier with broadcasted threshold config.
+
+        Args:
+            threshold_config_br: Spark broadcast containing
+                ``{"global_threshold": float, "sensors": {"name": float}}``.
+            quantile: Score quantile used during pre-result computation
+                (e.g. 0.95 → ``p95_score`` column).
+        """
         self.threshold_config = threshold_config_br.value
         self.quantile = quantile
         self._init_schema(self.quantile)
 
     def _init_schema(self, quantile: float):
+        """Build the output StructType for the Pandas UDF."""
         pq = f"p{quantile * 100:.0f}"
         self.schema = StructType([
             StructField("robot_code", StringType()),
@@ -44,6 +59,12 @@ class MaskFormerApplier:
         ])
 
     def make_apply_fn(self):
+        """Return a Pandas UDF that applies per-sensor heatmap thresholds.
+
+        The returned function maps a PDF with pre-results to a PDF with
+        ``is_file_anomaly``, per-sensor ``is_anomaly_{s}`` verdicts, and
+        per-sensor ``heatmap_{s}`` arrays.
+        """
         thresh_dict = self.threshold_config
         quantile = self.quantile
 

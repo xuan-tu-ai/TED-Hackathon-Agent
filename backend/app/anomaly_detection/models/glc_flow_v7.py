@@ -1,65 +1,62 @@
+"""GLC-Flow V7 — Global-Local Contextual Flow Matching Anomaly Detector.
+
+The flagship model of the anomaly detection subsystem.  Uses a dual-stream
+encoder (global and per-patch RevIN + independent patch encoders) to extract
+features from raw sensor data, a Transformer backbone with CLS token and dual
+pooling, and a Continuous Normalising Flow (CNF) head to estimate the
+log-likelihood of each sample under a learned probability path.
+
+Training is two-stage:
+  Stage 1 — Pre-train the encoder/transformer via global + local head
+             supervision (file-level and patch-level statistics).
+  Stage 2 — Train the CNF on the pooled representation to maximise
+             log-likelihood of normal samples.
+"""
+
 from typing import ClassVar, Optional
 
 import torch
 import torch.nn as nn
 
 from app.anomaly_detection.schemas import GLCFlowV7Config
-from app.anomaly_detection.layers.revin import GlobalRevIN, PerPatchRevIN, compute_file_stats, compute_patch_stats
+from app.anomaly_detection.layers.revin import (
+    GlobalRevIN, PerPatchRevIN,
+)
 from app.anomaly_detection.layers.patchify import Patchify, FlattenPatches
-from app.anomaly_detection.layers.encoders import PatchEncoderGlobal, PatchEncoderLocal, PositionalEmbedding
-from app.anomaly_detection.layers.transformer import CLSToken, TransformerEncoder, DualPooling
+from app.anomaly_detection.layers.encoders import (
+    PatchEncoderGlobal, PatchEncoderLocal, PositionalEmbedding,
+)
+from app.anomaly_detection.layers.transformer import (
+    CLSToken, TransformerEncoder, DualPooling,
+)
 from app.anomaly_detection.layers.time_embedding import SinusoidalTimeEmbedding
-from app.anomaly_detection.criterions.flow_matching import FlowMatchingLoss
-from app.anomaly_detection.criterions.dual_head import DualHeadLoss, GlobalHead, LocalHead
-from app.anomaly_detection.criterions.orthogonality import OrthogonalityLoss
 from app.anomaly_detection.layers.cnf import CNF
+from app.anomaly_detection.criterions.dual_head import GlobalHead, LocalHead
+from app.anomaly_detection.criterions.orthogonality import OrthogonalityLoss
 from app.anomaly_detection.models.base import BaseAnomalyDetectionModel
 
 
 class GLCFlowV7(BaseAnomalyDetectionModel, nn.Module):
-    """GLC-Flow V7 — Global-Local Contextual Flow Matching Anomaly Detector.
+    """Global-Local Contextual Flow Matching anomaly detector.
 
-    Matches v1-v6 pattern: all hyperparams come from metadata dict,
-    loaded via load_from_metadata(). Forward input is a dict with 'input' key.
+    Architecture (macro paradigm — 240-step windows):
+        Input [B, 6, 240]
+            ├── Global stream: GlobalRevIN → Patchify → Flatten → PatchEncoderGlobal  → [B, 84, D/2]
+            └── Local stream:  PerPatchRevIN → Patchify → Flatten → PatchEncoderLocal  → [B, 84, D/2]
+                                                          └── Concat → [B, 84, D]
+                                                                + PositionalEmbedding
+                                                                + CLSToken
+                                                                → TransformerEncoder
+                                                                → DualPooling
+                                                                → z_pooled [B, 2D]
+                                                                     │
+                                                          ┌───────────┴───────────┐
+                                                     [Stage 1: heads]       [Stage 2: CNF]
+                                                     GlobalHead(z_cls)      CNF(z_pooled) → LL
+                                                     LocalHead(z_patches)
 
-    Pipeline:
-        Input: [B, num_sensors, seq_len] e.g. [B, 6, 240]
-            │
-            ├──────────────────────────────────────────┐
-            ▼                                          ▼
-        GlobalRevIN                              PerPatchRevIN
-        (per-file μ/σ)                           (per-patch μ/σ)
-            │                                          │
-            ▼                                          ▼
-        Patchify + FlattenPatches                Patchify + FlattenPatches
-        → [B, 84, 32]                            → [B, 84, 32]
-            │                                          │
-            ▼                                          ▼
-        PatchEncoderGlobal                       PatchEncoderLocal
-        → [B, 84, D/2]                           → [B, 84, D/2]
-            │                                          │
-            └──────────────┬──────────────────────────┘
-                          ▼
-             ┌─────────────────────────────┐
-             │  Concat → [B, 84, D]         │
-             │  + PositionalEmbedding        │
-             │  + CLS token [B, 1, D]       │
-             │  → TransformerEncoder         │
-             │  → DualPooling               │
-             └─────────────────────────────┘
-                          │
-                          ▼
-             ┌─────────────────────────────┐
-             │  z_pooled [B, 2D]           │
-             │  z_cls [B, D] (global)      │
-             │  z_max_local [B, D] (spike)  │
-             └─────────────────────────────┘
-                          │
-             ┌────────────┴────────────┐
-             ▼                         ▼
-    [STAGE 1: Encoder training]   [STAGE 2: CNF training]
-    GlobalHead(z_cls) → file_stats  CNF(z_pooled) → log-likelihood
-    LocalHead(z_patches) → patch_stats
+    Anomaly score is the **negative log-likelihood** under the CNF — lower
+    likelihood (higher NLL) indicates an anomalous file.
     """
 
     PARADIGM: ClassVar[str] = "macro"
@@ -82,6 +79,24 @@ class GLCFlowV7(BaseAnomalyDetectionModel, nn.Module):
         lambda_recon: float = 1.0,
         num_patches: int | None = None,
     ) -> None:
+        """Initialise the GLC-Flow V7 model.
+
+        Args:
+            num_sensors: Number of sensor channels (default 6).
+            seq_len: Number of time steps per input file (default 240).
+            patch_size: Width of each patch in time steps (default 32).
+            patch_stride: Stride between consecutive patches (default 16).
+            d_model: Hidden dimension of the transformer and CNF.
+            transformer_layers: Number of transformer encoder layers (default 4).
+            transformer_heads: Number of attention heads per layer (default 4).
+            ffn_dim: Hidden dimension of the transformer FFN (default 256).
+            dropout: Dropout probability throughout (default 0.1).
+            time_emb_dim: Dimension of the sinusoidal time embedding for CNF.
+            cnff_dim: Hidden dimension of the CNF flow network.
+            lambda_orth: Weight coefficient for orthogonality regularisation.
+            lambda_recon: Weight coefficient for reconstruction loss.
+            num_patches: Override for computed patch count.  Auto-computed if None.
+        """
         BaseAnomalyDetectionModel.__init__(self)
         nn.Module.__init__(self)
 
@@ -105,6 +120,7 @@ class GLCFlowV7(BaseAnomalyDetectionModel, nn.Module):
         self.lambda_orth = lambda_orth
         self.lambda_recon = lambda_recon
 
+        # Normalisation
         self.global_revin = GlobalRevIN(num_sensors=num_sensors)
         self.local_revin = PerPatchRevIN(
             num_sensors=num_sensors,
@@ -112,9 +128,11 @@ class GLCFlowV7(BaseAnomalyDetectionModel, nn.Module):
             patch_size=patch_size,
         )
 
+        # Patchification
         self.patchify = Patchify(patch_size=patch_size, patch_stride=patch_stride)
         self.flatten = FlattenPatches(patch_size=patch_size)
 
+        # Dual-stream encoders (independent weights, each producing D/2)
         self.encoder_global = PatchEncoderGlobal(patch_size=patch_size, d_half=d_half)
         self.encoder_local = PatchEncoderLocal(patch_size=patch_size, d_half=d_half)
         self.pos_embedding = PositionalEmbedding(
@@ -122,6 +140,7 @@ class GLCFlowV7(BaseAnomalyDetectionModel, nn.Module):
             d_model=d_model,
         )
 
+        # Transformer
         self.cls_token = CLSToken(d_model=d_model)
         self.transformer = TransformerEncoder(
             num_layers=transformer_layers,
@@ -132,6 +151,7 @@ class GLCFlowV7(BaseAnomalyDetectionModel, nn.Module):
         )
         self.pooling = DualPooling(d_model=d_model)
 
+        # Stage-1 heads
         self.global_head = GlobalHead(d_model=d_model, n_sensors=num_sensors)
         self.local_head = LocalHead(
             d_model=d_model,
@@ -139,6 +159,7 @@ class GLCFlowV7(BaseAnomalyDetectionModel, nn.Module):
             n_patches=num_patches,
         )
 
+        # Stage-2: Continuous Normalising Flow
         self.cnf = CNF(
             d_model=d_model * 2,
             time_emb_dim=time_emb_dim,
@@ -158,6 +179,21 @@ class GLCFlowV7(BaseAnomalyDetectionModel, nn.Module):
         return self._forward_impl(raw)
 
     def _forward_impl(self, raw: torch.Tensor) -> dict:
+        """Core forward pipeline.
+
+        Args:
+            raw: Sensor data ``[B, num_sensors, seq_len]``.
+
+        Returns:
+            dict with keys:
+                - **z_pooled**: Dual-pooled representation ``[B, 2D]`` (input to CNF).
+                - **z_cls**: CLS token output ``[B, D]`` (input to global head).
+                - **z_patches**: Patch tokens ``[B, N, D]`` (input to local head).
+                - **z_max_local**: Max-pooled patch tokens ``[B, D]``.
+                - **file_stats_pred**: Global head prediction ``[B, num_sensors]``.
+                - **patch_stats_pred**: Local head prediction ``[B, N, 1]``.
+                - **transformer_output**: Raw transformer output ``[B, N+1, D]``.
+        """
         x_g = self._apply_global_revin(raw)
         tokens_g = self.flatten(self.patchify(x_g))
 
@@ -195,10 +231,26 @@ class GLCFlowV7(BaseAnomalyDetectionModel, nn.Module):
         }
 
     def _apply_global_revin(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply global RevIN (per-file statistics) to raw input.
+
+        Args:
+            x: ``[B, C, T]`` raw sensor data.
+
+        Returns:
+            Normalised tensor of the same shape.
+        """
         x_norm, _ = self.global_revin(x)
         return x_norm
 
     def _apply_local_revin(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply per-patch RevIN to localised patch windows.
+
+        Args:
+            x: ``[B, C, T]`` raw sensor data.
+
+        Returns:
+            Per-patch normalised patches ``[B, C, P, L]``.
+        """
         patches = self.patchify(x)
         x_norm, _ = self.local_revin(patches)
         return x_norm
@@ -210,6 +262,19 @@ class GLCFlowV7(BaseAnomalyDetectionModel, nn.Module):
         patch_stats_target: torch.Tensor,
         lambda_orth: float = 0.05,
     ) -> dict[str, torch.Tensor]:
+        """Compute Stage-1 (encoder pre-training) loss.
+
+        Loss = MSE(file_stats) + MSE(patch_stats) + lambda_orth * OrthogonalityLoss(z_pooled)
+
+        Args:
+            x: Input batch dict with key ``"input"``.
+            file_stats_target: Ground-truth file-level statistics ``[B, num_sensors]``.
+            patch_stats_target: Ground-truth patch-level statistics ``[B, N, 1]``.
+            lambda_orth: Orthogonality loss weight.
+
+        Returns:
+            dict with keys: ``loss``, ``global_loss``, ``local_loss``, ``orth_loss``.
+        """
         out = self.forward(x)
         file_stats_pred = out["file_stats_pred"]
         patch_stats_pred = out["patch_stats_pred"]
@@ -230,7 +295,16 @@ class GLCFlowV7(BaseAnomalyDetectionModel, nn.Module):
         }
 
     def compute_anomaly_score(self, batch: dict) -> torch.Tensor:
-        """Returns -log_likelihood [B]. Higher = more anomalous."""
+        """Compute file-level anomaly scores as **negative log-likelihood**.
+
+        The CNF estimates log p(z_pooled).  Higher NLL = more anomalous.
+
+        Args:
+            batch: dict with ``"input"`` key (``[B, 6, 240]``).
+
+        Returns:
+            Tensor ``[B]`` — NLL per file in ℝ⁺.
+        """
         out = self.forward(batch)
         ll, _ = self.cnf.compute_log_likelihood(out["z_pooled"])
         return -ll
@@ -240,6 +314,23 @@ class GLCFlowV7(BaseAnomalyDetectionModel, nn.Module):
         raw_file: torch.Tensor,
         threshold: Optional[torch.Tensor] = None,
     ) -> dict:
+        """Run full anomaly detection on a single file.
+
+        Args:
+            raw_file: ``[C, T]`` or ``[1, C, T]`` — one carbody cycle.
+            threshold: Optional scalar threshold for classification
+                (e.g. from :class:`MADThreshold`).
+
+        Returns:
+            dict with keys:
+                - **anomaly_score**: Scalar NLL score.
+                - **is_anomaly**: Boolean classification (False if threshold
+                  is None).
+                - **z_pooled**: Pooled representation ``[2D]``.
+                - **z_cls**: CLS token ``[D]``.
+                - **file_stats_pred**: Predicted file statistics.
+                - **patch_stats_pred**: Predicted patch statistics.
+        """
         if raw_file.ndim == 2:
             raw_file = raw_file.unsqueeze(0)
 

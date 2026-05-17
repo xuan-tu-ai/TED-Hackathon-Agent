@@ -1,3 +1,9 @@
+"""Per-sensor shape + win threshold for reconstruction scores.
+
+Fits a second-level percentile over per-sensor scores already computed by
+ReconPreResult. Produces a dict ``{sensor: {"shape": float, "win": float}}``
+used downstream by ReconThresholdApplier.
+"""
 from typing import Optional, List
 
 import numpy as np
@@ -50,10 +56,19 @@ class ReconThresholdCreator:
         return self
 
     def to_dict(self) -> dict:
+        """Serialize per-sensor thresholds to a JSON-compatible dict."""
         return {"thresholds": self.thresholds, "quantile": self.quantile}
 
     @classmethod
     def from_dict(cls, d: dict) -> "ReconThresholdCreator":
+        """Deserialize per-sensor thresholds from a dict.
+
+        Args:
+            d: Dict with ``thresholds`` and ``quantile`` keys.
+
+        Returns:
+            Reconstituted instance.
+        """
         obj = cls(quantile=d.get("quantile", 0.95))
         obj.thresholds = d.get("thresholds")
         return obj

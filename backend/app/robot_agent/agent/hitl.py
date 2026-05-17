@@ -1,3 +1,10 @@
+"""Human-In-The-Loop action checking and resolution.
+
+Extracted from DiagnosticAgent in Sprint 6 for separation of concerns.
+Provides permanent block rules, severity-based queuing, and DB-backed
+HITL entry lifecycle (pending / approved / rejected).
+"""
+
 from __future__ import annotations
 
 import json
@@ -36,6 +43,8 @@ ACTION_SEVERITY: dict[str, str] = {
 
 
 class HitlResult(Enum):
+    """Possible outcomes of a HITL action check."""
+
     ALLOWED = "ALLOWED"
     BLOCKED = "BLOCKED"
     PERMANENTLY_BLOCKED = "PERMANENTLY_BLOCKED"
@@ -43,6 +52,8 @@ class HitlResult(Enum):
 
 @dataclass
 class HitlCheckResult:
+    """Result container returned by :func:`hitl_check`."""
+
     result: HitlResult
     action: str
     queue_id: str | None
@@ -58,6 +69,23 @@ def hitl_check(
     reasoning: str,
     db_url: str | None = None,
 ) -> HitlCheckResult:
+    """Check whether *action* is allowed, blocked, or permanently blocked.
+
+    Permanently blocked actions are rejected immediately without DB entry.
+    HIGH / CRITICAL actions are inserted into the HITL queue as pending.
+    LOW actions pass through without human review.
+
+    Args:
+        action: The action name to check.
+        incident_id: Associated incident identifier.
+        robot_code: Robot identifier.
+        parameters: Action parameters.
+        reasoning: Free-text explanation from the agent.
+        db_url: Database URL override; falls back to DATABASE_URL env var.
+
+    Returns:
+        A :class:`HitlCheckResult` describing the outcome.
+    """
     db_url = db_url or os.getenv("DATABASE_URL") or get_default_db_url()
     if action in BLOCKED_ACTIONS:
         return HitlCheckResult(
@@ -112,6 +140,17 @@ def resolve_hitl_entry(
     resolved_by: str,
     db_url: str | None = None,
 ) -> bool:
+    """Update a HITL queue entry's status and resolution metadata.
+
+    Args:
+        queue_id: HITL queue entry identifier.
+        status: New status (e.g. ``APPROVED``, ``REJECTED``).
+        resolved_by: Name / ID of the resolving human.
+        db_url: Database URL override.
+
+    Returns:
+        True if the entry was found and updated, False otherwise.
+    """
     db_url = db_url or os.getenv("DATABASE_URL") or get_default_db_url()
     session = create_session_factory(db_url)()
     try:
@@ -133,6 +172,20 @@ def resolve_hitl_entry_and_set_event(
     resolved_by: str,
     db_url: str | None = None,
 ) -> bool:
+    """Resolve a HITL entry and signal the waiting :class:`threading.Event`.
+
+    Combines DB update with simulation state event signalling so the
+    blocking :meth:`HitlGate.check` call can unblock.
+
+    Args:
+        queue_id: HITL queue entry identifier.
+        status: New status (e.g. ``APPROVED``, ``REJECTED``).
+        resolved_by: Name / ID of the resolving human.
+        db_url: Database URL override.
+
+    Returns:
+        True if the entry was found and updated, False otherwise.
+    """
     from ..simulation.state import get_simulation_state
 
     resolved = resolve_hitl_entry(queue_id, status, resolved_by, db_url)
@@ -147,6 +200,15 @@ def resolve_hitl_entry_and_set_event(
 
 
 def get_pending_entries(db_url: str | None = None) -> list[dict[str, Any]]:
+    """Fetch all HITL queue entries with ``PENDING`` status.
+
+    Args:
+        db_url: Database URL override.
+
+    Returns:
+        List of dicts, each containing the entry's fields,
+        with ``created_at`` serialised to ISO format.
+    """
     db_url = db_url or os.getenv("DATABASE_URL") or get_default_db_url()
     session = create_session_factory(db_url)()
     try:

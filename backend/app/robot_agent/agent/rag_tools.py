@@ -1,3 +1,12 @@
+"""RAG tools for querying and indexing ChromaDB vector stores.
+
+Provides DSPy-compatible tools that let the diagnostic agent search
+historical Preventive Maintenance (PM) cards and index new records.
+
+The underlying ChromaDB collection is managed via
+:func:`~backend.app.robot_agent.chroma.client.get_collection`.
+"""
+
 from __future__ import annotations
 
 from typing import Any, ClassVar
@@ -6,6 +15,19 @@ from ..chroma.client import get_collection
 
 
 class QueryPMCardsTool:
+    """Search PM Cards via RAG to find similar past incidents.
+
+    Queries the ``pm_cards`` ChromaDB collection and returns a list of
+    matching documents with their metadata and IDs.
+
+    Parameters
+    ----------
+    query : str
+        Free-text natural language query.
+    limit : int
+        Maximum number of results (default 5).
+    """
+
     name: ClassVar[str] = "query_pm_cards"
     description: ClassVar[str] = "Search PM Cards via RAG to find similar past incidents. Use this to correlate current incident with historical maintenance records."
 
@@ -40,6 +62,12 @@ class QueryPMCardsTool:
 
 
 class IndexPMCardsTool:
+    """Index a PM Card into the ChromaDB vector store for RAG.
+
+    Upserts a document into the ``pm_cards`` collection so it becomes
+    discoverable by :class:`QueryPMCardsTool`.
+    """
+
     name: ClassVar[str] = "index_pm_card"
     description: ClassVar[str] = "Index a PM Card into the ChromaDB vector store for RAG."
 
@@ -57,4 +85,5 @@ class IndexPMCardsTool:
 
 
 def get_rag_tools() -> list:
+    """Return a list of all available RAG tool instances."""
     return [QueryPMCardsTool(), IndexPMCardsTool()]

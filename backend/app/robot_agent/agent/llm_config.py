@@ -1,3 +1,16 @@
+"""LLM provider configuration and DSPy LM factory.
+
+Reads environment variables (``LM_PROVIDER``, ``LM_MODEL``, ``LM_API_KEY``,
+``LM_API_BASE``) and constructs a :class:`dspy.LM` instance.
+
+Usage::
+
+    from .llm_config import get_lm, get_llm_config
+
+    lm = get_lm()
+    cfg = get_llm_config()
+"""
+
 from __future__ import annotations
 
 import os
@@ -12,6 +25,14 @@ Provider = Literal["openai", "anthropic", "google"]
 
 
 class LLMConfig:
+    """Holds resolved LLM provider, model, key, and base URL.
+
+    Values are resolved from constructor arguments first, then from
+    environment variables (``LM_PROVIDER``, ``LM_MODEL``, ``LM_API_KEY``,
+    ``LM_API_BASE``), with DSPy fallbacks (``DSPY_LLM_*``) as a final
+    default.
+    """
+
     def __init__(
         self,
         provider: Provider | None = None,
@@ -25,6 +46,7 @@ class LLMConfig:
         self.api_key = api_key or os.getenv("LM_API_KEY") or self._get_api_key(self.provider)
 
     def _get_api_key(self, provider: Provider) -> str:
+        """Resolve the API key for the given provider from environment."""
         key_map = {
             "openai": "OPENAI_API_KEY",
             "anthropic": "ANTHROPIC_API_KEY",
@@ -34,14 +56,22 @@ class LLMConfig:
 
     @property
     def is_configured(self) -> bool:
+        """``True`` when a valid API key is present."""
         return bool(self.api_key and self.api_key != "your_openai_key_here")
 
 
 def get_llm_config() -> LLMConfig:
+    """Build and return a default :class:`LLMConfig` from environment."""
     return LLMConfig()
 
 
 def get_lm() -> "dspy.LM | None":
+    """Construct and return a :class:`dspy.LM` instance based on configuration.
+
+    Returns ``None`` and prints a warning when the API key is missing.
+    Provider prefixes (``anthropic/``, ``google/``) are prepended
+    automatically for non-OpenAI providers.
+    """
     import dspy
     config = get_llm_config()
 

@@ -1,3 +1,9 @@
+"""API routing package for robot_agent.
+
+Exposes FastAPI routers for simulation control, incident querying, and
+human-in-the-loop (HITL) resolution endpoints.
+"""
+
 from __future__ import annotations
 
 from .hitl_api import router as hitl_router, sim_router as hitl_sim_router

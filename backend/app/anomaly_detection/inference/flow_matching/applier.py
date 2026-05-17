@@ -1,3 +1,9 @@
+"""Threshold applier for flow-matching NLL scores.
+
+Takes a broadcasted threshold dictionary and produces a Pandas UDF that
+compares per-file p{quantile}_score against a global threshold.
+Compatible with FlowMatchingPreResult output.
+"""
 import pandas as pd
 
 from pyspark.sql.types import (
@@ -14,11 +20,20 @@ class FlowMatchingApplier:
     """
 
     def __init__(self, threshold_config_br: Broadcast[dict], quantile: float):
+        """Initialise applier with broadcasted threshold config.
+
+        Args:
+            threshold_config_br: Spark broadcast variable containing
+                ``{"global_threshold": float}``.
+            quantile: Score quantile used during pre-result computation
+                (e.g. 0.95 → ``p95_score`` column).
+        """
         self.threshold_config = threshold_config_br.value
         self.quantile = quantile
         self._init_schema(self.quantile)
 
     def _init_schema(self, quantile: float):
+        """Build the output StructType for the Pandas UDF."""
         pq = f"p{quantile * 100:.0f}"
         self.schema = StructType([
             StructField("robot_code", StringType()),
@@ -30,6 +45,11 @@ class FlowMatchingApplier:
         ])
 
     def make_apply_fn(self):
+        """Return a Pandas UDF that applies the global threshold.
+
+        The returned function maps a PDF with pre-results to a PDF with
+        ``is_file_anomaly`` verdicts.
+        """
         thresh_dict = self.threshold_config
         quantile = self.quantile
 

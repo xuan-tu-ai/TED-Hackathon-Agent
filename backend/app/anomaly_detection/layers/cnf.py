@@ -1,3 +1,17 @@
+"""Continuous Normalising Flow (CNF) for density estimation.
+
+Implements a Flow-Matching-based CNF that learns to transform a simple
+Gaussian prior (``t=0``) into the data distribution (``t=1``).
+
+The forward ODE ``dz/dt = v(z, t)`` is defined by a learned vector field
+(:class:`VectorFieldMLP`).  Likelihood is estimated via the change-of-variables
+formula using Hutchinson's trace estimator for the log-determinant.
+
+Two-stage workflow:
+    Training — regress ``v(z_t, t)`` against the transport direction ``z₁ - z₀``.
+    Inference — solve ODE backward (``t=1 → t=0``) and compute ``log p(z₁)``.
+"""
+
 import math
 import torch
 import torch.nn as nn

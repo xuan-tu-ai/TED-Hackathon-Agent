@@ -1,3 +1,12 @@
+"""V5 VQ (File) — vector-quantised auto-encoder with file-level statistics.
+
+Extends V5 VQ by incorporating **file-level statistical features** in addition
+to per-window statistics.  The encoder has a three-branch design (shape,
+window-stats, file-stats) fused through a learned linear projection.  Uses
+a :class:`FactorizedVectorQuantizerEMA` bottleneck with exponential moving
+average codebook updates.
+"""
+
 from dataclasses import dataclass, fields
 from typing import ClassVar
 
@@ -14,7 +23,23 @@ from .base import BaseAnomalyDetectionModel
 
 @dataclass
 class V5VQFileConfig:
-    """Hyperparameters for V5VQFileAnomalyDetectionModel."""
+    """Hyperparameters for :class:`V5VQFileAnomalyDetectionModel`.
+
+    Attributes:
+        num_sensors: Number of input sensor channels (default 6).
+        window_size: Number of time steps per window (default 32).
+        num_win_stats_features: Number of per-window statistical features
+            (default 10).
+        num_file_stats_features: Number of per-file statistical features
+            (default 6).  Aggregated over the entire file/session.
+        num_robots: Number of robot IDs in the fleet (default 64).
+        num_programs: Number of program IDs (default 512).
+        d_model: Hidden dimension for the mixer backbone (default 128).
+        codebook_size: Number of entries in the factorised VQ codebook
+            (default 256).
+        num_mixer_blocks: Number of stacked MLP-Mixer blocks (default 4).
+        dropout: Dropout probability throughout the network (default 0.1).
+    """
     num_sensors: int = 6
     window_size: int = 32
     num_win_stats_features: int = 10
@@ -36,27 +61,40 @@ class V5VQFileConfig:
 
 
 class V5VQFileAnomalyDetectionModel(BaseAnomalyDetectionModel):
+    """Vector-quantised auto-encoder augmented with file-level statistics.
+
+    Architecture: Three-branch encoder (shape + window-stats + file-stats) →
+    fusion → Factorised VQ-EMA → MLP-Mixer → three decoders (shape,
+    window-stats, file-stats).  The file-level statistics provide broader
+    context that helps distinguish normal temporal patterns from anomalous
+    ones at the granularity of an entire recording session.
+
+    Input keys: ``raw_window, stats, file_stats, rel_pos, robot_idx, program_idx``.
+    """
+
     PARADIGM: ClassVar[str] = "window"
     CONFIG_CLASS = V5VQFileConfig
-    """Robot anomaly detection model using vector quantization bottleneck with file statistics.
-    
-    Args:
-        num_sensors (int): Number of input channels.
-        window_size (int): Size of the input window.
-        num_win_stats_features (int): Number of window statistical features.
-        num_file_stats_features (int): Number of file statistical features.
-        num_robots (int): Number of robots.
-        num_programs (int): Number of programs.
-        d_model (int, optional): Model dimension. Defaults to 128.
-        codebook_size (int, optional): Size of the codebook. Defaults to 256.
-        num_mixer_blocks (int, optional): Number of mixer blocks. Defaults to 4.
-        dropout (float, optional): Dropout rate. Defaults to 0.1.
-    """
-    
-    def __init__(self, num_sensors: int, window_size: int, num_win_stats_features: int, 
-                 num_file_stats_features: int, num_robots: int, num_programs: int, 
-                 d_model: int = 128, codebook_size: int = 256, 
-                 num_mixer_blocks: int = 4, dropout: float = 0.1):
+
+    def __init__(
+        self, num_sensors: int, window_size: int, num_win_stats_features: int,
+        num_file_stats_features: int, num_robots: int, num_programs: int,
+        d_model: int = 128, codebook_size: int = 256,
+        num_mixer_blocks: int = 4, dropout: float = 0.1,
+    ):
+        """Initialise the V5 VQ File model.
+
+        Args:
+            num_sensors: Number of input sensor channels.
+            window_size: Number of time steps per input window.
+            num_win_stats_features: Dimensionality of per-window statistical features.
+            num_file_stats_features: Dimensionality of per-file statistical features.
+            num_robots: Number of robot identities in the embedding table.
+            num_programs: Number of program identities in the embedding table.
+            d_model: Hidden dimension for the mixer backbone.
+            codebook_size: Number of entries in the VQ codebook.
+            num_mixer_blocks: Number of MLP-Mixer blocks.
+            dropout: Dropout probability.
+        """
         super().__init__()
         self.num_sensors = num_sensors
         self.window_size = window_size
@@ -75,25 +113,40 @@ class V5VQFileAnomalyDetectionModel(BaseAnomalyDetectionModel):
         self.win_stat_standardizer = GlobalStatsStandardizer(num_sensors=num_sensors)
         self.file_stat_standardizer = GlobalStatsStandardizer(num_sensors=num_sensors)
         self.pos_encoder = RelativePositionEncoder(d_model=d_model)
-        self.context_embedding = ContextualEmbedding(num_robots=num_robots, num_programs=num_programs, d_model=d_model)
+        self.context_embedding = ContextualEmbedding(
+            num_robots=num_robots, num_programs=num_programs, d_model=d_model,
+        )
 
         # Feature Projector (3 Branch)
-        self.shape_encoder = ShapeEncoder(num_sensors=num_sensors, window_size=window_size, d_model=d_model, dropout=dropout)
-        self.win_stat_projector = StatProjector(num_sensors=num_sensors, num_stats_features=num_win_stats_features, d_model=d_model, dropout=dropout)
-        self.file_stat_projector = StatProjector(num_sensors=num_sensors, num_stats_features=num_file_stats_features, d_model=d_model, dropout=dropout)
+        self.shape_encoder = ShapeEncoder(
+            num_sensors=num_sensors, window_size=window_size,
+            d_model=d_model, dropout=dropout,
+        )
+        self.win_stat_projector = StatProjector(
+            num_sensors=num_sensors, num_stats_features=num_win_stats_features,
+            d_model=d_model, dropout=dropout,
+        )
+        self.file_stat_projector = StatProjector(
+            num_sensors=num_sensors, num_stats_features=num_file_stats_features,
+            d_model=d_model, dropout=dropout,
+        )
 
         self.fusion_layer = nn.Sequential(
             nn.Linear(d_model * 3, d_model),
             nn.SiLU(),
-            nn.LayerNorm(d_model)
+            nn.LayerNorm(d_model),
         )
 
         # Mixer Backbone
-        self.mixer_backbone = MLPMixerBackbone(num_sensors=num_sensors, d_model=d_model, num_blocks=num_mixer_blocks, expansion_factor=4, dropout=dropout)
+        self.mixer_backbone = MLPMixerBackbone(
+            num_sensors=num_sensors, d_model=d_model,
+            num_blocks=num_mixer_blocks, expansion_factor=4, dropout=dropout,
+        )
 
-        # Bottleneck(VAE)
+        # Bottleneck (VQ with EMA)
         self.quantizer = FactorizedVectorQuantizerEMA(
-            num_sensors=num_sensors, codebook_size=codebook_size, embedding_dim=d_model
+            num_sensors=num_sensors, codebook_size=codebook_size,
+            embedding_dim=d_model,
         )
 
         self.decoder_shape = nn.Sequential(
@@ -101,46 +154,60 @@ class V5VQFileAnomalyDetectionModel(BaseAnomalyDetectionModel):
             nn.SiLU(),
             nn.Conv1d(num_sensors, num_sensors * 4, 3, padding=1, groups=num_sensors),
             nn.SiLU(),
-            nn.Conv1d(num_sensors * 4, num_sensors, 1)
+            nn.Conv1d(num_sensors * 4, num_sensors, 1),
         )
 
         self.decoder_win_stats = nn.Sequential(
             nn.Linear(d_model, d_model // 2),
             nn.SiLU(),
-            nn.Linear(d_model // 2, num_win_stats_features)
+            nn.Linear(d_model // 2, num_win_stats_features),
         )
 
         self.decoder_file_stats = nn.Sequential(
             nn.Linear(d_model, d_model // 2),
             nn.SiLU(),
-            nn.Linear(d_model // 2, num_file_stats_features)
+            nn.Linear(d_model // 2, num_file_stats_features),
         )
 
     @property
-    def name(self):
+    def name(self) -> str:
         return 'robot_anomaly_model_vq_file'
 
     @property
-    def required_input_args(self):
+    def required_input_args(self) -> set:
         return {'raw_window', 'stats', 'file_stats', 'rel_pos', 'robot_idx', 'program_idx'}
 
-    def _forward_args(self, raw_window, stats, file_stats, rel_pos, robot_idx, program_idx):
-        """Forward pass for robot anomaly model with vector quantization and file statistics.
+    def _forward_args(
+        self, raw_window: torch.Tensor, stats: torch.Tensor,
+        file_stats: torch.Tensor, rel_pos: torch.Tensor,
+        robot_idx: torch.Tensor, program_idx: torch.Tensor,
+    ) -> dict:
+        """Forward pass for the V5 VQ File model.
+
+        Pipeline: Raw window → RevIN → shape encoder.  Window-stats → log →
+        z-score → projector.  File-stats → log → z-score → projector.  Three
+        branches fused → VQ-EMA → MLP-Mixer → three decoders.
 
         Args:
-            raw_window (Tensor): Raw input window [B, C, W].
-            stats (Tensor): Window statistical features [B, C, K_win].
-            file_stats (Tensor): File statistical features [B, C, K_file].
-            rel_pos (Tensor): Relative positional encoding.
-            robot_idx (Tensor): Robot indices.
-            program_idx (Tensor): Program indices.
+            raw_window: Raw sensor window ``[B, C, W]``.
+            stats: Per-window statistical features ``[B, C, K_win]``.
+            file_stats: Per-file statistical features ``[B, C, K_file]``.
+            rel_pos: Relative positional encoding tensor.
+            robot_idx: Integer robot IDs ``[B]``.
+            program_idx: Integer program IDs ``[B]``.
 
         Returns:
-            Dict: recon_raw, recon_norm, x_norm, pred_win_stats_z, s_win_zscore, pred_file_stats_z, s_file_zscore, commitment_loss, indices
+            dict with keys:
+                - **recon_raw**: Denormalised shape reconstruction ``[B, C, W]``.
+                - **recon_norm**: Normalised shape reconstruction ``[B, C, W]``.
+                - **x_norm**: Normalised input ``[B, C, W]``.
+                - **pred_win_stats_z**: Predicted window-stats ``[B, C, K_win]``.
+                - **true_win_stats_z**: Ground-truth window-stats ``[B, C, K_win]``.
+                - **pred_file_stats_z**: Predicted file-stats ``[B, C, K_file]``.
+                - **true_file_stats_z**: Ground-truth file-stats ``[B, C, K_file]``.
+                - **commitment_loss**: VQ commitment loss (scalar).
+                - **indices**: Codebook indices ``[B, N]``.
         """
-        # Raw windows: [B, C, W]
-        # Stats: [B, C, K]
-
         s_win_log = self.log_scaler(stats)
         s_win_zscore = self.win_stat_standardizer(s_win_log)
         f_win_phys = self.win_stat_projector(s_win_zscore)
@@ -152,7 +219,7 @@ class V5VQFileAnomalyDetectionModel(BaseAnomalyDetectionModel):
         x_norm, revin_stats = self.revin(raw_window)
         f_shape = self.shape_encoder(x_norm)
 
-        f_pos = self.pos_encoder(rel_pos) # B, 1, 28
+        f_pos = self.pos_encoder(rel_pos)
         f_context = self.context_embedding(robot_idx, program_idx)
 
         combined = torch.cat([f_shape, f_win_phys, f_file_phys], dim=-1)
@@ -163,8 +230,12 @@ class V5VQFileAnomalyDetectionModel(BaseAnomalyDetectionModel):
         z_mixed = self.mixer_backbone(z_q)
 
         recon_norm = self.decoder_shape(z_mixed)
-        pred_win_stats_z = self.decoder_win_stats(z_mixed).view(-1, self.num_sensors, self.num_win_stats_features)
-        pred_file_stats_z = self.decoder_file_stats(z_mixed).view(-1, self.num_sensors, self.num_file_stats_features)
+        pred_win_stats_z = self.decoder_win_stats(z_mixed).view(
+            -1, self.num_sensors, self.num_win_stats_features,
+        )
+        pred_file_stats_z = self.decoder_file_stats(z_mixed).view(
+            -1, self.num_sensors, self.num_file_stats_features,
+        )
 
         recon_raw = self.revin.denormalize(recon_norm, revin_stats)
 
@@ -177,10 +248,10 @@ class V5VQFileAnomalyDetectionModel(BaseAnomalyDetectionModel):
             'pred_file_stats_z': pred_file_stats_z,
             'true_file_stats_z': s_file_zscore,
             'commitment_loss': commitment_loss,
-            'indices': indices
+            'indices': indices,
         }
 
-    def get_metadata(self):
+    def get_metadata(self) -> dict:
         return {
             'name': self.name,
             'num_sensors': self.num_sensors,
@@ -196,7 +267,20 @@ class V5VQFileAnomalyDetectionModel(BaseAnomalyDetectionModel):
         }
 
     def compute_anomaly_score(self, batch: dict) -> "dict[str, torch.Tensor]":
+        """Compute anomaly scores from shape recon and window-stat prediction errors.
+
+        Args:
+            batch: Input dict with keys ``raw_window, stats, file_stats,
+                rel_pos, robot_idx, program_idx``.
+
+        Returns:
+            dict with keys:
+                - **shape_score**: Reconstruction MSE per sensor ``[B, C]``.
+                - **win_score**: Window-stat prediction MSE per sensor ``[B, C]``.
+        """
         out = self.forward(batch)
-        shape_score = ((out["recon_norm"] - out["x_norm"]) ** 2).mean(dim=-1)  # [B, C]
-        win_score = ((out["pred_win_stats_z"] - out["true_win_stats_z"]) ** 2).mean(dim=-1)  # [B, C]
+        shape_score = ((out["recon_norm"] - out["x_norm"]) ** 2).mean(dim=-1)
+        win_score = (
+            (out["pred_win_stats_z"] - out["true_win_stats_z"]) ** 2
+        ).mean(dim=-1)
         return {"shape_score": shape_score, "win_score": win_score}

@@ -1,3 +1,16 @@
+"""Factory functions and enums for model instantiation and grouping.
+
+All anomaly detection models are instantiated through :func:`create_model`,
+which accepts either a string key or an enum member and resolves it to the
+correct subclass via a central registry (``_STR_TO_MODEL_CLS``).
+
+The :class:`SupportedAnomalyDetectionModels` enum enumerates every available
+model.  Additional enums (:class:`ReconstructionModels`,
+:class:`FlowMatchingModels`, :class:`MaskFormerModels`) group models by their
+inference methodology — these are used by the inference pipeline to dispatch
+the correct pre-processing, scoring, and threshold logic.
+"""
+
 from enum import Enum
 from typing import Any, Dict
 
@@ -22,6 +35,11 @@ _STR_TO_MODEL_CLS = {
 
 
 class SupportedAnomalyDetectionModels(Enum):
+    """All model classes registered in the codebase.
+
+    Each member maps a descriptive name to the model *class* (not instance).
+    Values are used by :func:`create_model` for typed dispatch.
+    """
     V1_VAE = V1VAEAnomalyDetectionModel
     V5_VQ = V5VQAnomalyDetectionModel
     V5_VQ_FILE = V5VQFileAnomalyDetectionModel
@@ -32,7 +50,12 @@ class SupportedAnomalyDetectionModels(Enum):
 
 
 class ReconstructionModels(Enum):
-    """Models using reconstruction-based inference (window pre_result, percentile threshold)."""
+    """Models using reconstruction-based inference.
+
+    These models compute anomaly scores by measuring reconstruction error
+    (MSE between input and reconstructed output), apply a percentile-based
+    threshold on per-patch errors, and produce a spatial heatmap.
+    """
     V1_VAE = V1VAEAnomalyDetectionModel
     V5_VQ = V5VQAnomalyDetectionModel
     V5_VQ_FILE = V5VQFileAnomalyDetectionModel
@@ -41,12 +64,22 @@ class ReconstructionModels(Enum):
 
 
 class FlowMatchingModels(Enum):
-    """Models using flow-matching inference (NLL score, MAD threshold, macro-window)."""
+    """Models using flow-matching inference.
+
+    These models compute anomaly scores from the negative log-likelihood (NLL)
+    under a learned probability path, use a MAD (Median Absolute Deviation)
+    threshold, and operate on macro-windows (>64 steps).
+    """
     GLC_FLOW_V7 = GLCFlowV7
 
 
 class MaskFormerModels(Enum):
-    """Models using MaskFormer inference (dual heatmap, percentile threshold, macro-window)."""
+    """Models using MaskFormer inference.
+
+    These models produce a dual heatmap (reconstruction × association
+    discrepancy), apply a percentile-based threshold, and are designed for
+    macro-window sensor data.
+    """
     GLC_ANOMALY_MASKFORMER = GLCAnomalyMaskFormer
 
 
@@ -54,6 +87,29 @@ def create_model(
     model_type: "SupportedAnomalyDetectionModels | str",
     metadata: "Dict[str, Any] | ModelConfig | None" = None,
 ) -> BaseAnomalyDetectionModel:
+    """Instantiate a model by type identifier, optionally with configuration.
+
+    This is the **single entry point** for creating any anomaly detection
+    model.  Callers should never instantiate model classes directly.
+
+    Args:
+        model_type: Either a member of :class:`SupportedAnomalyDetectionModels`
+            or a string key (e.g. ``"glc_flow_v7"``, ``"v6_vq"``).
+        metadata: Optional configuration.  Can be:
+            - ``None`` → default configuration is used.
+            - A ``dict`` → passed to the model's ``__init__`` via
+              :meth:`BaseAnomalyDetectionModel.load_from_metadata`.
+            - A ``ModelConfig`` protocol instance → converted via
+              ``.to_dict()`` first.
+
+    Returns:
+        A fully initialised model (with random weights) ready for training or
+        inference.
+
+    Raises:
+        ValueError: If *model_type* is a string that is not registered in
+            ``_STR_TO_MODEL_CLS``.
+    """
     if isinstance(model_type, str):
         if model_type not in _STR_TO_MODEL_CLS:
             raise ValueError(f"Unknown model type: {model_type!r}. Valid: {list(_STR_TO_MODEL_CLS)}")
@@ -71,10 +127,33 @@ def create_model(
 
 
 def count_parameters(model: BaseAnomalyDetectionModel) -> int:
+    """Return the total number of trainable parameters in *model*.
+
+    Args:
+        model: Any anomaly detection model instance.
+
+    Returns:
+        Integer count of parameters with ``requires_grad=True``.
+    """
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
 def get_model_summary(model: BaseAnomalyDetectionModel) -> dict:
+    """Return a structured breakdown of the model's parameter count.
+
+    Delegates to ``model.get_model_summary()`` if the model provides one;
+    otherwise it walks ``named_children()`` and accumulates parameter counts
+    per sub-module.
+
+    Args:
+        model: Any anomaly detection model instance.
+
+    Returns:
+        Dictionary with keys:
+            - ``total_parameters`` (int)
+            - ``trainable_parameters`` (int)
+            - ``by_component`` (dict mapping sub-module name → param count)
+    """
     if hasattr(model, 'get_model_summary'):
         return model.get_model_summary()
 

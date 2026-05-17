@@ -1,3 +1,19 @@
+"""Minimax trainer for GLCAnomalyMaskFormer.
+
+Implements a single-step minimax optimisation procedure:
+  Phase A (minimise): reconstruction + orthogonality − association discrepancy.
+  Phase B (maximise): association discrepancy alone (updates sigma only).
+
+Two separate Adam optimisers cleanly separate the parameter groups:
+  - optimizer_main covers all params *except* sigma.
+  - optimizer_sigma covers sigma params only.
+
+Classes:
+    MaskFormerTrainer       — Core minimax training step.
+    MaskFormerEvaluator     — Evaluator computing AUROC/AUPRC + MAD threshold.
+    MaskFormerTrainerRunner — Top-level orchestrator (parallel to FlowMatchingTrainer).
+"""
+
 from dataclasses import dataclass
 from typing import Optional, Union
 
@@ -214,6 +230,7 @@ class MaskFormerEvaluator:
         )
 
     def _compute_auroc(self, scores: torch.Tensor, labels: torch.Tensor) -> float:
+        """Area Under the ROC Curve via Mann–Whitney U statistic."""
         pos_scores = scores[labels == 1]
         neg_scores = scores[labels == 0]
         if len(pos_scores) == 0 or len(neg_scores) == 0:
@@ -226,6 +243,7 @@ class MaskFormerEvaluator:
         return concordant / total_pairs
 
     def _compute_auprc(self, scores: torch.Tensor, labels: torch.Tensor) -> float:
+        """Area Under the Precision-Recall Curve via descending sort."""
         num_pos = (labels == 1).sum().item()
         if num_pos == 0:
             return 0.0
@@ -275,6 +293,14 @@ class MaskFormerTrainerRunner:
         self.evaluator: Optional[MaskFormerEvaluator] = None
 
     def _build_trainer(self, lr: float) -> MaskFormerTrainer:
+        """Construct a MaskFormerTrainer with two optimisers (main + sigma).
+
+        Args:
+            lr: Learning rate for both Adam optimisers.
+
+        Returns:
+            Configured MaskFormerTrainer instance.
+        """
         # Separate sigma params from all other params
         sigma_params = [
             p for n, p in self.model.named_parameters() if "sigma" in n

@@ -1,3 +1,19 @@
+"""Single-stage trainer for legacy models (V1-V6).
+
+Provides a generic training loop that works with any
+BaseAnomalyDetectionModel and BaseAnomalyDetectionLoss.
+
+Key design points:
+  - Model-agnostic: works with V1 through V6 architectures.
+  - MLflow integration: optional experiment tracking via Databricks MLflow.
+  - Manual checkpointing: saves model checkpoints to a local directory.
+  - Training loop: configurable epoch count, per-epoch train/val steps.
+
+Usage:
+    trainer = SingleStageTrainer(model, criterion, lr=1e-3, batch_size=32)
+    trainer(train_dl, val_dl, epochs=50, train_steps=100, val_steps=20)
+"""
+
 from torch.utils.data import DataLoader
 
 try:
@@ -53,6 +69,15 @@ class SingleStageTrainer:
         train_steps: int,
         val_steps: int,
     ):
+        """Run the full training loop.
+
+        Args:
+            train_dl: DataLoader yielding training batches.
+            val_dl:   DataLoader yielding validation batches.
+            epochs:   Number of full passes over the training data.
+            train_steps: Number of batches per training epoch.
+            val_steps:   Number of batches per validation epoch.
+        """
         if self.use_mlflow:
             mlflow.start_run(run_name=self.mlflow_run_name)
             mlflow.log_params(
@@ -91,6 +116,7 @@ class SingleStageTrainer:
     def _train_epoch(
         self, train_dl: DataLoader, train_steps: int, epoch: int, epochs: int
     ) -> float:
+        """Run one training epoch and return average loss."""
         self.model.train()
         train_loss_total = 0
         train_pbar = tqdm(
@@ -123,6 +149,7 @@ class SingleStageTrainer:
     def _val_epoch(
         self, val_dl: DataLoader, val_steps: int, epoch: int, epochs: int
     ) -> float:
+        """Run one validation epoch and return average loss."""
         self.model.eval()
         val_loss_total = 0
         val_pbar = tqdm(
@@ -149,6 +176,7 @@ class SingleStageTrainer:
         return val_loss_total / (step_v + 1)
 
     def _mlflow_log(self, avg_train_loss: float, avg_val_loss: float, epoch: int):
+        """Log train/val metrics and model to MLflow for the given epoch."""
         try:
             mlflow.log_metrics(
                 {

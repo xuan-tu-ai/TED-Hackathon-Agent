@@ -1,3 +1,14 @@
+"""Context embeddings for robot identity and paint program (MaskFormer V7).
+
+Provides learnable embeddings that encode robot-specific baseline characteristics
+and car-model-specific paint cycle patterns.  The :class:`ContextEmbedding`
+composite module returns a ``[B, 1, D]`` tensor broadcast-ready to add to all
+84 tokens — representing a uniform contextual shift per file.
+
+The design supports optional context (null → zero contribution) for datasets
+that do not yet provide robot/program metadata.
+"""
+
 import torch
 import torch.nn as nn
 from typing import Optional

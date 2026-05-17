@@ -1,3 +1,19 @@
+"""Legacy probabilistic PerceptionResult seed — randomized anomaly distributions.
+
+Uses ``numpy`` random generators to create *days* × 60 cycles per day of data
+with embedded anomaly patterns:
+
+* **R-03**: L1 burst — ``paint_flow_rate``, dense anomalies (~65 % probability)
+* **R-04**: L2 escalation — ``high_pressure_current``, gradual worsening over time
+* **R-05**: L1 burst — ``electro_pneumatic_output``, intermittent spikes (~55 %)
+
+Kept for backward compatibility; the deterministic seed (``perception_results.py``)
+is preferred for reproducible testing.
+
+Functions:
+    seed_perception_results: Generate and insert legacy probabilistic rows.
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta

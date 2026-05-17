@@ -1,3 +1,16 @@
+"""Transformer encoder with CLS token and dual pooling (V7).
+
+The GLC-Flow V7 backbone uses a standard Transformer encoder with:
+
+*   :class:`CLSToken` — a learnable ``[1, 1, D]`` token prepended to the patch
+    sequence, capturing file-level aggregated information through self-attention.
+*   :class:`TransformerEncoder` — wrapper around PyTorch's
+    ``nn.TransformerEncoder`` with pre-norm residual ordering.
+*   :class:`DualPooling` — concatenates the CLS token (global drift) with
+    max-pooled patch tokens (local spikes) to produce a ``[B, 2D]``
+    representation for the CNF head.
+"""
+
 import math
 import torch
 import torch.nn as nn

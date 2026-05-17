@@ -1,3 +1,10 @@
+"""Single point of HITL (Human-In-The-Loop) authorisation logic.
+
+Wraps the lower-level :mod:`~.hitl` functions with an event-driven
+blocking check that synchronously waits for a human operator to approve
+or reject an action via the simulation state's threading.Event mechanism.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -13,6 +20,14 @@ logger = logging.getLogger("hitl_gate")
 
 
 class HitlGate:
+    """Orchestrates HITL authorisation, queuing, and synchronous wait.
+
+    When a HIGH or CRITICAL action is submitted via :meth:`check`, the
+    gate creates a pending DB entry, emits an SSE event, and blocks
+    until the human operator resolves the entry or a 300-second timeout
+    expires.
+    """
+
     def __init__(self, emitter: AgentEventEmitter):
         self.emitter = emitter
         self.incident_id: str | None = None
@@ -21,7 +36,11 @@ class HitlGate:
         self.state_getter = None
 
     def set_state_getter(self, getter):
-        self.state_getter = getter
+        """Register a zero-arg callable that returns the simulation state.
+
+        Allows dependency injection of the simulation state for testing
+        without circular imports at module level.
+        """
 
     def check(
         self,
@@ -32,6 +51,29 @@ class HitlGate:
         current_skill: str | None = None,
         incident_summary: str = "",
     ) -> dict[str, Any]:
+        """Evaluate and (if needed) block for HITL approval of *action*.
+
+        Steps:
+            1. Delegate to :func:`~.hitl.hitl_check` for the base decision.
+            2. If **permanently blocked** — return immediately.
+            3. If **blocked** (HIGH/CRITICAL) — insert DB entry, emit SSE
+               ``hitl_request`` event, wait up to 300 s on a
+               :class:`threading.Event`, then read the resolved status.
+            4. If **allowed** (LOW) — return immediately.
+
+        Args:
+            action: Action identifier.
+            parameters: Action parameters.
+            reasoning: Agent reasoning for this action.
+            step_count: Current step number (included in context).
+            current_skill: Name of the skill being executed.
+            incident_summary: Human-readable incident summary.
+
+        Returns:
+            A dict with keys ``allowed``, ``blocked``, ``permanently_blocked``,
+            ``queue_id``, ``reason``, ``severity``, ``resolved``, and/or
+            ``timeout`` depending on the result.
+        """
         if self.incident_id is None or self.robot_code is None:
             return {"error": "No active incident"}
 

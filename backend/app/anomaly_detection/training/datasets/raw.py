@@ -1,3 +1,13 @@
+"""Raw-only window dataset classes.
+
+These datasets provide windows of raw sensor values *without* statistical
+context. Used by raw-only models such as GLCFlowV7 (seq_len=240).
+
+Classes:
+    RawWindowDataset       — In-memory torch Dataset yielding ``{input: Tensor[C, seq_len]}``.
+    RawWindowMosaicDataset — Streaming MosaicML variant of RawWindowDataset.
+"""
+
 from pathlib import Path
 from typing import Optional
 
