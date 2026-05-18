@@ -7,19 +7,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pytest
 
+BASE = Path(__file__).resolve().parent.parent
+
 
 def test_create_plan_skill_md_exists():
-    skill_path = Path("backend/agent_knowledge/skills/create_plan/SKILL.md")
+    skill_path = BASE / "agent_knowledge" / "skills" / "create-plan" / "SKILL.md"
     assert skill_path.exists()
 
 
 def test_create_plan_template_exists():
-    template_path = Path("backend/agent_knowledge/skills/create_plan/_template.md")
+    template_path = BASE / "agent_knowledge" / "skills" / "create-plan" / "_template.md"
     assert template_path.exists()
 
 
 def test_create_plan_skill_has_steps():
-    skill_path = Path("backend/agent_knowledge/skills/create_plan/SKILL.md")
+    skill_path = BASE / "agent_knowledge" / "skills" / "create-plan" / "SKILL.md"
     content = skill_path.read_text(encoding="utf-8")
     assert "Step 1" in content
     assert "Step 2" in content
@@ -28,20 +30,20 @@ def test_create_plan_skill_has_steps():
 
 
 def test_create_plan_skill_has_strict_rules():
-    skill_path = Path("backend/agent_knowledge/skills/create_plan/SKILL.md")
+    skill_path = BASE / "agent_knowledge" / "skills" / "create-plan" / "SKILL.md"
     content = skill_path.read_text(encoding="utf-8")
     assert "Do NOT" in content
     assert "template" in content.lower()
 
 
 def test_create_plan_skill_has_session_termination_rule():
-    skill_path = Path("backend/agent_knowledge/skills/create_plan/SKILL.md")
+    skill_path = BASE / "agent_knowledge" / "skills" / "create-plan" / "SKILL.md"
     content = skill_path.read_text(encoding="utf-8")
     assert "Session Termination Rule" in content or "session is complete" in content.lower()
 
 
 def test_create_plan_template_has_checklist():
-    template_path = Path("backend/agent_knowledge/skills/create_plan/_template.md")
+    template_path = BASE / "agent_knowledge" / "skills" / "create-plan" / "_template.md"
     content = template_path.read_text(encoding="utf-8")
     assert "Item 1" in content
     assert "Item 2" in content
@@ -52,7 +54,7 @@ def test_create_plan_template_has_checklist():
 
 
 def test_create_plan_template_has_plan_execution_status():
-    template_path = Path("backend/agent_knowledge/skills/create_plan/_template.md")
+    template_path = BASE / "agent_knowledge" / "skills" / "create-plan" / "_template.md"
     content = template_path.read_text(encoding="utf-8")
     assert "Plan Execution Status" in content
     assert "PENDING" in content

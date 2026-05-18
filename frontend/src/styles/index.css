@@ -1172,4 +1172,63 @@ body {
     cursor: not-allowed;
 }
 
+/* SummaryReport Component — final diagnostic report rendered as markdown */
+.summary-report {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin: 0.5rem 0;
+    font-size: 0.875rem;
+    line-height: 1.6;
+    color: var(--text-primary);
+}
+
+.summary-report-heading {
+    margin: 0 0 0.75rem 0;
+    font-weight: 600;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.4rem;
+}
+
+.summary-report-heading--h2 {
+    font-size: 1.15rem;
+}
+
+.summary-report-heading--h3 {
+    font-size: 1rem;
+    border-bottom: none;
+    padding-bottom: 0;
+    margin-top: 1rem;
+}
+
+.summary-report-paragraph {
+    margin: 0 0 0.5rem 0;
+}
+
+.summary-report-list {
+    margin: 0.25rem 0 0.75rem 0;
+    padding-left: 1.5rem;
+}
+
+.summary-report-list-item {
+    margin: 0.25rem 0;
+    line-height: 1.5;
+}
+
+.summary-report strong {
+    font-weight: 600;
+    color: var(--accent-color, #58a6ff);
+}
+
+.summary-report code {
+    background: var(--bg-secondary);
+    padding: 0.125rem 0.375rem;
+    border-radius: 3px;
+    font-size: 0.8125rem;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    color: var(--text-code, #f0c674);
+}
+
 

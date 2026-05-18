@@ -8,6 +8,7 @@ HITL entry lifecycle (pending / approved / rejected).
 from __future__ import annotations
 
 import json
+import logging
 import os
 import uuid
 from dataclasses import dataclass
@@ -16,6 +17,8 @@ from enum import Enum
 from typing import Any
 
 from ..db.models import HitlQueue, create_session_factory, get_default_db_url
+
+logger = logging.getLogger("hitl")
 
 
 BLOCKED_ACTIONS: frozenset[str] = frozenset({
@@ -87,16 +90,46 @@ def hitl_check(
         A :class:`HitlCheckResult` describing the outcome.
     """
     db_url = db_url or os.getenv("DATABASE_URL") or get_default_db_url()
-    if action in BLOCKED_ACTIONS:
-        return HitlCheckResult(
-            result=HitlResult.PERMANENTLY_BLOCKED,
-            action=action,
-            queue_id=None,
-            severity=None,
-            reason=f"Action '{action}' is permanently blocked. No human override exists.",
+
+    # Split multi-action strings (comma-separated) for individual checks
+    actions_to_check = [a.strip() for a in action.split(",") if a.strip()]
+    if not actions_to_check:
+        actions_to_check = [action]
+
+    # Check permanently blocked actions first — if any individual action
+    # is permanently blocked, reject the entire request.
+    for single_action in actions_to_check:
+        if single_action in BLOCKED_ACTIONS:
+            return HitlCheckResult(
+                result=HitlResult.PERMANENTLY_BLOCKED,
+                action=action,
+                queue_id=None,
+                severity=None,
+                reason=f"Action '{single_action}' is permanently blocked. No human override exists.",
+            )
+
+    # Determine severity: use the highest severity across all individual actions.
+    # Unknown actions default to HIGH (fail-safe — require human review).
+    severity = "LOW"
+    unknown_actions = []
+    for single_action in actions_to_check:
+        sev = ACTION_SEVERITY.get(single_action)
+        if sev is None:
+            # Unknown action — fail-safe: default to HIGH to require human review
+            sev = "HIGH"
+            unknown_actions.append(single_action)
+        if sev == "CRITICAL":
+            severity = "CRITICAL"
+        elif sev == "HIGH" and severity != "CRITICAL":
+            severity = "HIGH"
+
+    if unknown_actions:
+        logger.warning(
+            "hitl_check: unknown action(s) %s defaulted to HIGH (fail-safe). "
+            "Add to ACTION_SEVERITY if they should be LOW.",
+            unknown_actions,
         )
 
-    severity = ACTION_SEVERITY.get(action, "LOW")
     if severity in ("HIGH", "CRITICAL"):
         queue_id = uuid.uuid4().hex[:8]
         session = create_session_factory(db_url)()

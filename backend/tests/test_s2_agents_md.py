@@ -7,32 +7,33 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pytest
 
+AGENTS_PATH = Path(__file__).resolve().parent.parent / "agent_knowledge" / "AGENTS.md"
+DIAGNOSE_PATH = Path(__file__).resolve().parent.parent / "agent_knowledge" / "skills" / "diagnose" / "SKILL.md"
+
 
 def test_agents_md_exists():
-    agents_path = Path("backend/agent_knowledge/AGENTS.md")
-    assert agents_path.exists()
+    assert AGENTS_PATH.exists()
 
 
-def test_agents_md_has_routing_instruction():
-    agents_path = Path("backend/agent_knowledge/AGENTS.md")
-    content = agents_path.read_text(encoding="utf-8")
+def test_agents_md_has_diagnose_instruction():
+    content = AGENTS_PATH.read_text(encoding="utf-8")
     assert "load_skill" in content
-    assert "routing" in content
+    assert "diagnose" in content
 
 
 def test_agents_md_has_signal_families():
-    agents_path = Path("backend/agent_knowledge/AGENTS.md")
-    content = agents_path.read_text(encoding="utf-8")
-    families = ["INSTABILITY", "DEVIATION", "TRANSITION", "DROPOUT", "SURGE"]
+    content = DIAGNOSE_PATH.read_text(encoding="utf-8")
+    families = ["SURGE", "DROPOUT", "INSTABILITY", "DEVIATION", "TRANSITION"]
     for family in families:
         assert family in content
 
 
 def test_agents_md_has_session_rules():
-    agents_path = Path("backend/agent_knowledge/AGENTS.md")
-    content = agents_path.read_text(encoding="utf-8")
-    assert "Start" in content
-    assert "Route" in content
-    assert "Diagnose" in content
+    content = AGENTS_PATH.read_text(encoding="utf-8")
     assert "Plan" in content
+    assert "Execute Tasks" in content
+    assert "Verify" in content
+    assert "Correlate" in content
+    assert "Check FMEA" in content
+    assert "HITL" in content
     assert "Complete" in content

@@ -1,5 +1,5 @@
 ---
-name: verify_defect
+name: verify-defect
 description: Verify if signal anomaly has resulted in actual product surface defects
 required_tools: [query_db]
 ---

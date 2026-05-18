@@ -8,15 +8,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import pytest
 
 DIAGNOSE_SKILLS = [
-    "diagnose_surge",
-    "diagnose_dropout",
-    "diagnose_instability",
-    "diagnose_deviation",
-    "diagnose_transition",
+    "diagnose",
 ]
 
 
-AGENT_KNOWLEDGE = Path("backend/agent_knowledge")
+AGENT_KNOWLEDGE = Path(__file__).resolve().parent.parent / "agent_knowledge"
 
 
 @pytest.mark.parametrize("skill", DIAGNOSE_SKILLS)
@@ -48,13 +44,13 @@ def test_diagnose_skill_calls_hitl_check(skill):
 
 
 @pytest.mark.parametrize("skill", DIAGNOSE_SKILLS)
-def test_diagnose_skill_references_create_plan(skill):
+def test_diagnose_skill_has_routing_rules(skill):
     skill_path = AGENT_KNOWLEDGE / "skills" / skill / "SKILL.md"
     content = skill_path.read_text(encoding="utf-8")
-    assert "create_plan" in content
+    assert "Routing Rules" in content
 
 
-def test_routing_skill_has_hitl_checkpoints():
-    skill_path = AGENT_KNOWLEDGE / "skills" / "routing" / "SKILL.md"
+def test_diagnose_skill_has_hitl_checkpoints():
+    skill_path = AGENT_KNOWLEDGE / "skills" / "diagnose" / "SKILL.md"
     content = skill_path.read_text(encoding="utf-8")
     assert "HITL Checkpoints" in content or "hitl_check" in content.lower()

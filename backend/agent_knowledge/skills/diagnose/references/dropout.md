@@ -1,13 +1,4 @@
----
-name: diagnose_dropout
-description: Diagnose DROPOUT family anomalies (flatline, zero_drop, signal_loss, cutoff, intermittency)
-required_tools: [query_pm_cards]
----
-
-# Diagnose DROPOUT Skill
-
-## Purpose
-Diagnose signal dropout anomalies characterized by flatlines, zero drops, signal loss, cutoffs, or intermittency.
+# DROPOUT Family Reference
 
 ## Keywords
 flatline, zero_drop, signal_loss, cutoff, intermittency
@@ -15,7 +6,6 @@ flatline, zero_drop, signal_loss, cutoff, intermittency
 ## Diagnostic Steps
 
 ### Step 1: Analyze Sensor Data
-- Use the incident context fields (`sensor`, `anomaly_score`, `abnormal_subtype`) provided at session start
 - Identify if dropout is complete (flatline) or intermittent
 - Note duration and frequency of dropout events
 
@@ -39,8 +29,3 @@ Based on sensor type:
 - Immediate: Check connections, verify sensor is powered
 - Short-term: Replace suspect components
 - Long-term: Update PM schedule for sensor checks
-
-## Completion
-When all diagnostic steps are complete, call `update_task_status` for the current plan item, then proceed to the next task in the plan. The plan was already created at session start.
-
-> HITL rules are enforced system-wide. See `agent_knowledge/rules/hitl-rules.md` for the full action severity table.

@@ -11,7 +11,7 @@ from app.robot_agent.agent.skills import Skill, LoadSkillTool
 
 
 def test_skill_load_returns_content():
-    skill = Skill.load("routing")
+    skill = Skill.load("diagnose")
     assert isinstance(skill.content, str)
     assert len(skill.content) > 0
 
@@ -23,7 +23,7 @@ def test_skill_load_unknown_raises():
 
 def test_load_skill_tool_call():
     tool = LoadSkillTool()
-    result = tool("routing")
+    result = tool("diagnose")
     assert isinstance(result, str)
     assert len(result) > 0
 

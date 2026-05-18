@@ -99,16 +99,18 @@ diagnostic sub-routines.
 
 ```
 agent_knowledge/skills/
-├── _SKILL_TEMPLATE.md          # Template for new skills
-├── create_plan/SKILL.md        # Plan creation — loaded first
-├── routing/SKILL.md            # Route incident → correct diagnose skill
-├── diagnose_surge/SKILL.md     # Pressure surge diagnosis
-├── diagnose_dropout/SKILL.md   # Signal dropout diagnosis
-├── diagnose_deviation/SKILL.md # Deviation diagnosis
-├── diagnose_instability/SKILL.md
-├── diagnose_transition/SKILL.md
-├── correlate_history/SKILL.md  # Cross-reference past incidents
-└── verify_defect/SKILL.md      # Confirmation procedure
+├── _SKILL_TEMPLATE.md             # Template for new skills
+├── create-plan/SKILL.md           # Plan creation — loaded first
+├── diagnose/SKILL.md              # Main diagnostic skill with routing table
+│   └── references/                # Family-specific anomaly references
+│       ├── surge.md               # SURGE family (spike, overshoot, etc.)
+│       ├── dropout.md             # DROPOUT family (flatline, signal loss)
+│       ├── instability.md         # INSTABILITY family (jitter, oscillation)
+│       ├── deviation.md           # DEVIATION family (drift, bias, offset)
+│       └── transition.md          # TRANSITION family (lag, delay, hysteresis)
+├── correlate-history/SKILL.md     # Cross-reference past incidents
+├── verify-defect/SKILL.md         # Confirm product surface defects
+└── check-fmea/SKILL.md            # Validate against FMEA knowledge base
 ```
 
 ### How Skills Are Loaded
@@ -140,10 +142,9 @@ queried via semantic similarity.
 Integration flows:
 
 ```
-LLM decides → load_skill("routing")
+LLM decides → load_skill("diagnose")
             → query_pm_cards("paint pressure spike R-07")
             → ChromaDB returns top-5 similar historical cards
-            → LLM reasons with retrieved context
 ```
 
 ---

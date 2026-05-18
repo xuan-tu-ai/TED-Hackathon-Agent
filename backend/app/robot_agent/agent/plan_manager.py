@@ -45,7 +45,7 @@ class PlanManager:
         Returns:
             True if at least one task was parsed, False otherwise.
         """
-        template_path = _skills_module.SKILLS_BASE / "create_plan" / "_template.md"
+        template_path = _skills_module.SKILLS_BASE / "create-plan" / "_template.md"
         if not template_path.exists():
             logger.error("Plan template not found at %s", template_path)
             return False
@@ -93,28 +93,47 @@ class PlanManager:
     def update_task(self, task_id: int | str, status: str) -> None:
         """Set the status of *task_id* and broadcast the change.
 
-        Automatically advances :attr:`current_task_index` when the
-        current task transitions to ``completed``.
+        When a task transitions to ``completed``, all earlier incomplete
+        tasks (prerequisites) are auto-completed to enforce sequential
+        ordering.  Advancement of :attr:`current_task_index` is handled
+        by :meth:`get_current_task` (first-pending lookup) rather than
+        auto-increment.
         """
         if not self.current_plan:
             return
 
         str_id = str(task_id)
-        for idx, task in enumerate(self.current_plan.get("tasks", [])):
+        tasks = self.current_plan.get("tasks", [])
+        target_idx = None
+        for idx, task in enumerate(tasks):
             if str(task.get("id")) == str_id:
-                task["status"] = status
-                self._broadcast_plan_task_update(str_id, status)
-                if status == "completed" and idx == self.current_task_index:
-                    self.current_task_index += 1
+                target_idx = idx
                 break
 
+        if target_idx is None:
+            return
+
+        if status == "completed":
+            # Auto-complete all prerequisite tasks before this one
+            for i in range(target_idx):
+                if tasks[i].get("status") != "completed":
+                    tasks[i]["status"] = "completed"
+                    self._broadcast_plan_task_update(str(tasks[i]["id"]), "completed")
+
+        tasks[target_idx]["status"] = status
+        self._broadcast_plan_task_update(str_id, status)
+
     def get_current_task(self) -> dict[str, Any] | None:
-        """Return the task at the current index, or None if exhausted."""
+        """Return the first task whose status is not ``completed``, or None if all done.
+
+        This replaces the old index-based lookup so that the agent can stay
+        on the same task across multiple DSPy turns.
+        """
         if not self.current_plan:
             return None
-        tasks = self.current_plan.get("tasks", [])
-        if self.current_task_index < len(tasks):
-            return tasks[self.current_task_index]
+        for task in self.current_plan.get("tasks", []):
+            if task.get("status") != "completed":
+                return task
         return None
 
     def advance(self) -> None:
@@ -144,9 +163,18 @@ class PlanManager:
             })
 
     def _broadcast_plan_task_update(self, task_id: str, status: str) -> None:
-        """Emit a ``plan_task_update`` step event via the emitter."""
-        self.emitter.emit_step({
-            "type": "plan_task_update",
+        """Emit a plan-task event via the emitter with correct type per status.
+
+        - ``plan_task_started`` when status = ``running``
+        - ``plan_task_completed`` when status = ``completed``
+        - ``plan_task_update`` as a fallback for other statuses
+        """
+        event_type = {
+            "running": "plan_task_started",
+            "completed": "plan_task_completed",
+        }.get(status, "plan_task_update")
+        self.emitter.emit_plan_task({
+            "type": event_type,
             "incident_id": getattr(self, '_incident_id', None),
             "task_id": task_id,
             "status": status,

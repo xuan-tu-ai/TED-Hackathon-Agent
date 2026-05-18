@@ -276,6 +276,9 @@ function App() {
             case 'plan_task_completed':
                 updatePlanTask(event.incident_id, event.task_id, 'completed');
                 break;
+            case 'plan_task_update':
+                updatePlanTask(event.incident_id, event.task_id, event.status || 'running');
+                break;
             case 'hitl_request':
                 addHitlItem(event.incident_id, {
                     queueId: event.queue_id,

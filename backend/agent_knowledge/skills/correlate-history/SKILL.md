@@ -1,5 +1,5 @@
 ---
-name: correlate_history
+name: correlate-history
 description: Correlate current incident with historical PM Cards and maintenance events
 required_tools: [query_pm_cards]
 ---

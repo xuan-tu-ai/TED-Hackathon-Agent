@@ -1,8 +1,10 @@
 from pathlib import Path
 
+BASE = Path(__file__).resolve().parent.parent
+
 
 def test_src_directory_structure():
-    robot_agent = Path("backend/app/robot_agent")
+    robot_agent = BASE / "app" / "robot_agent"
     assert robot_agent.exists()
     assert (robot_agent / "poller").is_dir()
     assert (robot_agent / "agent").is_dir()
@@ -12,28 +14,25 @@ def test_src_directory_structure():
     assert (robot_agent / "seed").is_dir()
     assert (robot_agent / "chroma").is_dir()
 
-    frontend = Path("frontend")
-    assert frontend.exists()
-
 
 def test_agent_knowledge_structure():
-    ak = Path("backend/agent_knowledge")
+    ak = BASE / "agent_knowledge"
     assert ak.exists()
     assert (ak / "rules").is_dir()
-    assert (ak / "skills" / "routing").is_dir()
-    assert (ak / "skills" / "create_plan").is_dir()
+    assert (ak / "skills" / "diagnose").is_dir()
+    assert (ak / "skills" / "create-plan").is_dir()
 
 
 def test_config_files_exist():
-    assert (Path("backend") / "pyproject.toml").exists()
-    assert (Path("backend") / "app").is_dir()
-    assert Path("backend").exists()
-    assert Path("frontend").exists()
-    assert (Path("backend") / "tests").exists()
-    assert Path("artifacts").exists()
+    assert (BASE / "pyproject.toml").exists()
+    assert (BASE / "app").is_dir()
+    assert BASE.exists()
+    assert (BASE.parent / "frontend").exists()
+    assert (BASE / "tests").exists()
+    assert (BASE.parent / "artifacts").exists()
 
 
 def test_init_files_exist():
-    robot_agent = Path("backend/app/robot_agent")
+    robot_agent = BASE / "app" / "robot_agent"
     for subdir in ["poller", "agent", "memory", "api", "simulation", "seed", "chroma"]:
         assert (robot_agent / subdir / "__init__.py").exists()

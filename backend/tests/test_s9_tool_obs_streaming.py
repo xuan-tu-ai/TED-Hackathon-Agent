@@ -29,7 +29,7 @@ class TestToolObservationStreaming:
         def capture(e):
             events.append(e)
 
-        agent.on_step = capture
+        agent.emitter.on_step = capture
 
         agent.step(
             action="load_skill(routing)",
@@ -54,7 +54,7 @@ class TestToolObservationStreaming:
         def capture(e):
             events.append(e)
 
-        agent.on_step = capture
+        agent.emitter.on_step = capture
 
         agent.step(action="query_pm_cards(R-07)", reasoning="Looking for similar incidents")
 
@@ -71,7 +71,7 @@ class TestToolObservationStreaming:
         def capture(e):
             events.append(e)
 
-        agent.on_observation = capture
+        agent.emitter.on_observation = capture
 
         step = agent.step(action="query_pm_cards(R-07)", reasoning="Looking for similar incidents")
 
@@ -88,7 +88,7 @@ class TestToolObservationStreaming:
         def capture(e):
             events.append(e)
 
-        agent.on_observation = capture
+        agent.emitter.on_observation = capture
 
         step = agent.step(action="query_db(R-07)", reasoning="Checking DB")
 
@@ -138,8 +138,8 @@ class TestToolObservationStreaming:
             severity_hint="HIGH",
         )
         agent.start_session(incident)
-        agent.on_step = capture_event
-        agent.on_observation = capture_event
+        agent.emitter.on_step = capture_event
+        agent.emitter.on_observation = capture_event
 
         step_events = []
         obs_events = []
@@ -162,9 +162,9 @@ class TestToolObservationStreaming:
         assert obs_events[1]["observation"] == "Observation for step 2"
 
     def test_on_observation_callback_attribute_exists(self, agent):
-        assert hasattr(agent, "on_observation")
-        agent.on_observation = MagicMock()
-        assert callable(agent.on_observation)
+        assert hasattr(agent.emitter, "on_observation")
+        agent.emitter.on_observation = MagicMock()
+        assert callable(agent.emitter.on_observation)
 
     def test_multiple_steps_each_get_own_observation(self, agent):
         events = []
@@ -172,8 +172,8 @@ class TestToolObservationStreaming:
         def capture(e):
             events.append(e)
 
-        agent.on_step = capture
-        agent.on_observation = capture
+        agent.emitter.on_step = capture
+        agent.emitter.on_observation = capture
 
         step1 = agent.step(action="load_skill(routing)", reasoning="Load routing")
         step2 = agent.step(action="query_pm_cards(R-07)", reasoning="Query cards")

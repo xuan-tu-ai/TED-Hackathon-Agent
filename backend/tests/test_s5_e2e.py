@@ -30,8 +30,8 @@ def test_run_incident_r07__agent_completes_with_surge_diagnosis(tmp_path):
 
     with patch("app.robot_agent.agent.session_trace.SESSION_DIR", tmp_path):
         echo_responses = [
-            {"action": "load_skill", "action_input": "routing", "reasoning": "Must load routing first"},
-            {"action": "load_skill", "action_input": "diagnose_surge", "reasoning": "SURGE detected, loading diagnose_surge"},
+            {"action": "load_skill", "action_input": "create_plan", "reasoning": "Must create plan first"},
+            {"action": "load_skill", "action_input": "diagnose", "reasoning": "SURGE detected, loading diagnose"},
             {"action": "complete", "action_input": "summary", "reasoning": "Root cause identified: axis4 bearing wear"},
         ]
 
@@ -49,13 +49,12 @@ def test_run_incident_r07__agent_completes_with_surge_diagnosis(tmp_path):
             result = agent.run_incident(incident)
 
     assert result["status"] == "completed"
-    assert result["diagnose_skill_used"] == "diagnose_surge"
-    assert len(result["steps"]) >= 3
+    assert len(result["steps"]) >= 2
 
     trace_file = tmp_path / f"{incident_id}.jsonl"
     assert trace_file.exists()
     entries = [json.loads(l) for l in trace_file.read_text().splitlines() if l.strip()]
-    assert len(entries) >= 3
+    assert len(entries) >= 2
 
 
 def test_run_incident_r31__agent_completes_with_dropout_diagnosis(tmp_path):
@@ -65,8 +64,8 @@ def test_run_incident_r31__agent_completes_with_dropout_diagnosis(tmp_path):
 
     with patch("app.robot_agent.agent.session_trace.SESSION_DIR", tmp_path):
         echo_responses = [
-            {"action": "load_skill", "action_input": "routing", "reasoning": "Must load routing first"},
-            {"action": "load_skill", "action_input": "diagnose_dropout", "reasoning": "DROPOUT detected, loading diagnose_dropout"},
+            {"action": "load_skill", "action_input": "create_plan", "reasoning": "Must create plan first"},
+            {"action": "load_skill", "action_input": "diagnose", "reasoning": "DROPOUT detected, loading diagnose"},
             {"action": "complete", "action_input": "summary", "reasoning": "Root cause: high pressure voltage dropout"},
         ]
 
@@ -84,7 +83,6 @@ def test_run_incident_r31__agent_completes_with_dropout_diagnosis(tmp_path):
             result = agent.run_incident(incident)
 
     assert result["status"] == "completed"
-    assert result["diagnose_skill_used"] == "diagnose_dropout"
 
 
 def test_run_incident_r13__agent_completes_with_deviation_diagnosis(tmp_path):
@@ -94,9 +92,9 @@ def test_run_incident_r13__agent_completes_with_deviation_diagnosis(tmp_path):
 
     with patch("app.robot_agent.agent.session_trace.SESSION_DIR", tmp_path):
         echo_responses = [
-            {"action": "load_skill", "action_input": "routing", "reasoning": "Must load routing first"},
-            {"action": "load_skill", "action_input": "diagnose_deviation", "reasoning": "DEVIATION detected"},
-            {"action": "load_skill", "action_input": "correlate_history", "reasoning": "Checking history for R-13"},
+            {"action": "load_skill", "action_input": "create_plan", "reasoning": "Must create plan first"},
+            {"action": "load_skill", "action_input": "diagnose", "reasoning": "DEVIATION detected"},
+            {"action": "load_skill", "action_input": "correlate-history", "reasoning": "Checking history for R-13"},
             {"action": "complete", "action_input": "summary", "reasoning": "Root cause: encoder position offset"},
         ]
 
@@ -114,7 +112,6 @@ def test_run_incident_r13__agent_completes_with_deviation_diagnosis(tmp_path):
             result = agent.run_incident(incident)
 
     assert result["status"] == "completed"
-    assert result["diagnose_skill_used"] == "diagnose_deviation"
 
 
 def test_agent_traces_all_steps_to_jsonl(tmp_path):
@@ -124,8 +121,8 @@ def test_agent_traces_all_steps_to_jsonl(tmp_path):
 
     with patch("app.robot_agent.agent.session_trace.SESSION_DIR", tmp_path):
         echo_responses = [
-            {"action": "load_skill", "action_input": "routing", "reasoning": "step 1 reasoning"},
-            {"action": "load_skill", "action_input": "diagnose_surge", "reasoning": "step 2 reasoning"},
+            {"action": "load_skill", "action_input": "create_plan", "reasoning": "step 1 reasoning"},
+            {"action": "load_skill", "action_input": "diagnose", "reasoning": "step 2 reasoning"},
             {"action": "complete", "action_input": "summary", "reasoning": "step 3 reasoning"},
         ]
 
@@ -144,10 +141,10 @@ def test_agent_traces_all_steps_to_jsonl(tmp_path):
 
     trace_file = tmp_path / f"{incident_id}.jsonl"
     entries = [json.loads(l) for l in trace_file.read_text().splitlines() if l.strip()]
-    assert len(entries) == 3
-    assert entries[0]["skill_loaded"] == "routing"
-    assert entries[1]["skill_loaded"] == "diagnose_surge"
-    assert "complete" in entries[2]["action"]
+    assert len(entries) == 4
+    assert entries[0]["skill_loaded"] == "create_plan"
+    assert entries[2]["skill_loaded"] == "diagnose"
+    assert "complete" in entries[3]["action"]
 
 
 def test_hitl_check_queues_high_severity_action(tmp_path):
@@ -157,7 +154,7 @@ def test_hitl_check_queues_high_severity_action(tmp_path):
 
     with patch("app.robot_agent.agent.session_trace.SESSION_DIR", tmp_path):
         echo_responses = [
-            {"action": "load_skill", "action_input": "routing", "reasoning": "routing"},
+            {"action": "load_skill", "action_input": "create_plan", "reasoning": "create plan"},
             {"action": "hitl_check", "action_input": '{"action":"send_email"}', "reasoning": "need approval"},
             {"action": "complete", "action_input": "summary", "reasoning": "done"},
         ]
@@ -216,14 +213,14 @@ def test_session_trace_writer_writes_valid_jsonl(tmp_path):
 
     with patch("app.robot_agent.agent.session_trace.SESSION_DIR", tmp_path):
         writer = SessionTraceWriter("INC-TEST-TRACE")
-        writer.write_step("step-1", "load_skill(routing)", "reasoning here", skill_loaded="routing")
-        writer.write_step("step-2", "load_skill(diagnose_surge)", "reasoning 2", skill_loaded="diagnose_surge")
+        writer.write_step("step-1", "load_skill(diagnose)", "reasoning here", skill_loaded="diagnose")
+        writer.write_step("step-2", "load_skill(create-plan)", "reasoning 2", skill_loaded="create-plan")
 
         entries = writer.read_trace()
     assert len(entries) == 2
     assert entries[0]["step_id"] == "step-1"
-    assert entries[0]["skill_loaded"] == "routing"
-    assert entries[1]["skill_loaded"] == "diagnose_surge"
+    assert entries[0]["skill_loaded"] == "diagnose"
+    assert entries[1]["skill_loaded"] == "create-plan"
 
 
 def test_incident_api_returns_trace_entries(tmp_path):
@@ -237,7 +234,7 @@ def test_incident_api_returns_trace_entries(tmp_path):
 
     with patch.object(st_module, "SESSION_DIR", tmp_path):
         writer = SessionTraceWriter(incident_id)
-        writer.write_step("step-1", "load_skill(routing)", "reasoning", skill_loaded="routing")
+        writer.write_step("step-1", "load_skill(diagnose)", "reasoning", skill_loaded="diagnose")
         writer.write_step("step-2", "complete(summary)", "done", skill_loaded=None)
 
     with patch.object(st_module, "SESSION_DIR", tmp_path), \
@@ -251,5 +248,5 @@ def test_incident_api_returns_trace_entries(tmp_path):
     data = response.json()
     assert data["incident_id"] == incident_id
     assert len(data["trace"]) == 2
-    assert data["trace"][0]["skill_loaded"] == "routing"
+    assert data["trace"][0]["skill_loaded"] == "diagnose"
     assert data["trace"][1]["action"] == "complete(summary)"

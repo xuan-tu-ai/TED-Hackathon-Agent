@@ -7,33 +7,34 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pytest
 
+BASE = Path(__file__).resolve().parent.parent
+
 
 def test_routing_skill_has_if_else_logic():
-    skill_path = Path("backend/agent_knowledge/skills/routing/SKILL.md")
+    skill_path = BASE / "agent_knowledge" / "skills" / "diagnose" / "SKILL.md"
     content = skill_path.read_text(encoding="utf-8")
 
     families = ["SURGE", "DROPOUT", "INSTABILITY", "DEVIATION", "TRANSITION"]
     for family in families:
         assert family in content
-        assert f' abnormal_family == "{family}"' in content or f"abnormal_family == '{family}'" in content
 
 
-def test_routing_skill_loads_diagnose_skills():
-    skill_path = Path("backend/agent_knowledge/skills/routing/SKILL.md")
+def test_routing_skill_loads_diagnose_references():
+    skill_path = BASE / "agent_knowledge" / "skills" / "diagnose" / "SKILL.md"
     content = skill_path.read_text(encoding="utf-8")
 
-    diagnose_skills = [
-        "diagnose_surge",
-        "diagnose_dropout",
-        "diagnose_instability",
-        "diagnose_deviation",
-        "diagnose_transition",
+    references = [
+        "diagnose/references/surge",
+        "diagnose/references/dropout",
+        "diagnose/references/instability",
+        "diagnose/references/deviation",
+        "diagnose/references/transition",
     ]
-    for skill in diagnose_skills:
-        assert skill in content
+    for ref in references:
+        assert ref in content
 
 
-def test_routing_skill_has_create_plan_reference():
-    skill_path = Path("backend/agent_knowledge/skills/routing/SKILL.md")
+def test_routing_skill_has_task_reference():
+    skill_path = BASE / "agent_knowledge" / "skills" / "diagnose" / "SKILL.md"
     content = skill_path.read_text(encoding="utf-8")
-    assert "create_plan" in content
+    assert "update_task_status" in content

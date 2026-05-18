@@ -1,5 +1,5 @@
 ---
-name: create_plan
+name: create-plan
 description: Guides the agent to generate a structured diagnostic plan with atomic tasks. Use FIRST, before any routing or diagnosis.
 required_tools: [load_skill]
 ---
@@ -16,7 +16,7 @@ This skill guides the agent to generate a structured diagnostic plan following t
 ## Steps
 
 ### Step 1: Load the Template
-Read the plan template at `agent_knowledge/skills/create_plan/_template.md`
+Read the plan template at `agent_knowledge/skills/create-plan/_template.md`
 
 ### Step 2: Gather Required Information
 Ensure you have:

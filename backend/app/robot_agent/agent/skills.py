@@ -1,8 +1,8 @@
 """Skill loading system for the diagnostic agent.
 
 Skills are Markdown files stored under ``agent_knowledge/skills/<name>/SKILL.md``.
-Each skill encapsulates a diagnostic sub-routine (e.g. *routing*, *diagnose_surge*,
-*create_plan*). The agent loads skills at runtime to guide its LM-powered reasoning.
+Each skill encapsulates a diagnostic sub-routine (e.g. *diagnose*, *create-plan*,
+*correlate-history*). The agent loads skills at runtime to guide its LM-powered reasoning.
 
 Module-level constants
 ----------------------
@@ -53,12 +53,30 @@ class Skill:
     def load(cls, skill_name: str) -> "Skill":
         """Load a skill by name from the filesystem.
 
+        Supports two formats:
+        - ``<skill_name>``          → loads ``SKILLS_BASE/<skill_name>/SKILL.md``
+        - ``<skill>/refs/<file>.md`` → loads ``SKILLS_BASE/<skill>/references/<file>.md``
+
         Raises
         ------
         FileNotFoundError
-            If ``SKILLS_BASE / skill_name / SKILL.md`` does not exist.
+            If the skill file does not exist.
         """
-        skill_path = SKILLS_BASE / skill_name / "SKILL.md"
+        # Check for reference path format: diagnose/references/surge or diagnose/refs/surge
+        if "/" in skill_name:
+            parts = skill_name.split("/", 1)
+            parent_skill = parts[0]
+            ref_part = parts[1]
+            # Normalise "refs/" to "references/"
+            if ref_part.startswith("refs/"):
+                ref_part = "references/" + ref_part[5:]
+            skill_path = SKILLS_BASE / parent_skill / ref_part
+            if not skill_path.exists():
+                # Try appending .md
+                skill_path = SKILLS_BASE / parent_skill / f"{ref_part}.md"
+        else:
+            skill_path = SKILLS_BASE / skill_name / "SKILL.md"
+
         if not skill_path.exists():
             raise FileNotFoundError(f"Skill not found: {skill_name} at {skill_path}")
         content = skill_path.read_text(encoding="utf-8")
@@ -79,10 +97,17 @@ class LoadSkillTool:
     description: ClassVar[str] = "Load a skill by name. Reads the SKILL.md file and returns its content for context."
 
     def __call__(self, skill_name: str) -> str:
-        if skill_name not in ALLOWED_SKILLS:
+        is_reference = "/" in skill_name
+        if not is_reference and skill_name not in ALLOWED_SKILLS:
             available = sorted(ALLOWED_SKILLS)
             return (
                 f"Skill '{skill_name}' not found. Available skills: {available}"
             )
-        skill = Skill.load(skill_name)
-        return skill.content
+        try:
+            skill = Skill.load(skill_name)
+            return skill.content
+        except FileNotFoundError as e:
+            available = sorted(ALLOWED_SKILLS)
+            return (
+                f"Skill '{skill_name}' not found. Available skills: {available} | {e}"
+            )

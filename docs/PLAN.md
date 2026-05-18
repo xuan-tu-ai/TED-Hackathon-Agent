@@ -9,6 +9,7 @@ Current test count: **~180+ tests** across anomaly detection (Sprint 1), agent s
 
 ## Active Sprints
 - [Sprint 8](docs/sprint-plans/sprint-8.md) — *Planned* — Codebase Documentation: Google Style docstrings + module README.md for every sub-package
+- [Sprint 10](docs/sprint-plans/sprint-10.md) — *Planned* — Agent-Side Fixes: PlanTracker sync, Skill Library cleanup, Task/Step synchronization
 
 ## Completed Sprints
 - [Sprint 0](docs/sprint-plans/sprint-0.md) — *Completed* — Project structure, directories, `__init__.py` files
@@ -30,7 +31,8 @@ Current test count: **~180+ tests** across anomaly detection (Sprint 1), agent s
 - [x] **M7:** Backend Concern Separation (Sprint 6)
 - [x] **M8:** GLC-Anomaly-MaskFormer V7 — Dual-criterion (Masked Reconstruction + Association Discrepancy) detector (Sprint 7)
 - [ ] **M9:** Codebase Documentation — Google Style docstrings + module READMEs for the entire codebase (Sprint 8)
-- [ ] **M10:** Real OT Data Integration
+- [ ] **M10:** Agent-Side Fixes — PlanTracker sync, Skill Library cleanup, Task/Step sync (Sprint 10)
+- [ ] **M11:** Real OT Data Integration
 - [ ] **M11:** Production Deployment & Hardening
 
 ## Architecture Snapshot
@@ -75,6 +77,7 @@ frontend/                         ← React 18 + Vite + Zustand (SSE streaming, 
 | 6 | Backend Refactor + Knowledge Cleanup | ✅ Done | AgentEventEmitter, PlanManager, HitlGate; move HITL endpoints; fix all silent exception handlers (diagnostic_agent, memory); remove silent fallbacks + dead stubs; fix Planning-First contradiction; deduplicate HITL blocks ×5; LoadSkillTool validation; `_SKILL_TEMPLATE.md`; 15 new tests (T10 + T22 + T23) |
 | 7 | GLC-Anomaly-MaskFormer V7 | ✅ Done | New model (`GLCAnomalyMaskFormer`) implementing Masked Predictive + Association Discrepancy; reuses V7 RevIN/Patchify/encoders + OrthogonalityLoss + MADThreshold; new layers (MaskToken, SensorBlockMasking, AnomalyAttention, ReconstructionDecoder, ContextEmbedding); new criterions (MaskedReconstructionLoss, AssociationDiscrepancyLoss); single-stage minimax trainer; dual-scoring inference (recon × discrepancy heatmap); 5 new test files |
 | 8 | Codebase Documentation | 📝 Planned | Google Style docstrings for every class/function/file across `anomaly_detection/` (48 files), `robot_agent/` (40 files), `agent_knowledge/`; module README.md files (18+) for each sub-package explaining structure, development patterns, and design rationale |
+| 10 | Agent-Side Fixes | 📝 Planned | Fix PlanTracker not updating on task completion; clean up skill library (rename `_`→`-`, merge routing into diagnose, add references); fix task/step desync where step count ≠ task count |
 
 ## Backlog / Future Work
 - **Real OT data integration** — Replace mock simulation with live paint-shop sensor data feed

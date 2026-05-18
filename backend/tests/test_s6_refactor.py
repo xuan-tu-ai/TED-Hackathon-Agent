@@ -83,7 +83,7 @@ class TestPlanManager:
         finally:
             sk_mod.SKILLS_BASE = old_base
 
-    def test_update_task_advances_index(self):
+    def test_update_task_and_get_current_task(self):
         from app.robot_agent.agent.plan_manager import PlanManager
 
         pm = PlanManager(AgentEventEmitter())
@@ -93,10 +93,11 @@ class TestPlanManager:
                 {"id": 2, "name": "Task 2", "status": "pending"},
             ]
         }
-        pm.current_task_index = 0
         pm.update_task(1, "completed")
-        assert pm.current_task_index == 1
         assert pm.current_plan["tasks"][0]["status"] == "completed"
+        current = pm.get_current_task()
+        assert current is not None
+        assert current["id"] == 2
 
     def test_is_done_returns_true_when_all_completed(self):
         from app.robot_agent.agent.plan_manager import PlanManager

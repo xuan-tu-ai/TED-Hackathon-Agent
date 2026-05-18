@@ -1,13 +1,4 @@
----
-name: diagnose_instability
-description: Diagnose INSTABILITY family anomalies (jitter, chattering, ripple, oscillation, hunting, noise)
-required_tools: [query_pm_cards]
----
-
-# Diagnose INSTABILITY Skill
-
-## Purpose
-Diagnose signal instability anomalies characterized by jitter, chattering, ripple, oscillation, hunting, or noise patterns.
+# INSTABILITY Family Reference
 
 ## Keywords
 jitter, chattering, ripple, oscillation, hunting, noise
@@ -15,7 +6,6 @@ jitter, chattering, ripple, oscillation, hunting, noise
 ## Diagnostic Steps
 
 ### Step 1: Analyze Sensor Data
-- Use the incident context fields (`sensor`, `anomaly_score`, `abnormal_subtype`) provided at session start
 - Identify frequency and amplitude of oscillation patterns
 - Determine if instability is continuous or cyclical
 
@@ -38,8 +28,3 @@ Based on sensor type:
 - Check mechanical alignment
 - Verify control parameters
 - Schedule bearing inspection
-
-## Completion
-When all diagnostic steps are complete, call `update_task_status` for the current plan item, then proceed to the next task in the plan. The plan was already created at session start.
-
-> HITL rules are enforced system-wide. See `agent_knowledge/rules/hitl-rules.md` for the full action severity table.

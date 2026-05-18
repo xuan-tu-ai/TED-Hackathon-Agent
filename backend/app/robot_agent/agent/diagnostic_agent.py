@@ -28,6 +28,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import ast
 import dspy
 import json
 import re
@@ -349,12 +350,18 @@ class DiagnosticAgent:
 
         if "{" in raw_input and "}" in raw_input:
             try:
-                json_match = re.search(r"(\{.*\})", raw_input)
+                json_match = re.search(r"(\{.*\})", raw_input, re.DOTALL)
                 json_str = json_match.group(1) if json_match else None
                 if json_str:
-                    data = json.loads(json_str)
+                    try:
+                        data = json.loads(json_str)
+                    except json.JSONDecodeError:
+                        try:
+                            data = ast.literal_eval(json_str)
+                        except (ValueError, SyntaxError):
+                            data = None
                     if isinstance(data, dict):
-                        raw_input = data.get("skill_name") or data.get("query") or str(data)
+                        raw_input = json.dumps(data)
             except Exception as exc:
                 logger.debug("action_input JSON parse skipped: %s — treating as raw string", exc)
 
@@ -372,7 +379,7 @@ class DiagnosticAgent:
         """Execute the planning sub-loop.
 
         Runs up to 5 LLM turns forcing the agent to load the
-        ``create_plan`` skill and build a task roadmap. Returns
+        ``create-plan`` skill and build a task roadmap. Returns
         updated loaded-skills content and step history.
         """
         lm = get_lm()
@@ -391,7 +398,7 @@ class DiagnosticAgent:
 
             phase_instruction = (
                 "CURRENT PHASE: PLANNING. "
-                "Your goal is to create a roadmap for this incident. Your very first action MUST be 'load_skill(\"create_plan\")'. "
+                "Your goal is to create a roadmap for this incident. Your very first action MUST be 'load_skill(\"create-plan\")'. "
                 "Do NOT perform routing or diagnosis until the plan is created."
             )
             full_prompt = f"{self.SYSTEM_PROMPT}\n\n{phase_instruction}"
@@ -451,7 +458,7 @@ class DiagnosticAgent:
                     loaded_skills_content += f"\n--- SKILL: {skill_name} ---\n{content}\n"
                     obs = f"Loaded skill {skill_name} successfully."
                     self.loaded_skills_set.add(skill_name)
-                    if skill_name == "create_plan":
+                    if skill_name == "create-plan":
                         has_plan = True
                         self._broadcast_plan_created()
                 except Exception as e:
@@ -490,22 +497,34 @@ class DiagnosticAgent:
         while execute_turn_count < max_execute_turns and self.state not in ["blocked", "completed", "failed"]:
             execute_turn_count += 1
 
-            if self.plan.current_plan and self.plan.current_task_index < len(self.plan.current_plan["tasks"]):
-                current_task = self.plan.current_plan["tasks"][self.plan.current_task_index]
-                task_name = current_task.get("name", f"Task {self.plan.current_task_index + 1}")
-                logger.info(f"Executing Task: {task_name}")
+            current_task = self.plan.get_current_task()
+            if current_task:
+                logger.info(f"Executing Task: {current_task.get('name')}")
 
             past_steps_str = "\n".join(past_steps_list) if past_steps_list else "None yet."
 
             current_task_info = ""
-            if self.plan.current_plan and self.plan.current_task_index < len(self.plan.current_plan["tasks"]):
-                t = self.plan.current_plan["tasks"][self.plan.current_task_index]
-                current_task_info = f"CURRENT TASK: {t.get('name')} (Goal: Perform this task using available tools)."
+            current_task = self.plan.get_current_task()
+            if current_task:
+                current_task_info = (
+                    f"CURRENT TASK: {current_task.get('name')} "
+                    f"(Goal: Perform this task using available tools. "
+                    f"You may need multiple steps for one task. "
+                    f"Stay on this task until complete, then call "
+                    f"update_task_status({{task_id: {current_task.get('id')}, status: 'completed'}})."
+                )
 
+            multi_step_note = (
+                "One plan task may require multiple steps (DSPy turns). "
+                "Stay on this task until its goal is achieved, then call "
+                "update_task_status({task_id: N, status: 'completed'}) "
+                "before moving to Task N+1. Do NOT skip tasks."
+            )
             phase_instruction = (
                 "CURRENT PHASE: EXECUTION. "
                 "Follow the plan items sequentially. Use tools (query_pm_cards, hitl_check, etc.) to gather evidence. "
-                f"{current_task_info}"
+                f"{current_task_info} "
+                f"{multi_step_note}"
             )
             full_prompt = f"{self.SYSTEM_PROMPT}\n\n{phase_instruction}"
 
@@ -559,7 +578,10 @@ class DiagnosticAgent:
                 break
             elif action == "update_task_status":
                 try:
-                    data = json.loads(action_input)
+                    try:
+                        data = json.loads(action_input)
+                    except json.JSONDecodeError:
+                        data = ast.literal_eval(action_input)
                     t_id = data.get("task_id")
                     t_status = data.get("status", "completed")
                     self.update_plan_task(t_id, t_status)
@@ -583,7 +605,10 @@ class DiagnosticAgent:
                 obs = str(tool(action_input))
             elif action == "hitl_check":
                 try:
-                    params = json.loads(action_input)
+                    try:
+                        params = json.loads(action_input)
+                    except json.JSONDecodeError:
+                        params = ast.literal_eval(action_input)
                 except Exception as exc:
                     logger.warning("hitl_check param JSON parse failed: %s", exc)
                     params = {"raw": action_input, "parse_error": str(exc)}
@@ -605,11 +630,6 @@ class DiagnosticAgent:
 
             if self.state in ("blocked", "failed"):
                 break
-
-            if self.plan.current_plan and self.plan.current_task_index < len(self.plan.current_plan["tasks"]):
-                task_id = self.plan.current_plan["tasks"][self.plan.current_task_index].get("id", self.plan.current_task_index + 1)
-                self._broadcast_plan_task_completed(task_id)
-                self.plan.current_task_index += 1
 
             if execute_turn_count >= max_execute_turns and self.state == "running":
                 self.state = "failed"

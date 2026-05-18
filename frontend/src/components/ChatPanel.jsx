@@ -3,6 +3,7 @@ import ThinkingBubble from './ThinkingBubble.jsx';
 import ToolCallChip from './ToolCallChip.jsx';
 import InlineHITLCard from './InlineHITLCard.jsx';
 import PlanTracker from './PlanTracker.jsx';
+import SummaryReport from './SummaryReport.jsx';
 
 function EmptyState() {
     return (
@@ -53,17 +54,22 @@ export default function ChatPanel({ activeIncident, agentSteps, hitlItems, onRes
             <div className="chat-container">
                 {agentSteps.map((step, idx) => {
                     const isRunning = step.observation === null;
+                    const isComplete = step.toolName === 'complete';
                     return (
                         <div className="chat-step" key={step.stepId || idx}>
                             <ThinkingBubble
                                 reasoning={step.reasoning}
                                 isRunning={isRunning}
                             />
-                            <ToolCallChip
-                                toolName={step.toolName || (step.action ? step.action.split('(')[0] : 'unknown')}
-                                toolInput={step.toolInput || (step.action && step.action.includes('(') ? step.action.split('(')[1].replace(')', '') : '')}
-                                observation={step.observation}
-                            />
+                            {isComplete ? (
+                                <SummaryReport report={step.observation} />
+                            ) : (
+                                <ToolCallChip
+                                    toolName={step.toolName || (step.action ? step.action.split('(')[0] : 'unknown')}
+                                    toolInput={step.toolInput || (step.action && step.action.includes('(') ? step.action.split('(')[1].replace(')', '') : '')}
+                                    observation={step.observation}
+                                />
+                            )}
                         </div>
                     );
                 })}

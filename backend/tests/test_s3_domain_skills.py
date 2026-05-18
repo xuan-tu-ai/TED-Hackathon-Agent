@@ -11,13 +11,10 @@ from app.robot_agent.agent.skills import Skill
 
 
 SKILL_NAMES = [
-    "diagnose_surge",
-    "diagnose_dropout",
-    "diagnose_instability",
-    "diagnose_deviation",
-    "diagnose_transition",
-    "correlate_history",
-    "verify_defect",
+    "diagnose",
+    "correlate-history",
+    "verify-defect",
+    "check-fmea",
 ]
 
 
