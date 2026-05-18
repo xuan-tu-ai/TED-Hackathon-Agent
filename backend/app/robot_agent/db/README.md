@@ -30,12 +30,19 @@ When `DATABASE_URL` is unset, the application falls back to
 
 ## Running Migrations
 
+> **Important:** All `alembic` commands must be run from the `backend/` directory.
+> `alembic.ini` resolves `sqlalchemy.url` relative to CWD (`./data/demo.db`), so
+> running from the repo root will target a different file than the application default.
+
 ```bash
+# From repo root:
+cd backend
+
 # Upgrade to latest schema
-alembic upgrade head
+uv run alembic upgrade head
 
 # Create a new autogenerate revision after model changes
-alembic revision --autogenerate -m "description of change"
+uv run alembic revision --autogenerate -m "description of change"
 
 # Review the generated migration before applying it
 # The file will be in alembic/versions/

@@ -54,26 +54,34 @@ def test_alembic_upgrade_head_sqlite():
     _engine_cache.clear()
     db_name = f"test_alembic_{uuid.uuid4().hex[:8]}.db"
     db_url = f"sqlite+pysqlite:///./data/{db_name}"
+    prior_url = os.environ.get("DATABASE_URL")
     os.environ["DATABASE_URL"] = db_url
-    from alembic.config import Config
-    from alembic import command
+    try:
+        from alembic.config import Config
+        from alembic import command
 
-    alembic_cfg = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
-    command.upgrade(alembic_cfg, "head")
+        alembic_cfg = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+        command.upgrade(alembic_cfg, "head")
 
-    from app.robot_agent.db.models import get_db_engine
-    engine = get_db_engine(db_url)
-    from sqlalchemy import inspect
-    inspector = inspect(engine)
-    tables = inspector.get_table_names()
-    for table in [
-        "agent_memories", "alerts", "hitl_queue", "incidents",
-        "maintenance_events", "perception_results", "pm_cards", "reports",
-    ]:
-        assert table in tables, f"Missing table: {table}"
+        from app.robot_agent.db.models import get_db_engine
+        engine = get_db_engine(db_url)
+        from sqlalchemy import inspect
+        inspector = inspect(engine)
+        tables = inspector.get_table_names()
+        for table in [
+            "agent_memories", "alerts", "hitl_queue", "incidents",
+            "maintenance_events", "perception_results", "pm_cards", "reports",
+        ]:
+            assert table in tables, f"Missing table: {table}"
 
-    command.downgrade(alembic_cfg, "base")
-    engine.dispose()
-    db_path = Path(__file__).resolve().parents[1] / "data" / db_name
-    if db_path.exists():
-        db_path.unlink()
+        command.downgrade(alembic_cfg, "base")
+        engine.dispose()
+    finally:
+        if prior_url is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = prior_url
+        _engine_cache.clear()
+        db_path = Path(__file__).resolve().parents[1] / "data" / db_name
+        if db_path.exists():
+            db_path.unlink()

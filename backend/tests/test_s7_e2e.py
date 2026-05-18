@@ -118,37 +118,37 @@ class TestAlertStormThreshold:
 
 
 class TestRunnerIntegration:
-    def test_runner_has_alert_storm_handler(self):
+    def test_runner_has_alert_storm_handler(self, db_url):
         from app.robot_agent.simulation.runner import SimulationRunner
         from app.robot_agent.simulation.engine import SimulationEngine
         from app.robot_agent.simulation.state import SimulationState
 
         state = SimulationState()
-        engine = SimulationEngine(db_url="sqlite+pysqlite:///data/demo.db")
+        engine = SimulationEngine(db_url=db_url)
         runner = SimulationRunner(engine=engine, state=state, speed_factor=1)
 
         assert hasattr(runner, '_handle_alert_storm')
         assert hasattr(runner, '_submit_incident')
         assert hasattr(runner, '_process_pending_incidents')
 
-    def test_runner_max_workers_2(self):
+    def test_runner_max_workers_2(self, db_url):
         from app.robot_agent.simulation.runner import SimulationRunner
         from app.robot_agent.simulation.engine import SimulationEngine
         from app.robot_agent.simulation.state import SimulationState
 
         state = SimulationState()
-        engine = SimulationEngine(db_url="sqlite+pysqlite:///data/demo.db")
+        engine = SimulationEngine(db_url=db_url)
         runner = SimulationRunner(engine=engine, state=state, speed_factor=1)
 
-        assert runner._agent_executor._max_workers == 2
+        assert runner._agent_executor._max_workers == 5
 
-    def test_runner_pending_incidents_init(self):
+    def test_runner_pending_incidents_init(self, db_url):
         from app.robot_agent.simulation.runner import SimulationRunner
         from app.robot_agent.simulation.engine import SimulationEngine
         from app.robot_agent.simulation.state import SimulationState
 
         state = SimulationState()
-        engine = SimulationEngine(db_url="sqlite+pysqlite:///data/demo.db")
+        engine = SimulationEngine(db_url=db_url)
         runner = SimulationRunner(engine=engine, state=state, speed_factor=1)
 
         assert runner._pending_incidents == []

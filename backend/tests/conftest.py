@@ -68,3 +68,4 @@ def clean_db(db_url):
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     engine.dispose()
+    _engine_cache.clear()

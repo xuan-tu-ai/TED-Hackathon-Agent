@@ -47,7 +47,8 @@ def seed_demo_data(session, days: int = 45) -> dict[str, int]:
 def run() -> None:
     SQL_DIR.mkdir(parents=True, exist_ok=True)
 
-    db_url = f"sqlite+pysqlite:///{DB_PATH.as_posix()}"
+    from ..db.models import get_default_db_url
+    db_url = get_default_db_url()
     engine = create_db_engine(db_url)
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

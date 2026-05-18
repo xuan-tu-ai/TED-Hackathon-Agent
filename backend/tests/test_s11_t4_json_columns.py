@@ -13,10 +13,10 @@ def test_json_type_defined():
 
 def test_jsontype_has_postgresql_variant():
     from app.robot_agent.db.models import JSONType
-    from sqlalchemy.dialects.postgresql import JSONB
-    mapping = JSONType._variant_mapping
-    assert mapping is not None
-    assert isinstance(mapping.get("postgresql"), JSONB)
+    from sqlalchemy.dialects import postgresql as pg
+    # Compile JSONType against the Postgres dialect via the public TypeEngine API.
+    compiled = JSONType.compile(dialect=pg.dialect())
+    assert "JSONB" in str(compiled).upper()
 
 
 def test_all_json_columns_render_sqlite():
