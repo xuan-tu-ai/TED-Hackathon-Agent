@@ -10,6 +10,7 @@ Current test count: **~180+ tests** across anomaly detection (Sprint 1), agent s
 ## Active Sprints
 - [Sprint 8](docs/sprint-plans/sprint-8.md) — *Planned* — Codebase Documentation: Google Style docstrings + module README.md for every sub-package
 - [Sprint 11](docs/sprint-plans/sprint-11.md) — *Planned* — Multi-DB Compatibility: SQLite (local) + PostgreSQL (local Docker + Azure) via single `DATABASE_URL` env var
+- [Sprint 12](docs/sprint-plans/sprint-12.md) — *Planned* — GLC-AnomalyMaskFormer Correctness Fixes: vectorize GPU bottlenecks, numerical stability, RevIN pure-Tensor API, 2D axial PE, Minimax Phase B sign bug
 
 ## Completed Sprints
 - [Sprint 0](docs/sprint-plans/sprint-0.md) — *Completed* — Project structure, directories, `__init__.py` files
@@ -34,8 +35,9 @@ Current test count: **~180+ tests** across anomaly detection (Sprint 1), agent s
 - [x] **M9:** Agent-Side Fixes — PlanTracker sync, Skill Library cleanup, Task/Step sync (Sprint 10)
 - [x] **M10:** Codebase Documentation — Google Style docstrings + module READMEs for the entire codebase (Sprint 8)
 - [ ] **M11:** Multi-DB Compatibility — SQLite + PostgreSQL (local + Azure) via single `DATABASE_URL` (Sprint 11)
-- [ ] **M12:** Real OT Data Integration
-- [ ] **M13:** Production Deployment & Hardening
+- [ ] **M12:** GLC-AnomalyMaskFormer Correctness Fixes — GPU vectorization, numerical stability, RevIN API, 2D PE, Minimax convergence (Sprint 12)
+- [ ] **M13:** Real OT Data Integration
+- [ ] **M14:** Production Deployment & Hardening
 
 ## Architecture Snapshot
 
@@ -81,6 +83,7 @@ frontend/                         ← React 18 + Vite + Zustand (SSE streaming, 
 | 8 | Codebase Documentation | ✅ Done | Google Style docstrings for every class/function/file across `anomaly_detection/` (48 files), `robot_agent/` (40 files), `agent_knowledge/`; module README.md files (18+) for each sub-package explaining structure, development patterns, and design rationale |
 | 10 | Agent-Side Fixes | ✅ Done | PlanTracker sync, skill library cleanup, task/step desync fix, backend/skill/frontend rendering fixes |
 | 11 | Multi-DB Compatibility | 📝 Planned | Env-driven `DATABASE_URL`; cross-dialect JSON columns (`JSONB` on Postgres); Alembic baseline migration; driver-aware engine options (SSL for Azure, pooling for Postgres, `check_same_thread` for SQLite); test suite parameterized; Docker Compose for local Postgres; Azure Flexible Server deployment docs |
+| 12 | MaskFormer Correctness Fixes | 📝 Planned | Vectorize SensorBlockMasking (scatter_); KL log stability; RevIN pure-Tensor API; delete broken `flatten_to_tokens`; 2D axial PositionalEmbedding; fix Minimax Phase B sign bug |
 
 ## Backlog / Future Work
 - **Real OT data integration** — Replace mock simulation with live paint-shop sensor data feed
