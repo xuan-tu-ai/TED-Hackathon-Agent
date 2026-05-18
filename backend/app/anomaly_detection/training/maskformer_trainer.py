@@ -140,8 +140,7 @@ class MaskFormerTrainer:
         )
         assoc_dict_max = self.assoc_loss_fn(out_b["discrepancies"])
 
-        # Maximize discrepancy by minimizing its negative
-        loss_b = -self.lambda_assoc * assoc_dict_max["loss"]
+        loss_b = self.lambda_assoc * assoc_dict_max["loss"]
         loss_b.backward()
         self.optimizer_sigma.step()
 

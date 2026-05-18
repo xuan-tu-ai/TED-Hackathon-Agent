@@ -5,7 +5,6 @@ from app.anomaly_detection.layers.patchify import (
     Patchify,
     FlattenPatches,
     unfold_to_patches,
-    flatten_to_tokens,
 )
 
 
@@ -52,11 +51,6 @@ class TestFlattenPatches:
         patches = torch.randn(4, 3, 20, 16)
         tokens = flatten(patches)
         assert tokens.shape == (4, 60, 16)  # 3*20=60
-
-    def test_flatten_functional(self):
-        patches = torch.randn(2, 3, 10, 16)
-        tokens = flatten_to_tokens(patches, d_half=32)
-        assert tokens.shape == (2, 30, 32)  # functional version still projects
 
     def test_reshape_only(self):
         flatten = FlattenPatches(patch_size=32)

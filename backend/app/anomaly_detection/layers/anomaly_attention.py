@@ -119,8 +119,8 @@ class AnomalyAttentionBlock(nn.Module):
         Returns:
             discrepancy: [B, N] averaged over heads
         """
-        kl_pq = (p * torch.log((p + eps) / (q + eps))).sum(dim=-1)  # [B, H, N]
-        kl_qp = (q * torch.log((q + eps) / (p + eps))).sum(dim=-1)  # [B, H, N]
+        kl_pq = (p * (torch.log(p + eps) - torch.log(q + eps))).sum(dim=-1)  # [B, H, N]
+        kl_qp = (q * (torch.log(q + eps) - torch.log(p + eps))).sum(dim=-1)  # [B, H, N]
         discrepancy = (kl_pq + kl_qp).mean(dim=1)  # [B, N] — average over heads
         return discrepancy
 

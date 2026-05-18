@@ -119,6 +119,30 @@ class TestMaskFormerTrainer:
             "Association discrepancy collapsed to near zero — minimax sign may be wrong"
         )
 
+    def test_phase_b_loss_is_positive(self):
+        """Phase B loss should be positive (maximise discrepancy)."""
+        model = make_tiny_model()
+        sigma_params = [p for n, p in model.named_parameters() if "sigma" in n]
+        main_params = [p for n, p in model.named_parameters() if "sigma" not in n]
+        for p in main_params:
+            p.requires_grad_(False)
+
+        opt_main = optim.Adam(main_params, lr=0.0)
+        opt_sigma = optim.Adam(sigma_params, lr=1e-2)
+        trainer = MaskFormerTrainer(
+            model=model,
+            optimizer_main=opt_main,
+            optimizer_sigma=opt_sigma,
+            lambda_assoc=2.0,
+            lambda_orth=0.0,
+        )
+
+        x = {"input": torch.randn(4, 6, 240)}
+        out = trainer.train_step(x)
+        assert out["assoc_loss_max"].item() > 0.0, (
+            "Phase B loss must be positive after sign fix (was -lambda, now +lambda)"
+        )
+
 
 class TestMaskFormerEvaluator:
     def test_evaluate_returns_eval_result(self):

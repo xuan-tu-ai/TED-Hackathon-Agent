@@ -15,7 +15,9 @@ class TestGlobalRevIN:
         x = torch.randn(4, 6, 240)
         x_norm, stats = revin(x)
         assert x_norm.shape == x.shape
-        assert len(stats) == 6
+        mu, sigma = stats
+        assert mu.shape == (4, 6, 1)
+        assert sigma.shape == (4, 6, 1)
 
     def test_inverse_recovers_original(self):
         revin = GlobalRevIN(num_sensors=6)
@@ -32,14 +34,14 @@ class TestGlobalRevIN:
             channel_mean = x_norm[:, c, :].mean()
             assert abs(channel_mean) < 1e-4
 
-    def test_stats_stored_per_sensor(self):
+    def test_stats_are_tensors(self):
         revin = GlobalRevIN(num_sensors=6)
         x = torch.randn(4, 6, 240)
         _, stats = revin(x)
-        assert len(stats) == 6
-        for stat in stats:
-            assert hasattr(stat, "mean")
-            assert hasattr(stat, "std")
+        mu, sigma = stats
+        assert isinstance(mu, torch.Tensor)
+        assert isinstance(sigma, torch.Tensor)
+        assert mu.shape == sigma.shape
 
 
 class TestPerPatchRevIN:
@@ -48,8 +50,9 @@ class TestPerPatchRevIN:
         x = torch.randn(4, 6, 14, 32)
         x_norm, stats = revin(x)
         assert x_norm.shape == x.shape
-        assert len(stats) == 6
-        assert len(stats[0]) == 14
+        p_min, p_max = stats
+        assert p_min.shape == (4, 6, 14, 1)
+        assert p_max.shape == (4, 6, 14, 1)
 
     def test_inverse_recovers_original(self):
         revin = PerPatchRevIN(num_sensors=6, num_patches=14, patch_size=32)
@@ -68,6 +71,14 @@ class TestPerPatchRevIN:
                 patch_max = x_norm[:, c, p, :].amax(dim=-1)
                 assert torch.all(patch_max <= 1.0 + 1e-4)
                 assert torch.all(patch_min >= -1.0 - 1e-4)
+
+    def test_stats_are_tensors(self):
+        revin = PerPatchRevIN(num_sensors=6, num_patches=14, patch_size=32)
+        x = torch.randn(4, 6, 14, 32)
+        _, stats = revin(x)
+        p_min, p_max = stats
+        assert isinstance(p_min, torch.Tensor)
+        assert isinstance(p_max, torch.Tensor)
 
 
 class TestComputeFileStats:

@@ -64,8 +64,7 @@ class SensorBlockMasking(nn.Module):
 
         # Expand mask to all sensors: token index = sensor * num_patches + time_pos
         mask = torch.zeros(B, self.num_sensors, self.num_patches, dtype=torch.bool, device=device)
-        for b in range(B):
-            mask[b, :, masked_time_ids[b]] = True
+        mask.scatter_(dim=2, index=masked_time_ids.unsqueeze(1).expand(-1, self.num_sensors, -1), value=True)
         mask = mask.reshape(B, N)  # [B, num_sensors * num_patches]
 
         return mask, masked_time_ids

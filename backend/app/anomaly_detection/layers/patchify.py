@@ -97,19 +97,3 @@ def unfold_to_patches(x: torch.Tensor, patch_size: int, patch_stride: int) -> to
         patches: [B, C, P, patch_size]
     """
     return x.unfold(dimension=-1, size=patch_size, step=patch_stride)
-
-
-def flatten_to_tokens(patches: torch.Tensor, d_half: int) -> torch.Tensor:
-    """Functional version of FlattenPatches.forward().
-
-    Args:
-        patches: [B, C, P, L]
-        d_half: target embedding dimension per stream
-
-    Returns:
-        tokens: [B, C*P, d_half]
-    """
-    B, C, P, L = patches.shape
-    tokens = patches.reshape(B, C * P, L)
-    linear = nn.Linear(L, d_half, device=patches.device, dtype=patches.dtype)
-    return linear(tokens)

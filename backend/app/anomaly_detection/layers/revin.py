@@ -14,9 +14,6 @@ produce auxiliary targets for the V7 stage-1 training heads.
 
 import torch
 import torch.nn as nn
-from dataclasses import dataclass
-
-from app.anomaly_detection.schemas import RevINStat
 
 
 class GlobalRevIN(nn.Module):
@@ -43,7 +40,7 @@ class GlobalRevIN(nn.Module):
         self.num_sensors = num_sensors
         self.eps = eps
 
-    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, list[RevINStat]]:
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         """Normalize input tensor per sensor over full sequence length.
 
         Args:
@@ -51,53 +48,26 @@ class GlobalRevIN(nn.Module):
 
         Returns:
             x_norm: Normalized tensor same shape as input
-            stats: List of RevINStat per sensor, used for inverse transform
+            stats: Tuple of (mean, std) tensors each [B, num_sensors, 1]
         """
-        B, C, T = x.shape
-        stats: list[RevINStat] = []
+        mu = x.mean(dim=-1, keepdim=True)      # [B, C, 1]
+        sigma = x.std(dim=-1, keepdim=True)     # [B, C, 1]
+        sigma = torch.where(sigma < self.eps, torch.ones_like(sigma), sigma)
+        x_norm = (x - mu) / sigma
+        return x_norm, (mu.detach(), sigma.detach())
 
-        x_norm = torch.zeros_like(x)
-        for c in range(C):
-            channel = x[:, c, :]  # [B, T]
-            mu = channel.mean(dim=1, keepdim=True)  # [B, 1]
-            sigma = channel.std(dim=1, keepdim=True)  # [B, 1]
-            sigma = torch.where(sigma < self.eps, torch.ones_like(sigma), sigma)
-
-            x_norm[:, c, :] = (channel - mu) / sigma
-            stat = RevINStat(
-                mean=mu.squeeze(-1).detach(),  # [B] → scalar per batch? Use mean over batch
-                std=sigma.squeeze(-1).detach(),
-            )
-            stats.append(stat)
-
-        return x_norm, stats
-
-    def inverse(self, x_norm: torch.Tensor, stats: list[RevINStat]) -> torch.Tensor:
+    def inverse(self, x_norm: torch.Tensor, stats: tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
         """Denormalize using stored statistics.
 
         Args:
             x_norm: Normalized tensor [B, num_sensors, seq_len]
-            stats: List of RevINStat per sensor from forward pass
+            stats: Tuple of (mean, std) tensors each [B, num_sensors, 1] from forward pass
 
         Returns:
             x_raw: Reconstructed raw tensor
         """
-        B, C, T = x_norm.shape
-        x_raw = torch.zeros_like(x_norm)
-
-        for c in range(C):
-            stat = stats[c]
-            mu = stat.mean  # shape depends on how stored
-            sigma = stat.std
-
-            if mu.ndim == 0:
-                x_raw[:, c, :] = x_norm[:, c, :] * sigma + mu
-            elif mu.ndim == 1:
-                x_raw[:, c, :] = x_norm[:, c, :] * sigma.unsqueeze(-1) + mu.unsqueeze(-1)
-            else:
-                raise ValueError(f"Unexpected stat dimensions: mean={mu.ndim}, std={sigma.ndim}")
-
-        return x_raw
+        mu, sigma = stats
+        return x_norm * sigma + mu
 
 
 class PerPatchRevIN(nn.Module):
@@ -133,7 +103,7 @@ class PerPatchRevIN(nn.Module):
         self.patch_size = patch_size
         self.eps = eps
 
-    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, list[list[RevINStat]]]:
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         """Normalize input tensor per (sensor, patch) pair using min-max scaling.
 
         Args:
@@ -141,49 +111,29 @@ class PerPatchRevIN(nn.Module):
 
         Returns:
             x_norm: Normalized tensor same shape, scaled to [-1, 1] per patch
-            stats: Nested list stats[sensor][patch] for inverse transform
+            stats: Tuple of (p_min, p_max) tensors each [B, num_sensors, num_patches, 1]
         """
-        B, C, P, L = x.shape
-        stats: list[list[RevINStat]] = []
-
-        x_norm = torch.zeros_like(x)
-        for c in range(C):
-            sensor_stats: list[RevINStat] = []
-            for p in range(P):
-                patch = x[:, c, p, :]  # [B, patch_size]
-                p_min = patch.amin(dim=1, keepdim=True)
-                p_max = patch.amax(dim=1, keepdim=True)
-                denom = (p_max - p_min) + self.eps
-
-                x_norm[:, c, p, :] = 2.0 * (patch - p_min) / denom - 1.0
-                sensor_stats.append(RevINStat(mean=p_min.squeeze(-1), std=p_max.squeeze(-1)))
-            stats.append(sensor_stats)
-
-        return x_norm, stats
+        p_min = x.amin(dim=-1, keepdim=True)   # [B, C, P, 1]
+        p_max = x.amax(dim=-1, keepdim=True)   # [B, C, P, 1]
+        denom = (p_max - p_min) + self.eps
+        x_norm = 2.0 * (x - p_min) / denom - 1.0
+        return x_norm, (p_min.detach(), p_max.detach())
 
     def inverse(
-        self, x_norm: torch.Tensor, stats: list[list[RevINStat]]
+        self, x_norm: torch.Tensor, stats: tuple[torch.Tensor, torch.Tensor]
     ) -> torch.Tensor:
         """Denormalize using stored per-patch statistics (min-max based).
 
         Args:
             x_norm: Normalized tensor [B, num_sensors, num_patches, patch_size]
-            stats: Nested list stats[sensor][patch] with (p_min, p_max)
+            stats: Tuple of (p_min, p_max) tensors each [B, num_sensors, num_patches, 1]
 
         Returns:
             x_raw: Reconstructed raw tensor
         """
-        B, C, P, L = x_norm.shape
-        x_raw = torch.zeros_like(x_norm)
-
-        for c in range(C):
-            for p in range(P):
-                p_min: torch.Tensor = stats[c][p].mean  # [B]
-                p_max: torch.Tensor = stats[c][p].std   # [B]
-                denom = (p_max - p_min).abs() + self.eps  # [B]
-                x_raw[:, c, p, :] = (x_norm[:, c, p, :] + 1.0) * denom.unsqueeze(-1) / 2.0 + p_min.unsqueeze(-1)
-
-        return x_raw
+        p_min, p_max = stats
+        denom = (p_max - p_min) + self.eps
+        return (x_norm + 1.0) * denom / 2.0 + p_min
 
 
 def compute_file_stats(x: torch.Tensor) -> torch.Tensor:

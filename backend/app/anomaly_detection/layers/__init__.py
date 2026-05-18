@@ -12,7 +12,7 @@ organised into three groups:
    ``reconstruction_decoder``
 """
 
-from .revin import GlobalRevIN, PerPatchRevIN, RevINStat, compute_file_stats, compute_patch_stats
+from .revin import GlobalRevIN, PerPatchRevIN, compute_file_stats, compute_patch_stats
 from .patchify import Patchify, FlattenPatches
 from .encoders import PatchEncoderGlobal, PatchEncoderLocal, PositionalEmbedding
 from .transformer import CLSToken, TransformerEncoder, DualPooling
@@ -28,7 +28,6 @@ from .reconstruction_decoder import ReconstructionDecoder
 __all__ = [
     "GlobalRevIN",
     "PerPatchRevIN",
-    "RevINStat",
     "compute_file_stats",
     "compute_patch_stats",
     "Patchify",

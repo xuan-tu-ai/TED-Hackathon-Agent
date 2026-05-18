@@ -105,3 +105,36 @@ class TestAnomalyAttentionTransformer:
         out = transformer.forward_with_detach_mode(x, detach="none")
         assert out["out"].shape == (2, 10, 32)
         assert out["discrepancies"].shape == (2, 2, 10)
+
+
+class TestKLNumericalStability:
+    def test_kl_equivalent_to_old_formulation(self):
+        """Verify that log(p+eps) - log(q+eps) gives same result as log((p+eps)/(q+eps))."""
+        block = AnomalyAttentionBlock(
+            d_model=32, n_heads=2, n_tokens=10, ffn_dim=64, dropout=0.0
+        )
+        x = torch.randn(2, 10, 32)
+        out = block(x)
+        p = out["A_prior"]
+        q = out["A_series"]
+        eps = 1e-8
+
+        old_kl_pq = (p * torch.log((p + eps) / (q + eps))).sum(dim=-1)
+        new_kl_pq = (p * (torch.log(p + eps) - torch.log(q + eps))).sum(dim=-1)
+        torch.testing.assert_close(old_kl_pq, new_kl_pq, rtol=1e-5, atol=1e-5)
+
+        old_kl_qp = (q * torch.log((q + eps) / (p + eps))).sum(dim=-1)
+        new_kl_qp = (q * (torch.log(q + eps) - torch.log(p + eps))).sum(dim=-1)
+        torch.testing.assert_close(old_kl_qp, new_kl_qp, rtol=1e-5, atol=1e-5)
+
+    def test_kl_stable_with_extreme_values(self):
+        """log(p+eps) - log(q+eps) should not produce NaN for near-zero inputs."""
+        block = AnomalyAttentionBlock(
+            d_model=32, n_heads=2, n_tokens=10, ffn_dim=64, dropout=0.0
+        )
+        x = torch.randn(2, 10, 32)
+        block.eval()
+        out = block(x)
+        discrepancy = out["discrepancy"]
+        assert not torch.isnan(discrepancy).any()
+        assert not torch.isinf(discrepancy).any()

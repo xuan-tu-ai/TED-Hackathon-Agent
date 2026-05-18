@@ -136,7 +136,8 @@ class GLCFlowV7(BaseAnomalyDetectionModel, nn.Module):
         self.encoder_global = PatchEncoderGlobal(patch_size=patch_size, d_half=d_half)
         self.encoder_local = PatchEncoderLocal(patch_size=patch_size, d_half=d_half)
         self.pos_embedding = PositionalEmbedding(
-            num_tokens=num_patches * num_sensors,
+            num_sensors=num_sensors,
+            num_patches=num_patches,
             d_model=d_model,
         )
 

@@ -98,42 +98,55 @@ class PatchEncoderLocal(nn.Module):
 
 
 class PositionalEmbedding(nn.Module):
-    """Learnable positional embedding for (sensor, patch) tokens.
+    """2D axial positional embedding for (sensor, patch) tokens.
 
-    Adds a learnable [num_tokens, d_model] embedding to the concatenated
-    global+local tokens after Concat([z_global, z_local], dim=-1).
+    Decomposes position into two independent learnable embeddings:
+    - sensor_embedding: learns a vector per sensor (e.g., pressure vs flow)
+    - patch_embedding: learns a vector per time patch (temporal position)
 
-    For 84 tokens (6 sensors × 14 patches) and D=128:
-        pos_embedding: [84, 128]
-        tokens: [B, 84, 128] + [B, 84, 128] = [B, 84, 256] → needs projection
+    The final positional embedding at token (s, p) is:
+        pos_emb[s, p] = sensor_emb[s] + patch_emb[p]
 
-    Wait — per spec, Concat produces [B, 84, D] where D = d_half*2 = 128.
-    So pos_embedding should be [84, D] = [84, 128].
+    This 2D axial structure is more expressive than a flat 1D index because
+    tokens at the same time-patch but different sensors share the same
+    patch_embedding, and vice versa (ViViT-style axial attention, 2021).
 
     Args:
-        num_tokens: Number of (sensor, patch) tokens (default 84 = 6*14).
+        num_sensors: Number of sensor channels (default 6).
+        num_patches: Number of time positions / patches per sensor (default 14).
         d_model: Model dimension (default 128).
     """
 
-    def __init__(self, num_tokens: int = 84, d_model: int = 128) -> None:
+    def __init__(self, num_sensors: int = 6, num_patches: int = 14, d_model: int = 128) -> None:
         super().__init__()
-        self.num_tokens = num_tokens
+        self.num_sensors = num_sensors
+        self.num_patches = num_patches
         self.d_model = d_model
-        self.embedding = nn.Embedding(num_tokens, d_model)
+        self.sensor_embedding = nn.Embedding(num_sensors, d_model)
+        self.patch_embedding = nn.Embedding(num_patches, d_model)
 
     def forward(self, tokens: torch.Tensor) -> torch.Tensor:
-        """Add positional embedding to tokens.
+        """Add 2D axial positional embedding to tokens.
 
         Args:
-            tokens: [B, num_tokens, d_model]
+            tokens: [B, num_sensors * num_patches, d_model]
 
         Returns:
-            tokens + pos_embedding: [B, num_tokens, d_model]
+            tokens + pos_embedding: [B, num_sensors * num_patches, d_model]
         """
         B, N, D = tokens.shape
-        positions = torch.arange(N, device=tokens.device).unsqueeze(0).expand(B, N)
-        pos_emb = self.embedding(positions)  # [B, N, d_model]
+        S, P = self.num_sensors, self.num_patches
+
+        sensor_ids = torch.arange(S, device=tokens.device).unsqueeze(1).expand(S, P)
+        patch_ids = torch.arange(P, device=tokens.device).unsqueeze(0).expand(S, P)
+
+        sensor_emb = self.sensor_embedding(sensor_ids)  # [S, P, D]
+        patch_emb = self.patch_embedding(patch_ids)     # [S, P, D]
+
+        pos_emb = sensor_emb + patch_emb                # [S, P, D]
+        pos_emb = pos_emb.reshape(1, N, D).expand(B, -1, -1)  # [B, N, D]
+
         return tokens + pos_emb
 
     def extra_repr(self) -> str:
-        return f"num_tokens={self.num_tokens}, d_model={self.d_model}"
+        return f"num_sensors={self.num_sensors}, num_patches={self.num_patches}, d_model={self.d_model}"

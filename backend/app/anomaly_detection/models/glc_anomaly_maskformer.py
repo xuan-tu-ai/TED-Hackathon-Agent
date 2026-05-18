@@ -225,7 +225,7 @@ class GLCAnomalyMaskFormer(BaseAnomalyDetectionModel, nn.Module):
 
         # Positional + context embeddings
         self.pos_embedding = PositionalEmbedding(
-            num_tokens=num_tokens, d_model=d_model,
+            num_sensors=num_sensors, num_patches=num_patches, d_model=d_model,
         )
         if use_context_embeddings:
             self.context_embedding = ContextEmbedding(
