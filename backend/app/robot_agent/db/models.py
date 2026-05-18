@@ -5,8 +5,8 @@ covering perception results, maintenance history, preventive-maintenance
 (PM) cards, incidents, alerts, diagnostic reports, agent memory entries,
 and the human-in-the-loop (HITL) queue.
 
-Each model maps to a dedicated table recorded in the SQLite demo
-database at ``<project_root>/data/demo.db``.
+Database URL is driven by the ``DATABASE_URL`` environment variable;
+defaults to a SQLite database at ``<project_root>/data/demo.db``.
 """
 
 from __future__ import annotations
@@ -18,8 +18,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String, create_engine
-from sqlalchemy.engine import Engine
+from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String, Text, create_engine
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.engine import Engine, URL
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 
@@ -27,11 +28,34 @@ logger_db = logging.getLogger(__name__)
 
 
 def get_default_db_url() -> str:
+    env_url = os.getenv("DATABASE_URL")
+    if env_url:
+        return _normalize_sqlite_scheme(env_url)
     root = Path(__file__).resolve().parents[4]
     return f"sqlite+pysqlite:///{root / 'data' / 'demo.db'}"
 
 
+def _normalize_sqlite_scheme(url: str) -> str:
+    if url.startswith("sqlite:///"):
+        return url.replace("sqlite:///", "sqlite+pysqlite:///", 1)
+    return url
+
+
+def is_sqlite(url: str) -> bool:
+    return "sqlite" in url
+
+
+def is_postgres(url: str) -> bool:
+    return "postgresql" in url or "postgres" in url
+
+
+def _is_azure_host(url_str: str) -> bool:
+    return ".postgres.database.azure.com" in url_str
+
+
 DATABASE_URL = get_default_db_url()
+
+JSONType = JSON().with_variant(JSONB, "postgresql")
 
 _engine_cache: dict[str, Engine] = {}
 
@@ -39,9 +63,26 @@ _engine_cache: dict[str, Engine] = {}
 def get_db_engine(db_url: str | None = None) -> Engine:
     key = db_url or DATABASE_URL
     if key not in _engine_cache:
-        _engine_cache[key] = create_engine(key)
+        _engine_cache[key] = _build_engine(key)
         logger_db.debug("Created DB engine: %s", key)
     return _engine_cache[key]
+
+
+def _build_engine(url: str) -> Engine:
+    if is_sqlite(url):
+        return create_engine(url, connect_args={"check_same_thread": False})
+    if is_postgres(url):
+        connect_args: dict[str, Any] = {}
+        if _is_azure_host(url) and "sslmode" not in url:
+            logger_db.warning("Azure Postgres URL detected without sslmode=require — connection may fail")
+        return create_engine(
+            url,
+            pool_pre_ping=True,
+            pool_size=5,
+            max_overflow=10,
+            connect_args=connect_args,
+        )
+    return create_engine(url)
 
 
 class Base(DeclarativeBase):
@@ -60,7 +101,7 @@ class PerceptionResult(Base):
     abnormal_score: Mapped[float] = mapped_column(Float)
     severity_hint: Mapped[str] = mapped_column(String(16))
     is_file_anomaly: Mapped[bool] = mapped_column(Boolean, index=True)
-    per_sensor_scores: Mapped[dict[str, Any]] = mapped_column(JSON)
+    per_sensor_scores: Mapped[dict[str, Any]] = mapped_column(JSONType)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
@@ -74,7 +115,7 @@ class MaintenanceEvent(Base):
     robot_code: Mapped[str] = mapped_column(String(16), index=True)
     event_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     event_type: Mapped[str] = mapped_column(String(64))
-    notes: Mapped[str] = mapped_column(String(512))
+    notes: Mapped[str] = mapped_column(Text)
 
 
 class PMCard(Base):
@@ -84,9 +125,9 @@ class PMCard(Base):
     card_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     sensor: Mapped[str] = mapped_column(String(64), index=True)
     robot_code: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    cause: Mapped[str] = mapped_column(String(512))
-    symptom: Mapped[str] = mapped_column(String(512))
-    action: Mapped[str] = mapped_column(String(512))
+    cause: Mapped[str] = mapped_column(Text)
+    symptom: Mapped[str] = mapped_column(Text)
+    action: Mapped[str] = mapped_column(Text)
 
 
 class Incident(Base):
@@ -95,9 +136,9 @@ class Incident(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     incident_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     event_id: Mapped[str] = mapped_column(String(64), index=True)
-    packet_json: Mapped[dict[str, Any]] = mapped_column(JSON)
-    decision_json: Mapped[dict[str, Any]] = mapped_column(JSON)
-    trace_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    packet_json: Mapped[dict[str, Any]] = mapped_column(JSONType)
+    decision_json: Mapped[dict[str, Any]] = mapped_column(JSONType)
+    trace_json: Mapped[dict[str, Any]] = mapped_column(JSONType)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
@@ -111,8 +152,8 @@ class Alert(Base):
     alert_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     incident_id: Mapped[str] = mapped_column(String(64), index=True)
     severity: Mapped[str] = mapped_column(String(16), index=True)
-    channels_json: Mapped[list[str]] = mapped_column(JSON)
-    message: Mapped[str] = mapped_column(String(1024))
+    channels_json: Mapped[list[str]] = mapped_column(JSONType)
+    message: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(32), index=True)
     requires_ack: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -128,10 +169,10 @@ class Report(Base):
     report_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     incident_id: Mapped[str] = mapped_column(String(64), index=True)
     final_severity: Mapped[str] = mapped_column(String(16), index=True)
-    summary: Mapped[str] = mapped_column(String(1024))
-    root_cause_candidates_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
-    recommended_action: Mapped[str] = mapped_column(String(1024))
-    evidence_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
+    summary: Mapped[str] = mapped_column(Text)
+    root_cause_candidates_json: Mapped[list[dict[str, Any]]] = mapped_column(JSONType)
+    recommended_action: Mapped[str] = mapped_column(Text)
+    evidence_json: Mapped[list[dict[str, Any]]] = mapped_column(JSONType)
     status: Mapped[str] = mapped_column(String(32), index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -151,7 +192,7 @@ class AgentMemory(Base):
     agent_name: Mapped[str] = mapped_column(String(64))
     incident_id: Mapped[str] = mapped_column(String(64), index=True)
     severity: Mapped[str] = mapped_column(String(16))
-    summary: Mapped[str] = mapped_column(String(1024))
+    summary: Mapped[str] = mapped_column(Text)
     confidence: Mapped[float] = mapped_column(Float)
     recorded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -165,11 +206,11 @@ class HitlQueue(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: uuid.uuid4().hex[:8])
     incident_id: Mapped[str] = mapped_column(String(64), index=True)
     robot_code: Mapped[str] = mapped_column(String(16), index=True)
-    action: Mapped[str] = mapped_column(String(128))
-    parameters: Mapped[dict[str, Any]] = mapped_column(JSON)
+    action: Mapped[str] = mapped_column(Text)
+    parameters: Mapped[dict[str, Any]] = mapped_column(JSONType)
     severity: Mapped[str] = mapped_column(String(16))
     status: Mapped[str] = mapped_column(String(32), default="PENDING", index=True)
-    reasoning: Mapped[str] = mapped_column(String(2048))
+    reasoning: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),

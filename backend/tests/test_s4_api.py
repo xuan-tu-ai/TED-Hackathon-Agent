@@ -6,7 +6,10 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-os.environ["DATABASE_URL"] = "sqlite:///data/demo.db"
+# Set TEST_DATABASE_URL so conftest fixtures use the same path.
+_test_db_url = os.getenv("TEST_DATABASE_URL") or os.getenv("DATABASE_URL") or "sqlite+pysqlite:///./data/demo.db"
+os.environ["TEST_DATABASE_URL"] = _test_db_url
+os.environ["DATABASE_URL"] = _test_db_url
 
 from fastapi.testclient import TestClient
 import pytest

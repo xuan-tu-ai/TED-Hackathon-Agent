@@ -10,9 +10,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import pytest
 
 
-def _ensure_seeded():
+def _ensure_seeded(db_url):
     from app.robot_agent.seed import create_session_factory, seed_demo_data
-    session_factory = create_session_factory("sqlite:///data/demo.db")
+    session_factory = create_session_factory(db_url)
     session = session_factory()
     from app.robot_agent.db.models import PerceptionResult
     count = session.query(PerceptionResult).count()
@@ -22,11 +22,11 @@ def _ensure_seeded():
 
 
 class TestSimulationEngineTimeline:
-    def test_timeline_length_with_real_db(self, db_session):
-        _ensure_seeded()
+    def test_timeline_length_with_real_db(self, db_session, db_url):
+        _ensure_seeded(db_url)
         from app.robot_agent.simulation import SimulationEngine
 
-        engine = SimulationEngine("sqlite:///data/demo.db")
+        engine = SimulationEngine(db_url)
         timeline = engine.get_timeline()
 
         assert isinstance(timeline, list)
@@ -34,20 +34,20 @@ class TestSimulationEngineTimeline:
         assert all(isinstance(t, datetime) for t in timeline)
         assert timeline == sorted(timeline)
 
-    def test_timeline_720_ticks(self, db_session):
-        _ensure_seeded()
+    def test_timeline_720_ticks(self, db_session, db_url):
+        _ensure_seeded(db_url)
         from app.robot_agent.simulation import SimulationEngine
 
-        engine = SimulationEngine("sqlite:///data/demo.db")
+        engine = SimulationEngine(db_url)
         timeline = engine.get_timeline()
 
         assert len(timeline) == 720
 
-    def test_timeline_covers_30_days(self, db_session):
-        _ensure_seeded()
+    def test_timeline_covers_30_days(self, db_session, db_url):
+        _ensure_seeded(db_url)
         from app.robot_agent.simulation import SimulationEngine
 
-        engine = SimulationEngine("sqlite:///data/demo.db")
+        engine = SimulationEngine(db_url)
         timeline = engine.get_timeline()
 
         first = timeline[0]
@@ -61,11 +61,11 @@ class TestSimulationEngineTimeline:
 
 
 class TestSimulationEngineGetEvents:
-    def test_get_events_at_returns_list(self, db_session):
-        _ensure_seeded()
+    def test_get_events_at_returns_list(self, db_session, db_url):
+        _ensure_seeded(db_url)
         from app.robot_agent.simulation import SimulationEngine
 
-        engine = SimulationEngine("sqlite:///data/demo.db")
+        engine = SimulationEngine(db_url)
         timeline = engine.get_timeline()
 
         events = engine.get_events_at(timeline[0])
@@ -73,11 +73,11 @@ class TestSimulationEngineGetEvents:
         assert isinstance(events, list)
         assert len(events) > 0
 
-    def test_get_events_at_has_robot_code(self, db_session):
-        _ensure_seeded()
+    def test_get_events_at_has_robot_code(self, db_session, db_url):
+        _ensure_seeded(db_url)
         from app.robot_agent.simulation import SimulationEngine
 
-        engine = SimulationEngine("sqlite:///data/demo.db")
+        engine = SimulationEngine(db_url)
         timeline = engine.get_timeline()
 
         events = engine.get_events_at(timeline[0])
@@ -88,11 +88,11 @@ class TestSimulationEngineGetEvents:
 
 
 class TestSimulationEngineTickGenerator:
-    def test_tick_generator_yields_tuples(self, db_session):
-        _ensure_seeded()
+    def test_tick_generator_yields_tuples(self, db_session, db_url):
+        _ensure_seeded(db_url)
         from app.robot_agent.simulation import SimulationEngine
 
-        engine = SimulationEngine("sqlite:///data/demo.db")
+        engine = SimulationEngine(db_url)
 
         gen = engine.tick_generator()
         first_tick, first_events = next(gen)
@@ -100,11 +100,11 @@ class TestSimulationEngineTickGenerator:
         assert isinstance(first_tick, datetime)
         assert isinstance(first_events, list)
 
-    def test_tick_generator_exhausted_at_end(self, db_session):
-        _ensure_seeded()
+    def test_tick_generator_exhausted_at_end(self, db_session, db_url):
+        _ensure_seeded(db_url)
         from app.robot_agent.simulation import SimulationEngine
 
-        engine = SimulationEngine("sqlite:///data/demo.db")
+        engine = SimulationEngine(db_url)
         timeline = engine.get_timeline()
 
         gen = engine.tick_generator()
@@ -116,11 +116,11 @@ class TestSimulationEngineTickGenerator:
 
 
 class TestSimulationEngineCheckTriggers:
-    def test_check_triggers_returns_dict(self, db_session):
-        _ensure_seeded()
+    def test_check_triggers_returns_dict(self, db_session, db_url):
+        _ensure_seeded(db_url)
         from app.robot_agent.simulation import SimulationEngine
 
-        engine = SimulationEngine("sqlite:///data/demo.db")
+        engine = SimulationEngine(db_url)
         timeline = engine.get_timeline()
         session = engine.session_factory()
 
@@ -133,11 +133,11 @@ class TestSimulationEngineCheckTriggers:
         assert "alert_type" in triggers
         session.close()
 
-    def test_check_triggers_r07_has_alert(self, db_session):
-        _ensure_seeded()
+    def test_check_triggers_r07_has_alert(self, db_session, db_url):
+        _ensure_seeded(db_url)
         from app.robot_agent.simulation import SimulationEngine
 
-        engine = SimulationEngine("sqlite:///data/demo.db")
+        engine = SimulationEngine(db_url)
         timeline = engine.get_timeline()
         session = engine.session_factory()
 
@@ -147,11 +147,11 @@ class TestSimulationEngineCheckTriggers:
         assert triggers["alert_type"] in ("L1_BURST", "L2_ESCALATION")
         session.close()
 
-    def test_check_triggers_with_reference_time(self, db_session):
-        _ensure_seeded()
+    def test_check_triggers_with_reference_time(self, db_session, db_url):
+        _ensure_seeded(db_url)
         from app.robot_agent.simulation import SimulationEngine
 
-        engine = SimulationEngine("sqlite:///data/demo.db")
+        engine = SimulationEngine(db_url)
         timeline = engine.get_timeline()
         session = engine.session_factory()
 
@@ -164,11 +164,11 @@ class TestSimulationEngineCheckTriggers:
         assert triggers["l2"]["reference_time"] == ref_time.isoformat()
         session.close()
 
-    def test_check_triggers_uses_up_to_when_no_reference(self, db_session):
-        _ensure_seeded()
+    def test_check_triggers_uses_up_to_when_no_reference(self, db_session, db_url):
+        _ensure_seeded(db_url)
         from app.robot_agent.simulation import SimulationEngine
 
-        engine = SimulationEngine("sqlite:///data/demo.db")
+        engine = SimulationEngine(db_url)
         timeline = engine.get_timeline()
         session = engine.session_factory()
 
@@ -181,29 +181,29 @@ class TestSimulationEngineCheckTriggers:
 
 
 class TestSimulationEngineHelpers:
-    def test_get_robots_returns_47_robots(self, db_session):
+    def test_get_robots_returns_47_robots(self, db_session, db_url):
         from app.robot_agent.simulation import SimulationEngine
 
-        engine = SimulationEngine("sqlite:///data/demo.db")
+        engine = SimulationEngine(db_url)
         robots = engine.get_robots()
 
         assert len(robots) == 47
         assert robots[0] == "R-01"
         assert robots[-1] == "R-47"
 
-    def test_speed_factor_stored(self, db_session):
+    def test_speed_factor_stored(self, db_session, db_url):
         from app.robot_agent.simulation import SimulationEngine
 
-        engine = SimulationEngine("sqlite:///data/demo.db", speed_factor=7200)
+        engine = SimulationEngine(db_url, speed_factor=7200)
         assert engine.speed_factor == 7200
 
-        engine2 = SimulationEngine("sqlite:///data/demo.db")
+        engine2 = SimulationEngine(db_url)
         assert engine2.speed_factor == 3600
 
 
 class TestL1L2ReferenceTime:
-    def test_l1_burst_with_reference_time(self, db_session):
-        _ensure_seeded()
+    def test_l1_burst_with_reference_time(self, db_session, db_url):
+        _ensure_seeded(db_url)
         from app.robot_agent.poller.l1_burst import detect_l1_burst
 
         session = db_session
@@ -217,8 +217,8 @@ class TestL1L2ReferenceTime:
         assert result_without_ref["reference_time"] is not None
         assert result_with_ref["reference_time"] == now.isoformat()
 
-    def test_l2_slope_with_reference_time(self, db_session):
-        _ensure_seeded()
+    def test_l2_slope_with_reference_time(self, db_session, db_url):
+        _ensure_seeded(db_url)
         from app.robot_agent.poller.l2_slope import detect_l2_slope
 
         session = db_session
@@ -232,8 +232,8 @@ class TestL1L2ReferenceTime:
         assert result_without_ref["reference_time"] is not None
         assert result_with_ref["reference_time"] == now.isoformat()
 
-    def test_l1_burst_backward_compatible(self, db_session):
-        _ensure_seeded()
+    def test_l1_burst_backward_compatible(self, db_session, db_url):
+        _ensure_seeded(db_url)
         from app.robot_agent.poller.l1_burst import detect_l1_burst
 
         session = db_session
@@ -243,8 +243,8 @@ class TestL1L2ReferenceTime:
         assert "event_count" in result
         assert "density_per_hour" in result
 
-    def test_l2_slope_backward_compatible(self, db_session):
-        _ensure_seeded()
+    def test_l2_slope_backward_compatible(self, db_session, db_url):
+        _ensure_seeded(db_url)
         from app.robot_agent.poller.l2_slope import detect_l2_slope
 
         session = db_session
@@ -388,13 +388,13 @@ class TestGetSimulationStateSingleton:
 
 
 class TestSimulationRunner:
-    def test_runner_instantiation(self):
+    def test_runner_instantiation(self, db_url):
         from app.robot_agent.simulation.runner import SimulationRunner
         from app.robot_agent.simulation.engine import SimulationEngine
         from app.robot_agent.simulation.state import SimulationState
 
-        _ensure_seeded()
-        engine = SimulationEngine("sqlite:///data/demo.db")
+        _ensure_seeded(db_url)
+        engine = SimulationEngine(db_url)
         state = SimulationState()
         events = []
 
@@ -409,13 +409,13 @@ class TestSimulationRunner:
         assert runner._running is False
         assert runner._already_triggered == {}
 
-    def test_runner_start_stop(self):
+    def test_runner_start_stop(self, db_url):
         from app.robot_agent.simulation.runner import SimulationRunner
         from app.robot_agent.simulation.engine import SimulationEngine
         from app.robot_agent.simulation.state import SimulationState
 
-        _ensure_seeded()
-        engine = SimulationEngine("sqlite:///data/demo.db")
+        _ensure_seeded(db_url)
+        engine = SimulationEngine(db_url)
         state = SimulationState()
         events = []
 
@@ -435,13 +435,13 @@ class TestSimulationRunner:
         assert runner._running is False
         assert state.get_status() == "idle"
 
-    def test_runner_pause_resume(self):
+    def test_runner_pause_resume(self, db_url):
         from app.robot_agent.simulation.runner import SimulationRunner
         from app.robot_agent.simulation.engine import SimulationEngine
         from app.robot_agent.simulation.state import SimulationState
 
-        _ensure_seeded()
-        engine = SimulationEngine("sqlite:///data/demo.db")
+        _ensure_seeded(db_url)
+        engine = SimulationEngine(db_url)
         state = SimulationState()
         events = []
 
@@ -461,13 +461,13 @@ class TestSimulationRunner:
 
         runner.stop()
 
-    def test_runner_sets_up_state_on_start(self):
+    def test_runner_sets_up_state_on_start(self, db_url):
         from app.robot_agent.simulation.runner import SimulationRunner
         from app.robot_agent.simulation.engine import SimulationEngine
         from app.robot_agent.simulation.state import SimulationState
 
-        _ensure_seeded()
-        engine = SimulationEngine("sqlite:///data/demo.db")
+        _ensure_seeded(db_url)
+        engine = SimulationEngine(db_url)
         state = SimulationState()
         events = []
 
@@ -485,13 +485,13 @@ class TestSimulationRunner:
 
         runner.stop()
 
-    def test_runner_broadcasts_started_event(self):
+    def test_runner_broadcasts_started_event(self, db_url):
         from app.robot_agent.simulation.runner import SimulationRunner
         from app.robot_agent.simulation.engine import SimulationEngine
         from app.robot_agent.simulation.state import SimulationState
 
-        _ensure_seeded()
-        engine = SimulationEngine("sqlite:///data/demo.db")
+        _ensure_seeded(db_url)
+        engine = SimulationEngine(db_url)
         state = SimulationState()
         events = []
 
@@ -555,8 +555,8 @@ class TestSimulationStateHitlEvents:
 
 
 class TestResolveHitlEntryAndSetEvent:
-    def test_resolve_entry_updates_db(self, clean_db, db_session):
-        _ensure_seeded()
+    def test_resolve_entry_updates_db(self, clean_db, db_session, db_url):
+        _ensure_seeded(db_url)
         from app.robot_agent.agent.hitl import resolve_hitl_entry
         import uuid
 
@@ -668,7 +668,7 @@ class TestDiagnosticAgentHitlBlocking:
         assert result["permanently_blocked"] is True
         assert agent.state == "blocked"
 
-    def test_agent_hitl_check_high_severity_queues(self):
+    def test_agent_hitl_check_high_severity_queues(self, db_url):
         """Real test: agent.hitl_check() with HIGH severity BLOCKS then resumes after resolve."""
         from app.robot_agent.agent.diagnostic_agent import DiagnosticAgent, DiagnosticIncident
         from app.robot_agent.agent.hitl import resolve_hitl_entry_and_set_event
@@ -712,7 +712,7 @@ class TestDiagnosticAgentHitlBlocking:
 
         # Wait for the DB entry to appear (agent is blocked waiting for resolution)
         session = create_session_factory()()\
-            if False else create_session_factory("sqlite:///data/demo.db")()
+            if False else create_session_factory(db_url)()
         queue_id = None
         for _ in range(30):
             time.sleep(0.1)
@@ -906,8 +906,8 @@ class TestSimulationApi:
         assert data["status"] == "idle"
         assert data["tick_index"] == 0
 
-    def test_start_returns_running(self):
-        _ensure_seeded()
+    def test_start_returns_running(self, db_url):
+        _ensure_seeded(db_url)
         from fastapi.testclient import TestClient
         from app.robot_agent.main import app
         client = TestClient(app)
@@ -918,8 +918,8 @@ class TestSimulationApi:
         assert data["status"] == "running"
         assert data["total_ticks"] == 720
 
-    def test_start_twice_returns_409(self):
-        _ensure_seeded()
+    def test_start_twice_returns_409(self, db_url):
+        _ensure_seeded(db_url)
         from fastapi.testclient import TestClient
         from app.robot_agent.main import app
         client = TestClient(app)
@@ -928,8 +928,8 @@ class TestSimulationApi:
         resp2 = client.post("/api/sim/start", json={"speed_factor": 1})
         assert resp2.status_code == 409
 
-    def test_stop_returns_idle(self):
-        _ensure_seeded()
+    def test_stop_returns_idle(self, db_url):
+        _ensure_seeded(db_url)
         from fastapi.testclient import TestClient
         from app.robot_agent.main import app
         client = TestClient(app)
@@ -939,8 +939,8 @@ class TestSimulationApi:
         assert resp.status_code == 200
         assert resp.json()["status"] == "idle"
 
-    def test_pause_and_resume(self):
-        _ensure_seeded()
+    def test_pause_and_resume(self, db_url):
+        _ensure_seeded(db_url)
         from fastapi.testclient import TestClient
         from app.robot_agent.main import app
         client = TestClient(app)
@@ -974,7 +974,7 @@ class TestSimulationApi:
         )
         assert resp.status_code == 404
 
-    def test_hitl_approve_existing_entry(self):
+    def test_hitl_approve_existing_entry(self, db_url):
         """Create a real HITL DB entry, then approve it via API."""
         from fastapi.testclient import TestClient
         from app.robot_agent.main import app
@@ -986,7 +986,7 @@ class TestSimulationApi:
         client = TestClient(app)
 
         queue_id = uuid.uuid4().hex[:8]
-        session = create_session_factory("sqlite:///data/demo.db")()
+        session = create_session_factory(db_url)()
         entry = HitlQueue(
             id=queue_id,
             incident_id="INC-API-TEST-001",
@@ -1012,7 +1012,7 @@ class TestSimulationApi:
         assert data["queue_id"] == queue_id
         assert data["status"] == "APPROVED"
 
-    def test_hitl_reject_existing_entry(self):
+    def test_hitl_reject_existing_entry(self, db_url):
         """Create a real HITL DB entry, then reject it via API."""
         from fastapi.testclient import TestClient
         from app.robot_agent.main import app
@@ -1024,7 +1024,7 @@ class TestSimulationApi:
         client = TestClient(app)
 
         queue_id = uuid.uuid4().hex[:8]
-        session = create_session_factory("sqlite:///data/demo.db")()
+        session = create_session_factory(db_url)()
         entry = HitlQueue(
             id=queue_id,
             incident_id="INC-API-TEST-002",
@@ -1047,9 +1047,9 @@ class TestSimulationApi:
         assert resp.status_code == 200
         assert resp.json()["status"] == "REJECTED"
 
-    def test_status_updates_after_start(self):
+    def test_status_updates_after_start(self, db_url):
         """After start, status endpoint reflects running state."""
-        _ensure_seeded()
+        _ensure_seeded(db_url)
         from fastapi.testclient import TestClient
         from app.robot_agent.main import app
         client = TestClient(app)

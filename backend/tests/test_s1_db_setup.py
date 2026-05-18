@@ -31,11 +31,11 @@ def test_db_models_importable():
     assert PMCard is not None
 
 
-def test_db_engine_creation():
+def test_db_engine_creation(db_url):
     from app.robot_agent.seed import create_db_engine
-    engine = create_db_engine()
+    engine = create_db_engine(db_url)
     assert engine is not None
-    assert "sqlite" in str(engine.url)
+    assert engine.dialect.name in {"sqlite", "postgresql"}
 
 
 def test_session_factory_creation():

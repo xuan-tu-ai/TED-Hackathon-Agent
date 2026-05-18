@@ -47,3 +47,4 @@ logs/
 .python-version
 
 data
+.docker-data/

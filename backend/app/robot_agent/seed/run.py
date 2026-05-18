@@ -1,8 +1,9 @@
 """Entry-point script for demo database seeding and SQL snapshot export.
 
-:func:`run` creates a fresh SQLite database at ``data/demo.db``, seeds it with
-45 days of ``PerceptionResult`` data plus PM Cards and maintenance events, then
-dumps the full database as an SQL script to ``data/sql/seed_snapshot.sql``.
+:func:`run` creates a fresh database at ``data/demo.db`` (or the configured
+``DATABASE_URL``), seeds it with 45 days of ``PerceptionResult`` data plus
+PM Cards and maintenance events, then dumps the full database as an SQL
+script to ``data/sql/seed_snapshot.sql`` (SQLite only).
 
 Can be invoked directly: ``uv run python app/robot_agent/seed/run.py``.
 
@@ -13,12 +14,9 @@ Functions:
 
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
 
-from sqlalchemy import create_engine
-
-from ..db.models import Base, seed_maintenance_events
+from ..db.models import Base, create_db_engine, create_session_factory, seed_maintenance_events
 from .perception_results import seed_perception_results
 from .pm_cards import seed_pm_cards
 
@@ -49,17 +47,12 @@ def seed_demo_data(session, days: int = 45) -> dict[str, int]:
 def run() -> None:
     SQL_DIR.mkdir(parents=True, exist_ok=True)
 
-    if DB_PATH.exists():
-        DB_PATH.unlink()
-        print(f"Removed existing {DB_PATH}")
-
-    db_url = f"sqlite:///{DB_PATH}"
-    engine = create_engine(db_url)
+    db_url = f"sqlite+pysqlite:///{DB_PATH.as_posix()}"
+    engine = create_db_engine(db_url)
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
 
-    from sqlalchemy.orm import sessionmaker
-    SF = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    SF = create_session_factory(db_url)
 
     print("Seeding 45-day demo data…")
     with SF() as session:
@@ -70,11 +63,14 @@ def run() -> None:
         print(f"  {table}: {count:,}")
 
     print(f"\nExporting SQL snapshot to {SQL_PATH}…")
-    conn = sqlite3.connect(str(DB_PATH))
-    with open(SQL_PATH, "w", encoding="utf-8") as f:
-        for line in conn.iterdump():
-            f.write(line + "\n")
-    conn.close()
+    try:
+        raw_conn = engine.raw_connection()
+        with open(SQL_PATH, "w", encoding="utf-8") as f:
+            for line in raw_conn.iterdump():
+                f.write(line + "\n")
+        raw_conn.close()
+    except AttributeError:
+        print("  (SQL dump skipped — only available for SQLite)")
 
     size_kb = SQL_PATH.stat().st_size // 1024
     print(f"Done — {SQL_PATH.name} ({size_kb:,} KB)")

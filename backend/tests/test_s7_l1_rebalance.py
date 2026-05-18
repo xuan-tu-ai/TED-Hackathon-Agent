@@ -44,8 +44,7 @@ def test_perception_results_is_file_anomaly_threshold_15():
     assert "abnormal_score >= 0.15" in content, "is_file_anomaly threshold should be 0.15"
 
 
-def test_l1_burst_detect_returns_burst_flag():
-    db_url = "sqlite+pysqlite:///data/demo.db"
+def test_l1_burst_detect_returns_burst_flag(db_url):
     session_factory = create_session_factory(db_url)
     session = session_factory()
     try:

@@ -176,11 +176,11 @@ def test_hitl_check_queues_high_severity_action(tmp_path):
 
 
 @pytest.mark.skip(reason="R-07/R-31 alerts depend on session-scoped seeded DB; valid when DB is seeded via test_s1_* suite")
-def test_poller_detects_alert_on_r07(db_session):
+def test_poller_detects_alert_on_r07(db_session, db_url):
     from app.robot_agent.poller import CognitivePoller
 
     poller = CognitivePoller(
-        db_url="sqlite:///data/demo.db",
+        db_url=db_url,
         robots=["R-07"],
         poll_interval=999,
         l1_threshold=999,
@@ -193,11 +193,11 @@ def test_poller_detects_alert_on_r07(db_session):
 
 
 @pytest.mark.skip(reason="R-31 alert detection depends on session-scoped seeded DB; valid when DB is seeded via test_s1_* suite")
-def test_poller_detects_alert_on_r31(db_session):
+def test_poller_detects_alert_on_r31(db_session, db_url):
     from app.robot_agent.poller import CognitivePoller
 
     poller = CognitivePoller(
-        db_url="sqlite:///data/demo.db",
+        db_url=db_url,
         robots=["R-31"],
         poll_interval=999,
         l1_threshold=0.01,
