@@ -1,16 +1,35 @@
 """MaskFormer methodology (GLCAnomalyMaskFormer): dual heatmap, percentile threshold.
 
-Exports
--------
+Exports (Spark)
+---------------
 MaskFormerPreResult
-    Compute per-sensor anomaly heatmaps (no threshold).
-MaskFormerThresholdCreator
-    Percentile-based threshold from normal-file heatmap scores.
+    Compute per-sensor anomaly heatmaps via Spark Pandas UDF.
 MaskFormerApplier
-    Apply per-sensor heatmap thresholds to produce binary verdicts.
-"""
-from app.anomaly_detection.inference.maskformer.pre_result import MaskFormerPreResult
-from app.anomaly_detection.inference.maskformer.threshold import MaskFormerThresholdCreator
-from app.anomaly_detection.inference.maskformer.applier import MaskFormerApplier
+    Apply per-sensor heatmap thresholds via Spark Pandas UDF.
 
-__all__ = ["MaskFormerPreResult", "MaskFormerThresholdCreator", "MaskFormerApplier"]
+Exports (Local)
+---------------
+MaskFormerLocalPreResult
+    Compute per-sensor anomaly heatmaps (no Spark, returns list[dict]).
+MaskFormerLocalThresholdCreator
+    Percentile-based threshold from normal-file scores.
+MaskFormerLocalApplier
+    Apply per-sensor heatmap thresholds (no Spark, returns list[dict]).
+"""
+from app.anomaly_detection.inference.maskformer.spark import (
+    MaskFormerPreResult,
+    MaskFormerApplier,
+)
+from app.anomaly_detection.inference.maskformer.local import (
+    MaskFormerLocalPreResult,
+    MaskFormerLocalThresholdCreator,
+    MaskFormerLocalApplier,
+)
+
+__all__ = [
+    "MaskFormerPreResult",
+    "MaskFormerApplier",
+    "MaskFormerLocalPreResult",
+    "MaskFormerLocalThresholdCreator",
+    "MaskFormerLocalApplier",
+]

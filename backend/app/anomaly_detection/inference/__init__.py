@@ -3,9 +3,11 @@
 This package exposes three methodology families, each implementing a
 three-step pipeline:
 
-1. **PreResult** — compute raw anomaly scores / heatmaps from a model
-2. **ThresholdCreator** — fit threshold(s) from normal-file pre-results
-3. **Applier** — apply the learned thresholds to produce final verdicts
+1. **PreResult** (Spark) — compute raw anomaly scores / heatmaps via Pandas UDF
+2. **LocalPreResult** (Local) — compute raw anomaly scores / heatmaps directly
+3. **ThresholdCreator** (Local) — fit threshold(s) from normal-file pre-results
+4. **Applier** (Spark) — apply thresholds via Spark Pandas UDF
+5. **LocalApplier** (Local) — apply thresholds directly
 
 Methodologies
 -------------
@@ -15,8 +17,10 @@ Methodologies
 """
 from app.anomaly_detection.inference.reconstruction import (
     ReconPreResult,
-    ReconThresholdCreator,
     ReconThresholdApplier,
+    ReconLocalPreResult,
+    ReconLocalThresholdCreator,
+    ReconLocalApplier,
     analyze_trigger_sources,
     visualize_feature_level_report_vq,
     _row_to_dict,
@@ -24,30 +28,40 @@ from app.anomaly_detection.inference.reconstruction import (
 )
 from app.anomaly_detection.inference.flow_matching import (
     FlowMatchingPreResult,
-    FlowMatchingThresholdCreator,
     FlowMatchingApplier,
+    FlowMatchingLocalPreResult,
+    FlowMatchingLocalThresholdCreator,
+    FlowMatchingLocalApplier,
 )
 from app.anomaly_detection.inference.maskformer import (
     MaskFormerPreResult,
-    MaskFormerThresholdCreator,
     MaskFormerApplier,
+    MaskFormerLocalPreResult,
+    MaskFormerLocalThresholdCreator,
+    MaskFormerLocalApplier,
 )
 
 __all__ = [
-    # Reconstruction methodology (v1-v6: recon error + percentile + window)
+    # Reconstruction (v1-v6)
     "ReconPreResult",
-    "ReconThresholdCreator",
     "ReconThresholdApplier",
+    "ReconLocalPreResult",
+    "ReconLocalThresholdCreator",
+    "ReconLocalApplier",
     "analyze_trigger_sources",
     "visualize_feature_level_report_vq",
     "_row_to_dict",
     "_sanitize_start_time",
-    # Flow matching methodology (GLCFlowV7: CNF NLL + MAD + macro-window)
+    # Flow matching (GLCFlowV7)
     "FlowMatchingPreResult",
-    "FlowMatchingThresholdCreator",
     "FlowMatchingApplier",
-    # MaskFormer methodology (GLCAnomalyMaskFormer: dual heatmap + percentile + macro-window)
+    "FlowMatchingLocalPreResult",
+    "FlowMatchingLocalThresholdCreator",
+    "FlowMatchingLocalApplier",
+    # MaskFormer (GLCAnomalyMaskFormer)
     "MaskFormerPreResult",
-    "MaskFormerThresholdCreator",
     "MaskFormerApplier",
+    "MaskFormerLocalPreResult",
+    "MaskFormerLocalThresholdCreator",
+    "MaskFormerLocalApplier",
 ]

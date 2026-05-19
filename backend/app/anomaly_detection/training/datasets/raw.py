@@ -27,25 +27,39 @@ class RawWindowDataset(Dataset):
     """In-memory dataset for raw-only windows.
 
     Outputs: {input: Tensor[C, seq_len]}
+    Optionally includes robot_idx and program_idx when provided.
 
-    Used by raw-only models (GLCFlowV7, seq_len=240).
+    Used by raw-only models (GLCFlowV7, MaskFormer, seq_len=240).
     seq_len is inferred from the shape of the windows array.
     """
 
-    def __init__(self, windows: np.ndarray):
+    def __init__(
+        self,
+        windows: np.ndarray,
+        robot_indices: Optional[np.ndarray] = None,
+        program_indices: Optional[np.ndarray] = None,
+    ):
         self.windows = windows
+        self.robot_indices = robot_indices
+        self.program_indices = program_indices
 
     def __len__(self) -> int:
         return len(self.windows)
 
     def __getitem__(self, idx: int) -> dict:
-        return {"input": torch.from_numpy(self.windows[idx].copy())}
+        item: dict = {"input": torch.from_numpy(self.windows[idx].copy())}
+        if self.robot_indices is not None:
+            item["robot_idx"] = torch.tensor(self.robot_indices[idx], dtype=torch.long)
+        if self.program_indices is not None:
+            item["program_idx"] = torch.tensor(self.program_indices[idx], dtype=torch.long)
+        return item
 
 
 class RawWindowMosaicDataset(_StreamingDataset):
     """Streaming MosaicML dataset for raw-only windows.
 
     Reads MDS shards from remote/local dir, outputs {input: Tensor[C, seq_len]}.
+    Also forwards robot_idx and program_idx when present in the MDS shard.
     """
 
     def __init__(
@@ -67,4 +81,9 @@ class RawWindowMosaicDataset(_StreamingDataset):
 
     def __getitem__(self, idx: int) -> dict:
         sample = super().__getitem__(idx)
-        return {"input": torch.from_numpy(sample["raw_window"].copy())}
+        item: dict = {"input": torch.from_numpy(sample["raw_window"].copy())}
+        if "robot_idx" in sample:
+            item["robot_idx"] = torch.tensor(sample["robot_idx"], dtype=torch.long)
+        if "program_idx" in sample:
+            item["program_idx"] = torch.tensor(sample["program_idx"], dtype=torch.long)
+        return item

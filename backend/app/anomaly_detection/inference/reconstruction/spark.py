@@ -1,18 +1,20 @@
-"""Shape + window score map computation for reconstruction models.
+"""Spark-dependent inference classes for Reconstruction methodology.
 
-Processes macro-windowed sensor data through VQ/RVQ reconstruction models,
-computes dual-criterion (shape + window) per-timestep error maps using a
-Gaussian overlap-weighting scheme, and returns per-sensor score maps +
-p{quantile} file-level scores. Designed for Databricks Spark UDF execution.
+Consolidated from pre_result.py + applier.py:
+- ReconPreResult: compute shape/win score maps via Broadcast/Pandas UDF
+- ReconThresholdApplier: apply per-sensor thresholds via Broadcast/Pandas UDF
+
+ThresholdCreator lives in local.py (already Spark-free).
 """
-from scipy.signal import windows
+
+from scipy.signal import windows as scipy_windows
 import torch
 import numpy as np
 import pandas as pd
 
 from pyspark.sql.types import (
     StructType, StructField, StringType, IntegerType,
-    FloatType, ArrayType,
+    FloatType, ArrayType, BooleanType,
 )
 from pyspark import Broadcast
 
@@ -21,12 +23,7 @@ from app.anomaly_detection.models import SupportedAnomalyDetectionModels, create
 
 
 class ReconPreResult:
-    """Compute and store raw score maps WITHOUT applying thresholds.
-    Output is used to experiment with different threshold configurations.
-
-    Compatible with reconstruction-based models v1-v6 (VQ/RVQ bottleneck).
-    Designed for Databricks: takes broadcasted metadata + state_dict, returns a Pandas UDF.
-    """
+    """Compute shape + win score maps for reconstruction models (Spark version)."""
 
     def __init__(
         self,
@@ -36,18 +33,6 @@ class ReconPreResult:
         quantile: float,
         k_skip: int = 1,
     ):
-        """Initialise pre-result computation with broadcasted model + metadata.
-
-        Args:
-            model_version: Enum selecting the reconstruction model architecture.
-            metadata_broadcast: Spark broadcast with model metadata
-                (window_size, k_win, normalisation params, etc.).
-            state_dict_broadcast: Spark broadcast with model weights.
-            quantile: Score quantile to extract as the file-level summary
-                (e.g. 0.95 → ``p95_shape_score`` / ``p95_win_score``).
-            k_skip: Number of leading/trailing windows to exclude from the
-                valid region (default 1).
-        """
         self.metadata = metadata_broadcast.value
         self.k_skip = k_skip
         self.quantile = quantile
@@ -62,7 +47,6 @@ class ReconPreResult:
 
     def _init_schema(self, quantile: float):
         pq = f"p{quantile * 100:.0f}"
-        q = quantile * 100
         self.schema = StructType([
             StructField("robot_code", StringType()),
             StructField("program_number", IntegerType()),
@@ -82,16 +66,6 @@ class ReconPreResult:
         ])
 
     def make_inference_fn(self):
-        """Return a Pandas UDF that computes shape + win score maps for one file.
-
-        The returned function:
-        1. Groups windows by file (via sort on ``window_start_serial``).
-        2. Runs a single-batch forward pass through the reconstruction model.
-        3. Computes per-timestep shape (recon error) and window (stat z-score)
-           error maps with Gaussian overlap weighting.
-        4. Returns a single-row PDF with per-sensor score maps + p{quantile}
-           file-level shape and win scores.
-        """
         model = self.model
         device = self.device
         k_skip = self.k_skip
@@ -171,7 +145,7 @@ class ReconPreResult:
 
             min_s = int(serials[0])
             total_steps = int(serials[-1] - min_s + W)
-            weight_func = windows.gaussian(W, std=W / 4)
+            weight_func = scipy_windows.gaussian(W, std=W / 4)
 
             shape_accum = np.zeros((C, total_steps))
             win_accum = np.zeros((C, total_steps))
@@ -218,9 +192,7 @@ class ReconPreResult:
 
             for c in range(C):
                 s = constants.SENSORS[c]
-                res[f"{pq}_shape_{s}"] = float(
-                    np.percentile(final_shape_map[c, valid_mask], q)
-                )
+                res[f"{pq}_shape_{s}"] = float(np.percentile(final_shape_map[c, valid_mask], q))
                 res[f"{pq}_win_{s}"] = float(np.percentile(final_win_map[c, valid_mask], q))
                 res[f"shape_map_{s}"] = final_shape_map[c].tolist()
                 res[f"win_map_{s}"] = final_win_map[c].tolist()
@@ -230,3 +202,131 @@ class ReconPreResult:
             return pd.DataFrame([res])
 
         return inference_file
+
+
+class ReconThresholdApplier:
+    """Apply per-sensor thresholds to reconstruction score maps (Spark version)."""
+
+    def __init__(self, threshold_config_br: Broadcast[dict], quantile: float):
+        self.threshold_config = threshold_config_br.value
+        self.quantile = quantile
+        self._init_schema(self.quantile)
+
+    def _init_schema(self, quantile: float):
+        pq = f"p{quantile * 100:.0f}"
+        self.schema = StructType([
+            StructField("robot_code", StringType()),
+            StructField("program_number", IntegerType()),
+            StructField("start_time", StringType()),
+            StructField("is_file_anomaly", BooleanType()),
+            StructField("is_shape_triggered", BooleanType()),
+            StructField("is_win_triggered", BooleanType()),
+            *[StructField(f"err_steps_{s}", ArrayType(IntegerType())) for s in constants.SENSORS],
+            *[StructField(f"trigger_source_{s}", StringType()) for s in constants.SENSORS],
+            StructField(f"{pq}_shape_score", FloatType()),
+            StructField(f"{pq}_win_score", FloatType()),
+            *[StructField(f"{pq}_shape_{s}", FloatType()) for s in constants.SENSORS],
+            *[StructField(f"{pq}_win_{s}", FloatType()) for s in constants.SENSORS],
+            *[StructField(f"actual_raw_{s}", ArrayType(FloatType())) for s in constants.SENSORS],
+            *[StructField(f"recon_raw_{s}", ArrayType(FloatType())) for s in constants.SENSORS],
+        ])
+
+    def make_apply_fn(self):
+        thresh_dict = self.threshold_config
+        quantile = self.quantile
+
+        def apply_thresholds(pdf: pd.DataFrame) -> pd.DataFrame:
+            pq = f"p{quantile * 100:.0f}"
+            results = []
+
+            for _, row in pdf.iterrows():
+                valid_start = row["valid_start_idx"]
+                valid_end = row["valid_end_idx"]
+                min_s = row["min_serial"]
+                total_steps = row["total_steps"]
+
+                if total_steps == 0:
+                    res = {
+                        "robot_code": row["robot_code"],
+                        "program_number": row["program_number"],
+                        "start_time": row["start_time"],
+                        "is_file_anomaly": True,
+                        "is_shape_triggered": True,
+                        "is_win_triggered": True,
+                        f"{pq}_shape_score": row[f"{pq}_shape_score"],
+                        f"{pq}_win_score": row[f"{pq}_win_score"],
+                    }
+                    for s in constants.SENSORS:
+                        res[f"err_steps_{s}"] = []
+                        res[f"trigger_source_{s}"] = "both"
+                        res[f"{pq}_shape_{s}"] = row[f"{pq}_shape_{s}"]
+                        res[f"{pq}_win_{s}"] = row[f"{pq}_win_{s}"]
+                        res[f"actual_raw_{s}"] = row[f"actual_raw_{s}"]
+                        res[f"recon_raw_{s}"] = row[f"recon_raw_{s}"]
+                    results.append(res)
+                    continue
+
+                valid_mask = np.zeros(total_steps, dtype=bool)
+                valid_mask[valid_start:valid_end] = True
+
+                sensor_err_steps = {}
+                sensor_trigger_sources = {}
+                file_shape_triggered = False
+                file_win_triggered = False
+
+                for s in constants.SENSORS:
+                    shape_map = np.array(row[f"shape_map_{s}"])
+                    win_map = np.array(row[f"win_map_{s}"])
+
+                    shape_thresh = thresh_dict[s]["shape"]
+                    win_thresh = thresh_dict[s]["win"]
+
+                    shape_anom = (shape_map >= shape_thresh) & valid_mask
+                    win_anom = (win_map >= win_thresh) & valid_mask
+
+                    is_step_anom = shape_anom | win_anom
+                    err_steps = (np.where(is_step_anom)[0] + min_s).tolist()
+                    sensor_err_steps[s] = err_steps
+
+                    has_shape = np.any(shape_anom)
+                    has_win = np.any(win_anom)
+
+                    if has_shape and has_win:
+                        trigger_source = "both"
+                    elif has_shape:
+                        trigger_source = "shape"
+                    elif has_win:
+                        trigger_source = "win"
+                    else:
+                        trigger_source = "none"
+
+                    sensor_trigger_sources[s] = trigger_source
+                    if has_shape:
+                        file_shape_triggered = True
+                    if has_win:
+                        file_win_triggered = True
+
+                res = {
+                    "robot_code": row["robot_code"],
+                    "program_number": row["program_number"],
+                    "start_time": row["start_time"],
+                    "is_file_anomaly": any(len(sensor_err_steps[s]) > 0 for s in constants.SENSORS),
+                    "is_shape_triggered": file_shape_triggered,
+                    "is_win_triggered": file_win_triggered,
+                    f"{pq}_shape_score": row[f"{pq}_shape_score"],
+                    f"{pq}_win_score": row[f"{pq}_win_score"],
+                }
+
+                for s in constants.SENSORS:
+                    res[f"err_steps_{s}"] = sensor_err_steps[s]
+                    res[f"trigger_source_{s}"] = sensor_trigger_sources[s]
+                    res[f"{pq}_shape_{s}"] = row[f"{pq}_shape_{s}"]
+                    res[f"{pq}_win_{s}"] = row[f"{pq}_win_{s}"]
+                    res[f"actual_raw_{s}"] = row[f"actual_raw_{s}"]
+                    res[f"recon_raw_{s}"] = row[f"recon_raw_{s}"]
+
+                results.append(res)
+
+            return pd.DataFrame(results)
+
+        return apply_thresholds

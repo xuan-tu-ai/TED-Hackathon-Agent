@@ -1,9 +1,12 @@
-"""NLL anomaly score computation for flow-matching models.
+"""Spark-dependent inference classes for Flow Matching methodology.
 
-Processes macro-windowed sensor data through a CNF-based flow-matching model,
-accumulates per-timestep NLL scores across windows, and returns a p{quantile}
-file-level score. Designed for Databricks Spark UDF execution.
+Consolidated from pre_result.py + applier.py:
+- FlowMatchingPreResult: compute NLL scores via Broadcast/Pandas UDF
+- FlowMatchingApplier: apply threshold via Broadcast/Pandas UDF
+
+ThresholdCreator lives in local.py (already Spark-free).
 """
+
 import torch
 import numpy as np
 import pandas as pd
@@ -18,14 +21,7 @@ from app.anomaly_detection.models import FlowMatchingModels, create_model
 
 
 class FlowMatchingPreResult:
-    """Compute NLL anomaly scores for flow-matching models WITHOUT threshold application.
-
-    Designed for Databricks: takes broadcasted metadata + state_dict, returns a Pandas UDF.
-
-    Macro-window handling: each row in the PDF is one macro-window (seq_len steps).
-    Multiple rows per file are accumulated uniformly into a file-level score map.
-    Padding/windowing is handled by the upstream data pipeline.
-    """
+    """Compute NLL anomaly scores for flow-matching models (Spark version)."""
 
     def __init__(
         self,
@@ -35,18 +31,6 @@ class FlowMatchingPreResult:
         quantile: float = 0.95,
         k_skip: int = 1,
     ):
-        """Initialise pre-result computation with broadcasted model + metadata.
-
-        Args:
-            model_version: Enum selecting the flow-matching model architecture.
-            metadata_broadcast: Spark broadcast with model metadata
-                (window_size, seq_len, normalisation params, etc.).
-            state_dict_broadcast: Spark broadcast with model weights.
-            quantile: Score quantile to extract as the file-level summary
-                (default 0.95 → ``p95_score``).
-            k_skip: Number of leading/trailing windows to exclude from the
-                valid region (default 1).
-        """
         self.metadata = metadata_broadcast.value
         self.k_skip = k_skip
         self.quantile = quantile
@@ -71,14 +55,6 @@ class FlowMatchingPreResult:
         ])
 
     def make_inference_fn(self):
-        """Return a Pandas UDF that computes NLL scores for one file.
-
-        The returned function:
-        1. Groups windows by file (via sort on ``window_start_serial``).
-        2. Runs batched forward pass through the CNF model.
-        3. Accumulates per-timestep NLL scores with uniform weighting.
-        4. Returns a single-row PDF with the p{quantile} file-level score.
-        """
         model = self.model
         device = self.device
         k_skip = self.k_skip
@@ -128,7 +104,6 @@ class FlowMatchingPreResult:
                     out = model({"input": batch_raw})
                     z_pooled = out["z_pooled"]
                     cnf_ll, _ = model.cnf.compute_log_likelihood(z_pooled)
-                    # [B] global NLL score (higher = more anomalous)
                     batch_scores = -cnf_ll.cpu().numpy()
 
                     for bi in range(len(batch_raw)):
@@ -155,3 +130,63 @@ class FlowMatchingPreResult:
             return pd.DataFrame([res])
 
         return inference_file
+
+
+class FlowMatchingApplier:
+    """Apply global threshold to flow-matching NLL scores (Spark version)."""
+
+    def __init__(self, threshold_config_br: Broadcast[dict], quantile: float):
+        self.threshold_config = threshold_config_br.value
+        self.quantile = quantile
+        self._init_schema(self.quantile)
+
+    def _init_schema(self, quantile: float):
+        pq = f"p{quantile * 100:.0f}"
+        self.schema = StructType([
+            StructField("robot_code", StringType()),
+            StructField("program_number", IntegerType()),
+            StructField("start_time", StringType()),
+            StructField("is_file_anomaly", IntegerType()),
+            StructField(f"{pq}_score", FloatType()),
+            StructField("is_anomaly_per_sensor", IntegerType()),
+        ])
+
+    def make_apply_fn(self):
+        thresh_dict = self.threshold_config
+        quantile = self.quantile
+
+        def apply_thresholds(pdf: pd.DataFrame) -> pd.DataFrame:
+            pq = f"p{quantile * 100:.0f}"
+            results = []
+
+            for _, row in pdf.iterrows():
+                total_steps = row["total_steps"]
+
+                if total_steps == 0:
+                    res = {
+                        "robot_code": row["robot_code"],
+                        "program_number": row["program_number"],
+                        "start_time": row["start_time"],
+                        "is_file_anomaly": 1,
+                        f"{pq}_score": row[f"{pq}_score"],
+                        "is_anomaly_per_sensor": 0,
+                    }
+                    results.append(res)
+                    continue
+
+                score = row[f"{pq}_score"]
+                is_file_anomaly = 1 if score > thresh_dict.get("global_threshold", 5.0) else 0
+
+                res = {
+                    "robot_code": row["robot_code"],
+                    "program_number": row["program_number"],
+                    "start_time": row["start_time"],
+                    "is_file_anomaly": is_file_anomaly,
+                    f"{pq}_score": score,
+                    "is_anomaly_per_sensor": is_file_anomaly,
+                }
+                results.append(res)
+
+            return pd.DataFrame(results)
+
+        return apply_thresholds

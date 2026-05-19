@@ -1,15 +1,25 @@
 """Reconstruction methodology (v1–v6 VQ/RVQ): shape + window error, per-sensor thresholds.
 
-Exports
--------
+Exports (Spark)
+---------------
 ReconPreResult
-    Compute per-sensor shape/win score maps (no threshold).
-ReconThresholdCreator
-    Per-sensor shape + win threshold from normal-file pre-results.
+    Compute per-sensor shape/win score maps via Spark Pandas UDF.
 ReconThresholdApplier
-    Apply per-sensor thresholds to produce binary verdicts + err_steps.
+    Apply per-sensor thresholds via Spark Pandas UDF.
+
+Exports (Local)
+---------------
+ReconLocalPreResult
+    Compute per-sensor shape/win score maps (no Spark, returns list[dict]).
+ReconLocalThresholdCreator
+    Per-sensor shape + win threshold from normal-file pre-results.
+ReconLocalApplier
+    Apply per-sensor thresholds (no Spark, returns list[dict]).
+
+Utilities (Spark-free)
+----------------------
 analyze_trigger_sources
-    Summarise trigger-source breakdown (Spark).
+    Summarise trigger-source breakdown (requires Spark).
 visualize_feature_level_report_vq
     Plot actual vs reconstructed signals with fault overlays.
 _row_to_dict
@@ -17,9 +27,15 @@ _row_to_dict
 _sanitize_start_time
     Sanitise a timestamp string for filesystem-safe filenames.
 """
-from app.anomaly_detection.inference.reconstruction.pre_result import ReconPreResult
-from app.anomaly_detection.inference.reconstruction.threshold import ReconThresholdCreator
-from app.anomaly_detection.inference.reconstruction.applier import ReconThresholdApplier
+from app.anomaly_detection.inference.reconstruction.spark import (
+    ReconPreResult,
+    ReconThresholdApplier,
+)
+from app.anomaly_detection.inference.reconstruction.local import (
+    ReconLocalPreResult,
+    ReconLocalThresholdCreator,
+    ReconLocalApplier,
+)
 from app.anomaly_detection.inference.reconstruction.utils import (
     analyze_trigger_sources,
     visualize_feature_level_report_vq,

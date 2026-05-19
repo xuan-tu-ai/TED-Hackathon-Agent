@@ -1,10 +1,12 @@
-"""Anomaly heatmap computation for MaskFormer models.
+"""Spark-dependent inference classes for MaskFormer methodology.
 
-Processes macro-windowed sensor data through a MaskFormer model to produce
-dual-criterion anomaly heatmaps, accumulates per-timestep scores across
-windows, and returns per-sensor heatmaps + a p{quantile} file-level score.
-Designed for Databricks Spark UDF execution.
+Consolidated from pre_result.py + applier.py:
+- MaskFormerPreResult: compute heatmaps via Broadcast/Pandas UDF
+- MaskFormerApplier: apply thresholds via Broadcast/Pandas UDF
+
+ThresholdCreator lives in local.py (already Spark-free).
 """
+
 import torch
 import numpy as np
 import pandas as pd
@@ -21,10 +23,6 @@ from app.anomaly_detection.models import MaskFormerModels, create_model
 def _heatmap_to_timestep_scores(
     heatmap: np.ndarray, seq_len: int, patch_size: int, patch_stride: int
 ) -> np.ndarray:
-    """Upsample patch-level heatmap [C, P] → timestep score map [C, seq_len].
-
-    Overlapping patches take the max score at each timestep.
-    """
     C, P = heatmap.shape
     score_map = np.zeros((C, seq_len), dtype=np.float32)
     for p in range(P):
@@ -35,14 +33,7 @@ def _heatmap_to_timestep_scores(
 
 
 class MaskFormerPreResult:
-    """Compute dual-criterion anomaly heatmaps for MaskFormer models WITHOUT threshold.
-
-    Designed for Databricks: takes broadcasted metadata + state_dict, returns a Pandas UDF.
-
-    Macro-window handling: each row in the PDF is one macro-window (seq_len steps).
-    Heatmaps from multiple windows are accumulated into a file-level timestep score map.
-    Padding/windowing is handled by the upstream data pipeline.
-    """
+    """Compute dual-criterion anomaly heatmaps (Spark version)."""
 
     def __init__(
         self,
@@ -53,19 +44,6 @@ class MaskFormerPreResult:
         k_skip: int = 1,
         fast: bool = True,
     ):
-        """Initialise pre-result computation with broadcasted model + metadata.
-
-        Args:
-            model_version: Enum selecting the MaskFormer model architecture.
-            metadata_broadcast: Spark broadcast with model metadata
-                (window_size, patch_size, patch_stride, etc.).
-            state_dict_broadcast: Spark broadcast with model weights.
-            quantile: Score quantile to extract as the file-level summary
-                (default 0.95 → ``p95_score``).
-            k_skip: Number of leading/trailing windows to exclude from the
-                valid region (default 1).
-            fast: If True, use fast approximate heatmap computation.
-        """
         self.metadata = metadata_broadcast.value
         self.k_skip = k_skip
         self.quantile = quantile
@@ -92,15 +70,6 @@ class MaskFormerPreResult:
         ])
 
     def make_inference_fn(self):
-        """Return a Pandas UDF that computes heatmaps for one file.
-
-        The returned function:
-        1. Groups windows by file (via sort on ``window_start_serial``).
-        2. Runs batched forward pass through the MaskFormer model.
-        3. Upsamples patch-level heatmaps via :func:`_heatmap_to_timestep_scores`.
-        4. Accumulates per-sensor timestep scores across windows.
-        5. Returns a single-row PDF with per-sensor heatmaps + p{quantile} score.
-        """
         model = self.model
         device = self.device
         k_skip = self.k_skip
@@ -152,7 +121,6 @@ class MaskFormerPreResult:
                     batch_raw = torch.from_numpy(raw[start_i:end_i]).to(device)
                     batch_serials = serials[start_i:end_i]
 
-                    # heatmaps: [B, C, P] combined anomaly heatmap in [0, 1]
                     heatmaps = model.compute_combined_heatmap({"input": batch_raw}, fast=fast)
                     heatmaps_np = heatmaps.cpu().numpy()
 
@@ -164,7 +132,7 @@ class MaskFormerPreResult:
                         score_accum[:, t_off : t_off + W] += ts_scores
                         weight_accum[t_off : t_off + W] += 1.0
 
-            final_map = score_accum / (weight_accum[None, :] + 1e-6)  # [C, total_steps]
+            final_map = score_accum / (weight_accum[None, :] + 1e-6)
 
             valid_start = int(serials[k_skip] - min_s)
             valid_end = int(serials[-1 - k_skip] - min_s + W)
@@ -185,3 +153,66 @@ class MaskFormerPreResult:
             return pd.DataFrame([res])
 
         return inference_file
+
+
+class MaskFormerApplier:
+    """Apply per-sensor heatmap thresholds (Spark version)."""
+
+    def __init__(self, threshold_config_br: Broadcast[dict], quantile: float):
+        self.threshold_config = threshold_config_br.value
+        self.quantile = quantile
+        self._init_schema(self.quantile)
+
+    def _init_schema(self, quantile: float):
+        pq = f"p{quantile * 100:.0f}"
+        self.schema = StructType([
+            StructField("robot_code", StringType()),
+            StructField("program_number", IntegerType()),
+            StructField("start_time", StringType()),
+            StructField("is_file_anomaly", BooleanType()),
+            StructField(f"{pq}_score", FloatType()),
+            *[StructField(f"is_anomaly_{s}", BooleanType()) for s in constants.SENSORS],
+            *[StructField(f"heatmap_{s}", ArrayType(FloatType())) for s in constants.SENSORS],
+        ])
+
+    def make_apply_fn(self):
+        thresh_dict = self.threshold_config
+        quantile = self.quantile
+
+        def apply_thresholds(pdf: pd.DataFrame) -> pd.DataFrame:
+            pq = f"p{quantile * 100:.0f}"
+            global_thresh = thresh_dict.get("global_threshold", 0.5)
+            sensor_thresholds = thresh_dict.get("sensors", {})
+            results = []
+
+            for _, row in pdf.iterrows():
+                score = row[f"{pq}_score"]
+                is_file_anomaly = bool(score > global_thresh)
+
+                res = {
+                    "robot_code": row["robot_code"],
+                    "program_number": row["program_number"],
+                    "start_time": row["start_time"],
+                    "is_file_anomaly": is_file_anomaly,
+                    f"{pq}_score": float(score),
+                }
+
+                valid_start = int(row.get("valid_start_idx", 0))
+                valid_end = int(row.get("valid_end_idx", 0)) or None
+
+                for s in constants.SENSORS:
+                    heatmap = row.get(f"heatmap_{s}", [])
+                    res[f"heatmap_{s}"] = heatmap
+
+                    if heatmap and valid_end:
+                        sensor_thresh = sensor_thresholds.get(s, global_thresh)
+                        valid_region = np.array(heatmap[valid_start:valid_end], dtype=np.float32)
+                        res[f"is_anomaly_{s}"] = bool(valid_region.max() > sensor_thresh)
+                    else:
+                        res[f"is_anomaly_{s}"] = is_file_anomaly
+
+                results.append(res)
+
+            return pd.DataFrame(results)
+
+        return apply_thresholds
