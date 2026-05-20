@@ -66,12 +66,14 @@ class MaskFormerTrainer:
         optimizer_sigma: torch.optim.Optimizer,
         lambda_assoc: float = 2.0,
         lambda_orth: float = 0.05,
+        sigma_max: float = 50.0,
     ) -> None:
         self.model = model
         self.optimizer_main = optimizer_main
         self.optimizer_sigma = optimizer_sigma
         self.lambda_assoc = lambda_assoc
         self.lambda_orth = lambda_orth
+        self.sigma_max = sigma_max
 
         self.recon_loss_fn = MaskedReconstructionLoss()
         self.assoc_loss_fn = AssociationDiscrepancyLoss(lambda_assoc=lambda_assoc)
@@ -144,6 +146,7 @@ class MaskFormerTrainer:
         loss_b = self.lambda_assoc * assoc_dict_max["loss"]
         loss_b.backward()
         self.optimizer_sigma.step()
+        self._clamp_sigma()
 
         # Collect sigma mean for logging
         sigma_values = []
@@ -159,6 +162,16 @@ class MaskFormerTrainer:
             "orth_loss": orth_loss.detach(),
             "sigma_mean": sigma_mean,
         }
+
+
+    def _clamp_sigma(self) -> None:
+        """Hard-clip every layer's sigma to [1e-4, sigma_max] after each Phase-B step.
+
+        Prevents the prior-association bandwidth from growing without bound toward
+        a near-uniform distribution, which would destroy the anomaly signal.
+        """
+        for layer in self.model.transformer.layers:
+            layer.sigma.data.clamp_(min=1e-4, max=self.sigma_max)
 
 
 class MaskFormerEvaluator:
@@ -263,18 +276,42 @@ class MaskFormerTrainerRunner:
     Parallel to FlowMatchingTrainer in flow_matching_trainer.py.
     Single-stage training (no Stage 1 / Stage 2 split — minimax handles both).
 
+    Training hyperparameters (lambda_assoc, lambda_orth, lr_sigma_scale, sigma_max)
+    live here rather than in the model, since they control the optimisation
+    procedure, not the architecture.
+
     Args:
         model_or_config: A GLCAnomalyMaskFormer instance, GLCAnomalyMaskFormerConfig,
                          plain dict, or None (uses defaults).
         device:          Target device. Defaults to CUDA if available.
+        lambda_assoc:    Weight for the association discrepancy loss.
+                         Should satisfy lambda_assoc * L_assoc ≈ L_recon in scale.
+                         With typical L_assoc ≈ 20 and L_recon ≈ 0.33, use 0.02.
+        lambda_orth:     Weight for the orthogonality regularisation.
+                         With the B-normalised gram formula, 0.05 keeps orth loss
+                         well below L_recon throughout training.
+        lr_sigma_scale:  LR multiplier for the sigma optimiser relative to the main
+                         LR.  Values < 1 slow sigma adaptation, preventing the prior
+                         from racing to near-uniform before Q/K/V have converged.
+        sigma_max:       Hard upper bound applied to all sigma parameters after each
+                         Phase-B step.  Prevents the Gaussian prior from becoming
+                         indistinguishable from a uniform distribution.
     """
 
     def __init__(
         self,
         model_or_config: Union[GLCAnomalyMaskFormer, GLCAnomalyMaskFormerConfig, dict, None] = None,
         device: Optional[torch.device] = None,
+        lambda_assoc: float = 0.02,
+        lambda_orth: float = 0.05,
+        lr_sigma_scale: float = 0.1,
+        sigma_max: float = 50.0,
     ) -> None:
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.lambda_assoc   = lambda_assoc
+        self.lambda_orth    = lambda_orth
+        self.lr_sigma_scale = lr_sigma_scale
+        self.sigma_max      = sigma_max
 
         if isinstance(model_or_config, GLCAnomalyMaskFormer):
             self.model = model_or_config.to(self.device)
@@ -286,22 +323,27 @@ class MaskFormerTrainerRunner:
             self.config = model_or_config
             self.model = GLCAnomalyMaskFormer(**self.config.to_dict()).to(self.device)
         else:
-            self.config = GLCAnomalyMaskFormerConfig()
-            self.model = GLCAnomalyMaskFormer(**self.config.to_dict()).to(self.device)
+            raise ValueError(
+                "model_or_config must be a GLCAnomalyMaskFormer instance, "
+                "GLCAnomalyMaskFormerConfig, or a dict with at least "
+                "'num_sensors', 'seq_len', 'num_robots', 'num_programs'."
+            )
 
         self.trainer: Optional[MaskFormerTrainer] = None
         self.evaluator: Optional[MaskFormerEvaluator] = None
 
     def _build_trainer(self, lr: float) -> MaskFormerTrainer:
-        """Construct a MaskFormerTrainer with two optimisers (main + sigma).
+        """Construct a MaskFormerTrainer with two Adam optimisers (main + sigma).
+
+        Uses the training hyperparameters stored on self (lambda_assoc, lambda_orth,
+        lr_sigma_scale, sigma_max) that were set at runner construction time.
 
         Args:
-            lr: Learning rate for both Adam optimisers.
+            lr: Learning rate for the main Adam optimiser.
 
         Returns:
             Configured MaskFormerTrainer instance.
         """
-        # Separate sigma params from all other params
         sigma_params = [
             p for n, p in self.model.named_parameters() if "sigma" in n
         ]
@@ -309,15 +351,16 @@ class MaskFormerTrainerRunner:
             p for n, p in self.model.named_parameters() if "sigma" not in n
         ]
 
-        optimizer_main = optim.Adam(main_params, lr=lr)
-        optimizer_sigma = optim.Adam(sigma_params, lr=lr)
+        optimizer_main  = optim.Adam(main_params,  lr=lr)
+        optimizer_sigma = optim.Adam(sigma_params, lr=lr * self.lr_sigma_scale)
 
         return MaskFormerTrainer(
             model=self.model,
             optimizer_main=optimizer_main,
             optimizer_sigma=optimizer_sigma,
-            lambda_assoc=self.config.lambda_assoc,
-            lambda_orth=self.config.lambda_orth,
+            lambda_assoc=self.lambda_assoc,
+            lambda_orth=self.lambda_orth,
+            sigma_max=self.sigma_max,
         )
 
     def train(
@@ -333,7 +376,7 @@ class MaskFormerTrainerRunner:
             train_loader: List of batch dicts (each with 'input' key).
             val_loader:   Optional validation batches (unused in loss; for monitoring).
             epochs:       Number of training epochs.
-            lr:           Learning rate for Adam.
+            lr:           Learning rate for the main Adam optimiser.
 
         Returns:
             Training history dict.

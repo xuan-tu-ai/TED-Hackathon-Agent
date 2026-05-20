@@ -14,15 +14,15 @@ from app.anomaly_detection.training.maskformer_trainer import (
 )
 
 
+_TINY_CFG = dict(
+    num_sensors=6, seq_len=240, num_robots=47, num_programs=16,
+    d_model=32, transformer_layers=1, transformer_heads=2, ffn_dim=64,
+    use_context_embeddings=False,
+)
+
+
 def make_tiny_model() -> GLCAnomalyMaskFormer:
-    return GLCAnomalyMaskFormer(
-        d_model=32,
-        transformer_layers=1,
-        transformer_heads=2,
-        ffn_dim=64,
-        use_context_embeddings=False,
-        dropout=0.0,
-    )
+    return GLCAnomalyMaskFormer(**_TINY_CFG, dropout=0.0)
 
 
 def make_trainer(model: GLCAnomalyMaskFormer) -> MaskFormerTrainer:
@@ -144,6 +144,55 @@ class TestMaskFormerTrainer:
         )
 
 
+    def test_sigma_clamped_to_sigma_max(self):
+        """Sigma must never exceed sigma_max after a training step."""
+        model = make_tiny_model()
+        sigma_params = [p for n, p in model.named_parameters() if "sigma" in n]
+        main_params  = [p for n, p in model.named_parameters() if "sigma" not in n]
+
+        # Large LR for sigma so it would naturally overshoot without clamping
+        opt_main  = optim.Adam(main_params,  lr=1e-3)
+        opt_sigma = optim.Adam(sigma_params, lr=10.0)
+
+        SIGMA_MAX = 6.0  # initial sigma is 5.0 — cap just above to make clamping observable
+        trainer = MaskFormerTrainer(
+            model=model,
+            optimizer_main=opt_main,
+            optimizer_sigma=opt_sigma,
+            lambda_assoc=5.0,
+            lambda_orth=0.0,
+            sigma_max=SIGMA_MAX,
+        )
+
+        x = {"input": torch.randn(4, 6, 240)}
+        for _ in range(5):
+            trainer.train_step(x)
+
+        for layer in model.transformer.layers:
+            assert layer.sigma.data.max().item() <= SIGMA_MAX + 1e-5, (
+                f"sigma exceeded sigma_max={SIGMA_MAX}: {layer.sigma.data}"
+            )
+
+    def test_runner_respects_lr_sigma_scale(self):
+        """lr_sigma_scale < 1 should slow sigma adaptation vs sigma_scale=1."""
+        def _run(scale):
+            torch.manual_seed(0)
+            runner = MaskFormerTrainerRunner(
+                model_or_config={**_TINY_CFG},
+                lr_sigma_scale=scale,
+                sigma_max=500.0,
+            )
+            data = [{"input": torch.randn(2, 6, 240)} for _ in range(4)]
+            runner.train(data, epochs=1, lr=1e-3)
+            return runner.model.transformer.layers[0].sigma.detach().mean().item()
+
+        sigma_slow = _run(scale=0.01)
+        sigma_fast = _run(scale=1.0)
+        assert sigma_fast > sigma_slow, (
+            f"faster sigma LR should cause more sigma change: fast={sigma_fast:.4f}, slow={sigma_slow:.4f}"
+        )
+
+
 class TestMaskFormerEvaluator:
     def test_evaluate_returns_eval_result(self):
         model = make_tiny_model()
@@ -168,9 +217,7 @@ class TestMaskFormerEvaluator:
 class TestMaskFormerTrainerRunner:
     def test_runner_trains_one_epoch(self):
         runner = MaskFormerTrainerRunner(
-            model_or_config={"d_model": 32, "transformer_layers": 1,
-                             "transformer_heads": 2, "ffn_dim": 64,
-                             "use_context_embeddings": False}
+            model_or_config={**_TINY_CFG}
         )
         train_data = [{"input": torch.randn(2, 6, 240)} for _ in range(4)]
         history = runner.train(train_data, epochs=1, lr=1e-3)
@@ -180,9 +227,7 @@ class TestMaskFormerTrainerRunner:
 
     def test_runner_evaluate(self):
         runner = MaskFormerTrainerRunner(
-            model_or_config={"d_model": 32, "transformer_layers": 1,
-                             "transformer_heads": 2, "ffn_dim": 64,
-                             "use_context_embeddings": False}
+            model_or_config={**_TINY_CFG}
         )
         normal = [{"input": torch.randn(2, 6, 240)} for _ in range(2)]
         anomaly = [{"input": torch.randn(2, 6, 240)} for _ in range(2)]

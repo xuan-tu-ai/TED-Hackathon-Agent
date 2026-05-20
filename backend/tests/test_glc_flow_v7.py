@@ -4,8 +4,14 @@ import torch
 from app.anomaly_detection.models.factory import create_model, count_parameters, get_model_summary
 
 
+_BASE_META = {"num_sensors": 6, "seq_len": 240}
+
+
 def create_glc_flow_v7(metadata=None):
-    return create_model("glc_flow_v7", metadata=metadata)
+    meta = dict(_BASE_META)
+    if metadata:
+        meta.update(metadata)
+    return create_model("glc_flow_v7", metadata=meta)
 
 
 class TestFactory:

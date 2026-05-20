@@ -115,3 +115,21 @@ class TestOrthogonalityLoss:
     def test_d_half_is_d_model_div_2(self):
         loss_fn = OrthogonalityLoss(d_model=128, lambda_orth=1.0)
         assert loss_fn.d_half == 64
+
+    def test_scale_invariant_to_batch_size(self):
+        """Loss should be approximately the same for different batch sizes.
+
+        The old sum-based formula scaled as B^2 * D^2, causing ~100k initial
+        values with B=32 that swamped reconstruction gradients.  The normalized
+        formula (gram/B, then .mean()) keeps the loss O(1) regardless of B.
+        """
+        torch.manual_seed(0)
+        loss_fn = OrthogonalityLoss(d_model=128, lambda_orth=1.0)
+        z_small = torch.randn(4,  128)
+        z_large = torch.randn(32, 128)
+        loss_small = loss_fn(z_small).item()
+        loss_large = loss_fn(z_large).item()
+        # Both should be O(1); allow 5× margin for statistical variation
+        assert loss_large < loss_small * 5 + 1.0, (
+            f"loss should not blow up with larger batch: {loss_large:.2f} vs {loss_small:.2f}"
+        )

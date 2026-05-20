@@ -16,7 +16,6 @@ Training is two-stage:
 from typing import ClassVar, Optional
 
 import torch
-import torch.nn as nn
 
 from app.anomaly_detection.schemas import GLCFlowV7Config
 from app.anomaly_detection.layers.revin import (
@@ -36,7 +35,7 @@ from app.anomaly_detection.criterions.orthogonality import OrthogonalityLoss
 from app.anomaly_detection.models.base import BaseAnomalyDetectionModel
 
 
-class GLCFlowV7(BaseAnomalyDetectionModel, nn.Module):
+class GLCFlowV7(BaseAnomalyDetectionModel):
     """Global-Local Contextual Flow Matching anomaly detector.
 
     Architecture (macro paradigm — 240-step windows):
@@ -64,8 +63,8 @@ class GLCFlowV7(BaseAnomalyDetectionModel, nn.Module):
 
     def __init__(
         self,
-        num_sensors: int = 6,
-        seq_len: int = 240,
+        num_sensors: int,
+        seq_len: int,
         patch_size: int = 32,
         patch_stride: int = 16,
         d_model: int = 128,
@@ -82,8 +81,8 @@ class GLCFlowV7(BaseAnomalyDetectionModel, nn.Module):
         """Initialise the GLC-Flow V7 model.
 
         Args:
-            num_sensors: Number of sensor channels (default 6).
-            seq_len: Number of time steps per input file (default 240).
+            num_sensors: Number of sensor channels.
+            seq_len: Number of time steps per input file.
             patch_size: Width of each patch in time steps (default 32).
             patch_stride: Stride between consecutive patches (default 16).
             d_model: Hidden dimension of the transformer and CNF.
@@ -97,8 +96,7 @@ class GLCFlowV7(BaseAnomalyDetectionModel, nn.Module):
             lambda_recon: Weight coefficient for reconstruction loss.
             num_patches: Override for computed patch count.  Auto-computed if None.
         """
-        BaseAnomalyDetectionModel.__init__(self)
-        nn.Module.__init__(self)
+        super().__init__()
 
         d_half = d_model // 2
         if num_patches is None:

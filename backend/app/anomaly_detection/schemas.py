@@ -2,8 +2,8 @@
 
 This module holds typed configuration dataclasses used across the
 anomaly detection pipeline, including model hyperparameters
-(GLCFlowV7Config), normalisation metadata (RevINStat), and patch
-statistics (PatchStats).
+(GLCFlowV7Config, GLCAnomalyMaskFormerConfig), normalisation metadata
+(RevINStat), and patch statistics (PatchStats).
 """
 
 from dataclasses import dataclass, field, fields
@@ -14,7 +14,7 @@ class GLCFlowV7Config:
     """Model hyperparameters for GLC-Flow V7.
 
     Attributes:
-        num_sensors: Number of input sensor channels (default 6).
+        num_sensors: Number of input sensor channels.
         seq_len: Length of the macro-window (time-steps) fed to the model.
         patch_size: Width of each non-overlapping patch that a local encoder
             operates on.
@@ -37,8 +37,8 @@ class GLCFlowV7Config:
         num_patches: Number of patches derived from ``seq_len``, ``patch_size``,
             and ``patch_stride``.
     """
-    num_sensors: int = 6
-    seq_len: int = 240
+    num_sensors: int
+    seq_len: int
     patch_size: int = 32
     patch_stride: int = 16
     d_model: int = 128
@@ -85,6 +85,68 @@ class GLCFlowV7Config:
 
 # Backward-compat alias
 GLCFlowConfig = GLCFlowV7Config
+
+
+@dataclass
+class GLCAnomalyMaskFormerConfig:
+    """Model hyperparameters for GLCAnomalyMaskFormer.
+
+    Only contains init-time hyperparameters.  Computed fields (``d_half``,
+    ``num_patches``, ``num_tokens``) are excluded from ``to_dict()`` and
+    recomputed on load via ``__post_init__``.
+
+    Attributes:
+        num_sensors: Number of sensor channels.
+        seq_len: Number of time steps per input.
+        num_robots: Number of robot IDs in the context embedding table
+            (paint-shop fleet size).
+        num_programs: Number of program IDs in the context embedding table.
+        patch_size: Width of each patch in time steps (default 32).
+        patch_stride: Stride between consecutive patches (default 16).
+        d_model: Hidden dimension for transformer and embeddings (default 128).
+        transformer_layers: Number of anomaly-attention layers (default 4).
+        transformer_heads: Number of attention heads per layer (default 4).
+        ffn_dim: Hidden dimension of the FFN (default 512).
+        dropout: Dropout probability (default 0.1).
+        mask_ratio: Fraction of time positions to mask during training
+            (default 0.3).  Each masked time position hides all sensor tokens.
+        initial_sigma: Initial value for the learnable sigma parameter in the
+            anomaly-attention Gaussian prior (default 5.0).
+        use_context_embeddings: If False, the model accepts only ``"input"``
+            (no robot/program), and the context embedding layer is omitted
+            (default True).
+    """
+    num_sensors: int
+    seq_len: int
+    num_robots: int
+    num_programs: int
+    patch_size: int = 32
+    patch_stride: int = 16
+    d_model: int = 128
+    transformer_layers: int = 4
+    transformer_heads: int = 4
+    ffn_dim: int = 512
+    dropout: float = 0.1
+    mask_ratio: float = 0.3
+    initial_sigma: float = 5.0
+    use_context_embeddings: bool = True
+
+    d_half: int = field(init=False)
+    num_patches: int = field(init=False)
+    num_tokens: int = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.d_half = self.d_model // 2
+        self.num_patches = (self.seq_len - self.patch_size) // self.patch_stride + 1
+        self.num_tokens = self.num_sensors * self.num_patches
+
+    def to_dict(self) -> dict:
+        return {f.name: getattr(self, f.name) for f in fields(self) if f.init}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "GLCAnomalyMaskFormerConfig":
+        valid = {f.name for f in fields(cls) if f.init}
+        return cls(**{k: v for k, v in d.items() if k in valid})
 
 
 @dataclass

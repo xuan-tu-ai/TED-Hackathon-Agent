@@ -71,8 +71,13 @@ class OrthogonalityLoss(BaseAnomalyDetectionLoss):
         z_g = z_pooled[:, : self.d_half]  # [B, D/2]
         z_l = z_pooled[:, self.d_half :]  # [B, D/2]
 
-        gram = z_g.T @ z_l  # [D/2, D/2]
-        loss = (gram ** 2).sum()
+        # Normalize by B so the Gram matrix measures per-sample cross-correlation
+        # and use mean (not sum) over elements to keep scale independent of D.
+        # Without this, loss scales as B^2 * D^2, causing ~100k initial values that
+        # swamp the reconstruction signal for the first 15+ epochs.
+        B = z_g.shape[0]
+        gram = (z_g.T @ z_l) / B   # [D/2, D/2] — per-sample average
+        loss = (gram ** 2).mean()
 
         return self.lambda_orth * loss
 
@@ -88,7 +93,7 @@ class OrthogonalityLoss(BaseAnomalyDetectionLoss):
 
 
 def orthogonality_loss(z_pooled: torch.Tensor, d_model: int = 128) -> torch.Tensor:
-    """Functional version of OrthogonalityLoss.forward().
+    """Functional version of OrthogonalityLoss.forward() without lambda weighting.
 
     Args:
         z_pooled: Pooled representation [B, 2D]
@@ -100,5 +105,6 @@ def orthogonality_loss(z_pooled: torch.Tensor, d_model: int = 128) -> torch.Tens
     d_half = d_model // 2
     z_g = z_pooled[:, :d_half]
     z_l = z_pooled[:, d_half:]
-    gram = z_g.T @ z_l
-    return (gram ** 2).sum()
+    B = z_g.shape[0]
+    gram = (z_g.T @ z_l) / B
+    return (gram ** 2).mean()

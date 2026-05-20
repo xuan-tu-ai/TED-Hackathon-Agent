@@ -11,16 +11,19 @@ from app.anomaly_detection.models.glc_anomaly_maskformer import (
 )
 
 
+_REQUIRED = {"num_sensors": 6, "seq_len": 240, "num_robots": 47, "num_programs": 16}
+
+
 def small_model(**kwargs) -> GLCAnomalyMaskFormer:
     """Create a small model for fast tests."""
-    defaults = dict(d_model=32, transformer_layers=1, transformer_heads=2, ffn_dim=64, use_context_embeddings=False)
+    defaults = dict(**_REQUIRED, d_model=32, transformer_layers=1, transformer_heads=2, ffn_dim=64, use_context_embeddings=False)
     defaults.update(kwargs)
     return create_model("glc_anomaly_maskformer", defaults)
 
 
 class TestGLCAnomalyMaskFormerFactory:
     def test_create_default(self):
-        model = create_model("glc_anomaly_maskformer")
+        model = create_model("glc_anomaly_maskformer", _REQUIRED)
         assert model is not None
         assert isinstance(model, GLCAnomalyMaskFormer)
 
@@ -114,8 +117,9 @@ class TestGLCAnomalyMaskFormerForward:
 class TestGLCAnomalyMaskFormerContextEmbeddings:
     def test_no_context_embeddings_flag(self):
         model = GLCAnomalyMaskFormer(
+            num_sensors=6, seq_len=240, num_robots=47, num_programs=16,
             d_model=32, transformer_layers=1, transformer_heads=2,
-            ffn_dim=64, use_context_embeddings=False
+            ffn_dim=64, use_context_embeddings=False,
         )
         assert model.required_input_args == {"input"}
         x = {"input": torch.randn(2, 6, 240)}
@@ -124,9 +128,10 @@ class TestGLCAnomalyMaskFormerContextEmbeddings:
 
     def test_with_context_embeddings(self):
         model = GLCAnomalyMaskFormer(
+            num_sensors=6, seq_len=240,
+            num_robots=10, num_programs=5,
             d_model=32, transformer_layers=1, transformer_heads=2,
             ffn_dim=64, use_context_embeddings=True,
-            num_robots=10, num_programs=5
         )
         assert "robot_idx" in model.required_input_args
         assert "program_idx" in model.required_input_args
@@ -168,7 +173,7 @@ class TestGLCAnomalyMaskFormerCheckpoint:
             "name", "num_sensors", "seq_len", "patch_size", "patch_stride",
             "d_model", "d_half", "num_patches", "num_tokens",
             "transformer_layers", "transformer_heads", "ffn_dim", "dropout",
-            "mask_ratio", "initial_sigma", "lambda_assoc", "lambda_orth",
+            "mask_ratio", "initial_sigma",
             "num_robots", "num_programs", "use_context_embeddings",
         }
         assert required_keys.issubset(set(meta.keys()))
