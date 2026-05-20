@@ -19,6 +19,7 @@ from typing import Optional, Union
 
 import torch
 import torch.optim as optim
+from tqdm.auto import tqdm
 
 from app.anomaly_detection.models.glc_anomaly_maskformer import (
     GLCAnomalyMaskFormer,
@@ -343,9 +344,10 @@ class MaskFormerTrainerRunner:
             "assoc_loss_max": [], "orth_loss": [], "sigma_mean": [],
         }
 
-        for epoch in range(epochs):
+        for epoch in tqdm(range(epochs), desc="Epochs", unit="epoch"):
             epoch_losses: dict[str, list] = {k: [] for k in history}
-            for x in train_loader:
+            batch_pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}", unit="batch", leave=False)
+            for x in batch_pbar:
                 x_dev = {
                     k: v.to(self.device) if isinstance(v, torch.Tensor) else v
                     for k, v in x.items()
@@ -353,6 +355,12 @@ class MaskFormerTrainerRunner:
                 step_out = self.trainer.train_step(x_dev)
                 for k in history:
                     epoch_losses[k].append(step_out[k].item())
+
+                batch_pbar.set_postfix({
+                    "loss": f"{step_out['loss']:.4f}",
+                    "recon": f"{step_out['recon_loss']:.4f}",
+                    "assoc": f"{step_out['assoc_loss_min']:.4f}",
+                })
 
             for k in history:
                 avg = sum(epoch_losses[k]) / len(epoch_losses[k])

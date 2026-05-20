@@ -12,6 +12,7 @@ Current test count: **~180+ tests** across anomaly detection (Sprint 1), agent s
 - [Sprint 11](docs/sprint-plans/sprint-11.md) — *Planned* — Multi-DB Compatibility: SQLite (local) + PostgreSQL (local Docker + Azure) via single `DATABASE_URL` env var
 - [Sprint 12](docs/sprint-plans/sprint-12.md) — *Planned* — GLC-AnomalyMaskFormer Correctness Fixes: vectorize GPU bottlenecks, numerical stability, RevIN pure-Tensor API, 2D axial PE, Minimax Phase B sign bug
 - [Sprint 13](docs/sprint-plans/sprint-13.md) — *Planned* — Local Inference API: Spark-free `*LocalInference` classes for all 3 variants (maskformer, flow_matching, reconstruction)
+- [Sprint 14](docs/sprint-plans/sprint-14.md) — *In Progress* — Physics-based Welding Robot Data Simulator: LTI dynamics, colored noise, 4 anomaly types, 30-day dataset generation
 
 ## Completed Sprints
 - [Sprint 0](docs/sprint-plans/sprint-0.md) — *Completed* — Project structure, directories, `__init__.py` files
@@ -38,6 +39,7 @@ Current test count: **~180+ tests** across anomaly detection (Sprint 1), agent s
 - [ ] **M11:** Multi-DB Compatibility — SQLite + PostgreSQL (local + Azure) via single `DATABASE_URL` (Sprint 11)
 - [ ] **M12:** GLC-AnomalyMaskFormer Correctness Fixes — GPU vectorization, numerical stability, RevIN API, 2D PE, Minimax convergence (Sprint 12)
 - [ ] **M13:** Local Inference API — Spark-free `*LocalInference` for all 3 variants (Sprint 13)
+- [x] **M14:** Physics-based Welding Robot Data Simulator — LTI dynamics, colored noise, 4 anomaly types, 30-day dataset (Sprint 14)
 - [ ] **M15:** Real OT Data Integration
 - [ ] **M16:** Production Deployment & Hardening
 
@@ -87,6 +89,7 @@ frontend/                         ← React 18 + Vite + Zustand (SSE streaming, 
 | 11 | Multi-DB Compatibility | 📝 Planned | Env-driven `DATABASE_URL`; cross-dialect JSON columns (`JSONB` on Postgres); Alembic baseline migration; driver-aware engine options (SSL for Azure, pooling for Postgres, `check_same_thread` for SQLite); test suite parameterized; Docker Compose for local Postgres; Azure Flexible Server deployment docs |
 | 12 | MaskFormer Correctness Fixes | 📝 Planned | Vectorize SensorBlockMasking (scatter_); KL log stability; RevIN pure-Tensor API; delete broken `flatten_to_tokens`; 2D axial PositionalEmbedding; fix Minimax Phase B sign bug |
 | 13 | Local Inference API | 📝 Planned | Spark-free `*LocalInference` classes for all 3 variants (maskformer, flow_matching, reconstruction) — `score_batch()` + `fit_threshold()` + `apply_threshold()` with plain Python args |
+| 14 | Welding Data Simulator | 📝 Planned | Physics-based generator: LTI current dynamics, exponential thermal model, colored noise per sensor, 16 program profiles, 4 robots, 4 anomaly types (spike, thermal drift, flatline, phase shift), 30-day CSV output |
 
 ## Backlog / Future Work
 - **Real OT data integration** — Replace mock simulation with live paint-shop sensor data feed

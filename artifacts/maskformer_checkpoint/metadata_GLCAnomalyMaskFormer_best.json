@@ -1,0 +1,22 @@
+{
+  "name": "GLCAnomalyMaskFormer",
+  "num_sensors": 3,
+  "seq_len": 240,
+  "patch_size": 32,
+  "patch_stride": 16,
+  "d_model": 128,
+  "d_half": 64,
+  "num_patches": 14,
+  "num_tokens": 42,
+  "transformer_layers": 4,
+  "transformer_heads": 4,
+  "ffn_dim": 512,
+  "dropout": 0.1,
+  "mask_ratio": 0.3,
+  "initial_sigma": 5.0,
+  "lambda_assoc": 2.0,
+  "lambda_orth": 0.05,
+  "num_robots": 4,
+  "num_programs": 16,
+  "use_context_embeddings": true
+}
