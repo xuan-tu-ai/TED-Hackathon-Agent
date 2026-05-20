@@ -7,6 +7,10 @@ from app.anomaly_detection.models.glc_anomaly_maskformer import (
     GLCAnomalyMaskFormer,
     GLCAnomalyMaskFormerConfig,
 )
+from app.anomaly_detection.layers.reconstruction_decoder import (
+    PerTokenDecoder,
+    CNNDecoder,
+)
 from app.anomaly_detection.training.maskformer_trainer import (
     MaskFormerTrainer,
     MaskFormerEvaluator,
@@ -45,7 +49,8 @@ class TestMaskFormerTrainer:
         trainer = make_trainer(model)
         x = {"input": torch.randn(2, 6, 240)}
         out = trainer.train_step(x)
-        expected = {"loss", "recon_loss", "assoc_loss_min", "assoc_loss_max", "orth_loss", "sigma_mean"}
+        expected = {"loss", "recon_loss", "assoc_loss_min", "assoc_loss_max",
+                     "orth_loss", "sigma_mean", "grad_ratio"}
         assert set(out.keys()) == expected
 
     def test_train_step_no_nan(self):
@@ -233,3 +238,207 @@ class TestMaskFormerTrainerRunner:
         anomaly = [{"input": torch.randn(2, 6, 240)} for _ in range(2)]
         result = runner.evaluate(normal, anomaly)
         assert 0.0 <= result.auroc <= 1.0
+
+
+class TestWarmup:
+    """Phase-A-only warmup tests."""
+
+    def test_warmup_skips_phase_b(self):
+        """During warmup epoch, sigma should NOT change (Phase B skipped)."""
+        model = make_tiny_model()
+        sigma_params = [p for n, p in model.named_parameters() if "sigma" in n]
+        main_params = [p for n, p in model.named_parameters() if "sigma" not in n]
+        opt_main = optim.Adam(main_params, lr=1e-3)
+        opt_sigma = optim.Adam(sigma_params, lr=1e-2)
+        trainer = MaskFormerTrainer(
+            model=model,
+            optimizer_main=opt_main,
+            optimizer_sigma=opt_sigma,
+            lambda_assoc=1.0,
+            lambda_orth=0.0,
+            warmup_epochs=1,
+        )
+
+        sigma_before = torch.cat([
+            layer.sigma.detach().clone() for layer in model.transformer.layers
+        ])
+        x = {"input": torch.randn(2, 6, 240)}
+        out = trainer.train_step(x, epoch=0)  # warmup epoch (0 < 1)
+        sigma_after = torch.cat([
+            layer.sigma.detach().clone() for layer in model.transformer.layers
+        ])
+        assert torch.allclose(sigma_before, sigma_after), (
+            "sigma should NOT change during warmup (Phase B skipped)"
+        )
+        assert out["assoc_loss_max"].item() == 0.0, (
+            "assoc_loss_max should be 0 during warmup"
+        )
+
+    def test_warmup_then_phase_b_resumes(self):
+        """After warmup ends, Phase B should resume and sigma should change."""
+        model = make_tiny_model()
+        sigma_before = torch.cat([
+            layer.sigma.detach().clone() for layer in model.transformer.layers
+        ])
+        sigma_params = [p for n, p in model.named_parameters() if "sigma" in n]
+        main_params = [p for n, p in model.named_parameters() if "sigma" not in n]
+        opt_main = optim.Adam(main_params, lr=1e-3)
+        opt_sigma = optim.Adam(sigma_params, lr=1e-2)
+        trainer = MaskFormerTrainer(
+            model=model,
+            optimizer_main=opt_main,
+            optimizer_sigma=opt_sigma,
+            lambda_assoc=1.0,
+            lambda_orth=0.0,
+            warmup_epochs=1,
+        )
+
+        x = {"input": torch.randn(2, 6, 240)}
+        _ = trainer.train_step(x, epoch=0)  # warmup
+        _ = trainer.train_step(x, epoch=1)  # post-warmup (1 < 1 is False)
+        sigma_after = torch.cat([
+            layer.sigma.detach().clone() for layer in model.transformer.layers
+        ])
+        assert not torch.allclose(sigma_before, sigma_after), (
+            "sigma should change after warmup ends (Phase B resumes)"
+        )
+
+
+class TestCNNDecoder:
+    def test_cnn_decoder_output_shape(self):
+        """CNNDecoder should produce the same output shape as PerTokenDecoder."""
+        B, C, P, D, PS = 2, 6, 14, 128, 32
+        tokens = torch.randn(B, C * P, D)
+        cnn_decoder = CNNDecoder(num_sensors=C, num_patches=P, d_model=D, patch_size=PS)
+        lin_decoder = PerTokenDecoder(d_model=D, patch_size=PS)
+        cnn_out = cnn_decoder(tokens)
+        lin_out = lin_decoder(tokens)
+        assert cnn_out.shape == (B, C * P, PS), f"CNNDecoder shape: {cnn_out.shape}"
+        assert cnn_out.shape == lin_out.shape, "CNNDecoder and PerTokenDecoder shapes should match"
+
+    def test_cnn_decoder_no_nan(self):
+        """CNNDecoder forward should not produce NaN/Inf."""
+        B, C, P, D, PS = 2, 6, 14, 128, 32
+        tokens = torch.randn(B, C * P, D)
+        decoder = CNNDecoder(num_sensors=C, num_patches=P, d_model=D, patch_size=PS)
+        out = decoder(tokens)
+        assert not torch.isnan(out).any()
+        assert not torch.isinf(out).any()
+
+    def test_cnn_decoder_differs_from_per_token(self):
+        """CNNDecoder output should differ from PerTokenDecoder (temporal refinement changes it)."""
+        B, C, P, D, PS = 2, 6, 14, 128, 32
+        torch.manual_seed(0)
+        tokens = torch.randn(B, C * P, D)
+        cnn_decoder = CNNDecoder(num_sensors=C, num_patches=P, d_model=D, patch_size=PS)
+        lin_decoder = PerTokenDecoder(d_model=D, patch_size=PS)
+        # Use same seed for fair comparison (no randomness in forward pass)
+        torch.manual_seed(42)
+        cnn_out = cnn_decoder(tokens)
+        torch.manual_seed(42)
+        lin_out = lin_decoder(tokens)
+        # They should differ (CNN adds temporal refinement)
+        diff = (cnn_out - lin_out).abs().mean().item()
+        assert diff > 1e-6, (
+            f"CNNDecoder should differ from PerTokenDecoder, diff={diff:.8f}"
+        )
+
+
+class TestGradNormLogging:
+    """Phase 5: gradient-norm ratio logging tests."""
+
+    def test_grad_ratio_in_output(self):
+        """train_step should return grad_ratio when log_grad_norms=True."""
+        model = make_tiny_model()
+        trainer = MaskFormerTrainer(
+            model=model,
+            optimizer_main=optim.Adam(
+                [p for n, p in model.named_parameters() if "sigma" not in n], lr=1e-3
+            ),
+            optimizer_sigma=optim.Adam(
+                [p for n, p in model.named_parameters() if "sigma" in n], lr=1e-3
+            ),
+            lambda_assoc=1.0,
+            lambda_orth=0.01,
+            log_grad_norms=True,
+        )
+        x = {"input": torch.randn(2, 6, 240)}
+        out = trainer.train_step(x, epoch=5)  # non-warmup epoch so λ > 0
+        assert "grad_ratio" in out
+        assert out["grad_ratio"].item() >= 0.0
+
+    def test_grad_ratio_during_warmup(self):
+        """grad_ratio should be 0 during warmup (no adversarial term)."""
+        model = make_tiny_model()
+        sigma_params = [p for n, p in model.named_parameters() if "sigma" in n]
+        main_params = [p for n, p in model.named_parameters() if "sigma" not in n]
+        trainer = MaskFormerTrainer(
+            model=model,
+            optimizer_main=optim.Adam(main_params, lr=1e-3),
+            optimizer_sigma=optim.Adam(sigma_params, lr=1e-3),
+            lambda_assoc=1.0,
+            lambda_orth=0.01,
+            warmup_epochs=2,
+            log_grad_norms=True,
+        )
+        x = {"input": torch.randn(2, 6, 240)}
+        out = trainer.train_step(x, epoch=0)  # warmup
+        assert out["grad_ratio"].item() == 0.0
+
+
+class TestLambdaRamp:
+    """Phase 6: λ ramp schedule tests."""
+
+    def test_ramp_linear_interpolation(self):
+        """λ should linearly interpolate from lambda_assoc to lambda_end."""
+        runner = MaskFormerTrainerRunner(
+            model_or_config={**_TINY_CFG},
+            lambda_assoc=0.0,
+            lambda_end=3.0,
+            lambda_ramp_epochs=10,
+            warmup_epochs=0,
+        )
+        # Train 11 epochs: ramp_progress goes 0 → 1.0 over epochs 0-10
+        data = [{"input": torch.randn(2, 6, 240)} for _ in range(4)]
+        _ = runner.train(data, epochs=11, lr=1e-3)
+        # After full ramp (epoch 10), λ should be at lambda_end
+        assert abs(runner.trainer.lambda_assoc - 3.0) < 1e-4, (
+            f"After 10-epoch ramp with λ_end=3.0, got {runner.trainer.lambda_assoc:.4f}"
+        )
+
+    def test_ramp_clamps_at_end(self):
+        """After ramp_epochs, λ should stay at lambda_end (not exceed)."""
+        runner = MaskFormerTrainerRunner(
+            model_or_config={**_TINY_CFG},
+            lambda_assoc=0.0,
+            lambda_end=2.0,
+            lambda_ramp_epochs=5,
+            warmup_epochs=0,
+        )
+        runner._build_trainer(lr=1e-3)
+        # Run 10 epochs (past the 5-epoch ramp)
+        data = [{"input": torch.randn(2, 6, 240)} for _ in range(4)]
+        history = runner.train(data, epochs=10, lr=1e-3)
+        # After ramp, λ should be ~2.0
+        assert abs(runner.trainer.lambda_assoc - 2.0) < 1e-4, (
+            f"Final λ should be 2.0, got {runner.trainer.lambda_assoc:.4f}"
+        )
+
+    def test_ramp_starts_after_warmup(self):
+        """Ramp should start after warmup_epochs, not before."""
+        runner = MaskFormerTrainerRunner(
+            model_or_config={**_TINY_CFG},
+            lambda_assoc=0.0,
+            lambda_end=3.0,
+            lambda_ramp_epochs=10,
+            warmup_epochs=5,
+        )
+        data = [{"input": torch.randn(2, 6, 240)} for _ in range(4)]
+        history = runner.train(data, epochs=12, lr=1e-3)
+        # During warmup (epochs 0-4), λ stays at 0
+        # After warmup, ramps from 0 toward 3 over 10 epochs
+        # At epoch 11 (last of 12 total, 0-indexed), we're 6 epochs into ramp
+        # λ = 0 + (6/10) * 3.0 = 1.8
+        assert abs(runner.trainer.lambda_assoc - 1.8) < 0.2, (
+            f"Expected λ ~1.8 after 6/10 ramp, got {runner.trainer.lambda_assoc:.4f}"
+        )

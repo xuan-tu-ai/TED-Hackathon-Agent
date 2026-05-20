@@ -115,6 +115,9 @@ class GLCAnomalyMaskFormerConfig:
         use_context_embeddings: If False, the model accepts only ``"input"``
             (no robot/program), and the context embedding layer is omitted
             (default True).
+        use_cnn_decoder: If True, replaces the per-token linear decoder with a
+            V6-style CNN decoder that adds depthwise-separable Conv1d temporal
+            refinement across patches (default False).
     """
     num_sensors: int
     seq_len: int
@@ -130,6 +133,7 @@ class GLCAnomalyMaskFormerConfig:
     mask_ratio: float = 0.3
     initial_sigma: float = 5.0
     use_context_embeddings: bool = True
+    use_cnn_decoder: bool = False
 
     d_half: int = field(init=False)
     num_patches: int = field(init=False)

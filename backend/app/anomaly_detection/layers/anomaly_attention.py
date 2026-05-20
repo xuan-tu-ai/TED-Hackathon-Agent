@@ -7,7 +7,7 @@ attention matrices:
 *   **Prior Association** (A_p) — a fixed Gaussian kernel with learnable
     per-head sigma.
 
-The symmetric KL divergence between A_s and A_p per token is the **association
+The Jensen-Shannon divergence between A_s and A_p per token is the **association
 discrepancy** signal: normal tokens have broad A_s (global context) → high
 discrepancy; anomalous tokens have narrow A_s (local focus) → low discrepancy.
 
@@ -29,7 +29,7 @@ class AnomalyAttentionBlock(nn.Module):
     """Single Anomaly-Attention block (Xu et al., Anomaly Transformer, ICLR 2022).
 
     Computes standard multi-head self-attention (Series Association A_s) and a fixed
-    Gaussian prior (Prior Association A_p), then measures the symmetric KL divergence
+    Gaussian prior (Prior Association A_p), then measures the Jensen-Shannon divergence
     between them as an Association Discrepancy signal per token.
 
     Key idea:
@@ -104,24 +104,34 @@ class AnomalyAttentionBlock(nn.Module):
         kernel = kernel / (kernel.sum(dim=-1, keepdim=True) + 1e-8)
         return kernel
 
-    def _symmetric_kl(
+    def _jensen_shannon(
         self,
         p: torch.Tensor,
         q: torch.Tensor,
         eps: float = 1e-8,
     ) -> torch.Tensor:
-        """Symmetric KL divergence KL(p||q) + KL(q||p) per token.
+        """Jensen-Shannon divergence per token, bounded in [0, log(2)].
+
+        JS = 0.5 * (KL(p||m) + KL(q||m))  where m = 0.5*(p+q)
+
+        Unlike symmetric KL (which can be numerically unbounded due to the
+        eps floor in log-differences), JS is bounded above by log(2) ≈ 0.69
+        for any pair of normalized distributions.  This eliminates the
+        eps-floor pathology that inflated discrepancy to O(28) and made the
+        λ hyperparameter impossible to reason about.
 
         Args:
             p: [B, H, N, N] row-normalized distributions
             q: [B, H, N, N] row-normalized distributions
+            eps: Small constant for log-stability
 
         Returns:
-            discrepancy: [B, N] averaged over heads
+            discrepancy: [B, N] in [0, log(2)], averaged over heads
         """
-        kl_pq = (p * (torch.log(p + eps) - torch.log(q + eps))).sum(dim=-1)  # [B, H, N]
-        kl_qp = (q * (torch.log(q + eps) - torch.log(p + eps))).sum(dim=-1)  # [B, H, N]
-        discrepancy = (kl_pq + kl_qp).mean(dim=1)  # [B, N] — average over heads
+        m = 0.5 * (p + q)
+        kl_pm = (p * (torch.log(p + eps) - torch.log(m + eps))).sum(dim=-1)  # [B, H, N]
+        kl_qm = (q * (torch.log(q + eps) - torch.log(m + eps))).sum(dim=-1)  # [B, H, N]
+        discrepancy = 0.5 * (kl_pm + kl_qm).mean(dim=1)  # [B, N] — average over heads
         return discrepancy
 
     def forward(self, x: torch.Tensor) -> dict:
@@ -195,7 +205,7 @@ class AnomalyAttentionBlock(nn.Module):
             A_series_for_kl = A_series
             A_prior_for_kl = A_prior
 
-        discrepancy = self._symmetric_kl(A_prior_for_kl, A_series_for_kl)  # [B, N]
+        discrepancy = self._jensen_shannon(A_prior_for_kl, A_series_for_kl)  # [B, N]
 
         # Attention output
         attn_out = torch.matmul(A_series, V)  # [B, H, N, dk]

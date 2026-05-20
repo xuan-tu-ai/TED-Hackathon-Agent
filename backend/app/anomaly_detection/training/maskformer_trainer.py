@@ -57,6 +57,10 @@ class MaskFormerTrainer:
         optimizer_sigma: Adam over sigma parameters only.
         lambda_assoc:  Weight for association discrepancy loss.
         lambda_orth:   Weight for orthogonality regularization.
+        sigma_max:     Hard upper bound for sigma (default 50.0).
+        warmup_epochs: Number of Phase-A-only warmup epochs (default 0).
+        log_grad_norms: If True, compute and log the ratio of QKV gradient
+                        norm from the assoc term vs the recon term (default False).
     """
 
     def __init__(
@@ -67,6 +71,8 @@ class MaskFormerTrainer:
         lambda_assoc: float = 2.0,
         lambda_orth: float = 0.05,
         sigma_max: float = 50.0,
+        warmup_epochs: int = 0,
+        log_grad_norms: bool = False,
     ) -> None:
         self.model = model
         self.optimizer_main = optimizer_main
@@ -74,6 +80,8 @@ class MaskFormerTrainer:
         self.lambda_assoc = lambda_assoc
         self.lambda_orth = lambda_orth
         self.sigma_max = sigma_max
+        self.warmup_epochs = warmup_epochs
+        self.log_grad_norms = log_grad_norms
 
         self.recon_loss_fn = MaskedReconstructionLoss()
         self.assoc_loss_fn = AssociationDiscrepancyLoss(lambda_assoc=lambda_assoc)
@@ -81,21 +89,44 @@ class MaskFormerTrainer:
             d_model=model.d_model, lambda_orth=lambda_orth
         )
 
-    def train_step(self, x: dict) -> dict[str, torch.Tensor]:
+        # Pre-identify Q/K/V parameters for gradient-norm logging
+        self._qkv_params = [
+            p for n, p in model.named_parameters()
+            if any(q in n for q in ["W_q", "W_k", "W_v"])
+        ]
+
+    def _compute_qkv_grad_norm(self) -> float:
+        """Compute the L2 norm of gradients on Q/K/V parameters."""
+        total_sq = 0.0
+        for p in self._qkv_params:
+            if p.grad is not None:
+                total_sq += (p.grad ** 2).sum().item()
+        return total_sq ** 0.5
+
+
+    def train_step(self, x: dict, epoch: int = 0) -> dict[str, torch.Tensor]:
         """Execute one minimax training step.
+
+        During warmup (epoch < warmup_epochs), only Phase A runs with
+        lambda_assoc=0 — no Phase B, no sigma updates.  This lets the
+        encoder+decoder establish reconstruction before the adversarial
+        term competes for the shared parameters.
 
         Args:
             x: batch dict with 'input' key (and optionally robot_idx, program_idx)
+            epoch: Current epoch index (0-based), used for warmup gating.
 
         Returns:
             dict with scalar tensors: loss, recon_loss, assoc_loss_min,
             assoc_loss_max, orth_loss, sigma_mean
         """
         self.model.train()
+        is_warmup = epoch < self.warmup_epochs
 
         # ------------------------------------------------------------------ #
         # Phase A: minimize L_recon - lambda * L_assoc + lambda_orth * L_orth #
         # sigma does NOT get gradients (detach_mode="prior")                  #
+        # During warmup, lambda_assoc = 0 (no adversarial term)              #
         # ------------------------------------------------------------------ #
         self.optimizer_main.zero_grad()
 
@@ -120,39 +151,63 @@ class MaskFormerTrainer:
         z_pooled_orth = torch.cat([z_g_flat, z_l_flat], dim=-1)  # [B, D]
         orth_loss = self.orth_loss_fn(z_pooled_orth)
 
+        current_lambda = 0.0 if is_warmup else self.lambda_assoc
         loss_a = (
             recon_dict["loss"]
-            - self.lambda_assoc * assoc_dict_min["loss"]
+            - current_lambda * assoc_dict_min["loss"]
             + orth_loss
         )
+
+        # --- Gradient-norm logging (Phase 5) ---
+        if self.log_grad_norms and current_lambda > 0 and loss_a.requires_grad:
+            # Run two partial backward passes to separate gradients, then a full backward
+            # 1) Recon-only backward → capture ||∇_QKV recon||
+            recon_dict["loss"].backward(retain_graph=True)
+            recon_norm = self._compute_qkv_grad_norm()
+            self.optimizer_main.zero_grad()
+
+            # 2) Adversarial-only backward → capture ||∇_QKV (-λ·assoc)||
+            (-current_lambda * assoc_dict_min["loss"]).backward(retain_graph=True)
+            assoc_norm = self._compute_qkv_grad_norm()
+            self.optimizer_main.zero_grad()
+
+            grad_ratio = assoc_norm / (recon_norm + 1e-8)
+        else:
+            grad_ratio = 0.0
+
         if loss_a.requires_grad:
             loss_a.backward()
             self.optimizer_main.step()
 
-        # ------------------------------------------------------------------ #
-        # Phase B: maximize L_assoc — sigma gets gradients                   #
-        # Q/K/V series association is detached (detach_mode="series")        #
-        # ------------------------------------------------------------------ #
-        self.optimizer_sigma.zero_grad()
-
-        out_b = self.model._forward_impl(
-            x["input"],
-            robot_idx=x.get("robot_idx"),
-            program_idx=x.get("program_idx"),
-            detach_mode="series",
-        )
-        assoc_dict_max = self.assoc_loss_fn(out_b["discrepancies"])
-
-        loss_b = self.lambda_assoc * assoc_dict_max["loss"]
-        loss_b.backward()
-        self.optimizer_sigma.step()
-        self._clamp_sigma()
-
-        # Collect sigma mean for logging
+        # Collect sigma mean (before Phase B, so it reflects current state)
         sigma_values = []
         for layer in self.model.transformer.layers:
             sigma_values.append(layer.sigma.detach().mean())
         sigma_mean = torch.stack(sigma_values).mean()
+
+        # ------------------------------------------------------------------ #
+        # Phase B: maximize L_assoc — sigma gets gradients                   #
+        # Q/K/V series association is detached (detach_mode="series")        #
+        # Skipped entirely during warmup epoch                               #
+        # ------------------------------------------------------------------ #
+        if not is_warmup:
+            self.optimizer_sigma.zero_grad()
+
+            out_b = self.model._forward_impl(
+                x["input"],
+                robot_idx=x.get("robot_idx"),
+                program_idx=x.get("program_idx"),
+                detach_mode="series",
+            )
+            assoc_dict_max = self.assoc_loss_fn(out_b["discrepancies"])
+
+            loss_b = self.lambda_assoc * assoc_dict_max["loss"]
+            loss_b.backward()
+            self.optimizer_sigma.step()
+            self._clamp_sigma()
+        else:
+            # During warmup, Phase B is skipped — provide placeholder values
+            assoc_dict_max = {"loss": torch.tensor(0.0, device=loss_a.device)}
 
         return {
             "loss": loss_a.detach(),
@@ -161,6 +216,7 @@ class MaskFormerTrainer:
             "assoc_loss_max": assoc_dict_max["loss"].detach(),
             "orth_loss": orth_loss.detach(),
             "sigma_mean": sigma_mean,
+            "grad_ratio": torch.tensor(grad_ratio, device=loss_a.device),
         }
 
 
@@ -372,12 +428,20 @@ class MaskFormerTrainerRunner:
         lambda_orth: float = 0.05,
         lr_sigma_scale: float = 0.1,
         sigma_max: float = 50.0,
+        warmup_epochs: int = 0,
+        lambda_end: float = 0.02,
+        lambda_ramp_epochs: int = 0,
+        log_grad_norms: bool = False,
     ) -> None:
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.lambda_assoc   = lambda_assoc
         self.lambda_orth    = lambda_orth
         self.lr_sigma_scale = lr_sigma_scale
         self.sigma_max      = sigma_max
+        self.warmup_epochs  = warmup_epochs
+        self.lambda_end     = lambda_end
+        self.lambda_ramp_epochs = lambda_ramp_epochs
+        self.log_grad_norms = log_grad_norms
 
         if isinstance(model_or_config, GLCAnomalyMaskFormer):
             self.model = model_or_config.to(self.device)
@@ -427,6 +491,8 @@ class MaskFormerTrainerRunner:
             lambda_assoc=self.lambda_assoc,
             lambda_orth=self.lambda_orth,
             sigma_max=self.sigma_max,
+            warmup_epochs=self.warmup_epochs,
+            log_grad_norms=self.log_grad_norms,
         )
 
     def train(
@@ -451,24 +517,42 @@ class MaskFormerTrainerRunner:
         history: dict[str, list] = {
             "loss": [], "recon_loss": [], "assoc_loss_min": [],
             "assoc_loss_max": [], "orth_loss": [], "sigma_mean": [],
+            "grad_ratio": [],
         }
         if val_loader is not None:
             history["val_loss"] = []
 
         best_val_loss = float("inf")
 
+        # Determine λ ramp schedule
+        lambda_start = self.lambda_assoc  # initial value (may be overridden by warmup)
+        lambda_end = self.lambda_end
+        ramp_start_epoch = self.warmup_epochs  # start ramping after warmup
+        ramp_epochs = self.lambda_ramp_epochs
+
         for epoch in tqdm(range(epochs), desc="Epochs", unit="epoch"):
+            # --- λ ramp: linear interpolation from start → end over ramp_epochs ---
+            if ramp_epochs > 0 and epoch >= ramp_start_epoch:
+                ramp_progress = min(1.0, (epoch - ramp_start_epoch) / ramp_epochs)
+                current_lambda = lambda_start + ramp_progress * (lambda_end - lambda_start)
+                self.trainer.lambda_assoc = current_lambda
+            else:
+                current_lambda = self.trainer.lambda_assoc
+
             # --- Training ---
             epoch_losses: dict[str, list] = {k: [] for k in history if k != "val_loss"}
             batch_pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}", unit="batch", leave=False)
+            grad_ratios_epoch: list[float] = []
             for x in batch_pbar:
                 x_dev = {
                     k: v.to(self.device) if isinstance(v, torch.Tensor) else v
                     for k, v in x.items()
                 }
-                step_out = self.trainer.train_step(x_dev)
+                step_out = self.trainer.train_step(x_dev, epoch=epoch)
                 for k in epoch_losses:
                     epoch_losses[k].append(step_out[k].item())
+                if self.log_grad_norms:
+                    grad_ratios_epoch.append(step_out["grad_ratio"].item())
 
                 batch_pbar.set_postfix({
                     "loss": f"{step_out['loss']:.4f}",
@@ -479,6 +563,10 @@ class MaskFormerTrainerRunner:
             for k in epoch_losses:
                 avg = sum(epoch_losses[k]) / len(epoch_losses[k])
                 history[k].append(avg)
+            if self.log_grad_norms and len(grad_ratios_epoch) > 0:
+                history["grad_ratio"].append(
+                    sum(grad_ratios_epoch) / len(grad_ratios_epoch)
+                )
 
             # --- Validation ---
             if val_loader is not None:
@@ -509,7 +597,10 @@ class MaskFormerTrainerRunner:
                     f"val_loss: {avg_val_loss:.4f}  "
                     f"recon: {history['recon_loss'][-1]:.4f}  "
                     f"assoc_min: {history['assoc_loss_min'][-1]:.4f}  "
+                    f"λ: {current_lambda:.4f}  "
                     f"sigma: {history['sigma_mean'][-1]:.3f}"
+                    + (f"  grad_ratio: {history['grad_ratio'][-1]:.2f}"
+                       if self.log_grad_norms and len(history['grad_ratio']) > epoch else "")
                     + ("  **best**" if is_best else "")
                 )
             else:
@@ -519,6 +610,7 @@ class MaskFormerTrainerRunner:
                         f"loss: {history['loss'][-1]:.4f}  "
                         f"recon: {history['recon_loss'][-1]:.4f}  "
                         f"assoc_min: {history['assoc_loss_min'][-1]:.4f}  "
+                        f"λ: {current_lambda:.4f}  "
                         f"sigma: {history['sigma_mean'][-1]:.3f}"
                     )
 

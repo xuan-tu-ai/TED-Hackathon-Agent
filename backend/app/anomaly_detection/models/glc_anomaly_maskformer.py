@@ -32,7 +32,8 @@ from app.anomaly_detection.layers.anomaly_attention import (
     AnomalyAttentionTransformer,
 )
 from app.anomaly_detection.layers.reconstruction_decoder import (
-    ReconstructionDecoder,
+    PerTokenDecoder,
+    CNNDecoder,
 )
 from app.anomaly_detection.models.base import BaseAnomalyDetectionModel
 
@@ -86,6 +87,7 @@ class GLCAnomalyMaskFormer(BaseAnomalyDetectionModel):
         initial_sigma: float = 5.0,
         use_context_embeddings: bool = True,
         num_patches: int | None = None,
+        use_cnn_decoder: bool = False,
     ) -> None:
         """Initialise the GLC-Anomaly-MaskFormer model.
 
@@ -177,9 +179,16 @@ class GLCAnomalyMaskFormer(BaseAnomalyDetectionModel):
         )
 
         # Reconstruction decoder
-        self.decoder = ReconstructionDecoder(
-            d_model=d_model, patch_size=patch_size,
-        )
+        self.use_cnn_decoder = use_cnn_decoder
+        if use_cnn_decoder:
+            self.decoder = CNNDecoder(
+                num_sensors=num_sensors, num_patches=num_patches,
+                d_model=d_model, patch_size=patch_size,
+            )
+        else:
+            self.decoder = PerTokenDecoder(
+                d_model=d_model, patch_size=patch_size,
+            )
 
     @property
     def name(self) -> str:

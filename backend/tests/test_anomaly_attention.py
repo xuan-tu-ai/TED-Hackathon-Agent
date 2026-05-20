@@ -42,7 +42,7 @@ class TestAnomalyAttentionBlock:
     def test_discrepancy_non_negative(self):
         x = torch.randn(2, 84, 64)
         out = self.block(x)
-        assert (out["discrepancy"] >= 0).all(), "Symmetric KL must be non-negative"
+        assert (out["discrepancy"] >= 0).all(), "JS divergence must be non-negative"
 
     def test_detach_series_freezes_qkv_gradients(self):
         """With detach_mode='series', Q/K/V should NOT receive gradients."""

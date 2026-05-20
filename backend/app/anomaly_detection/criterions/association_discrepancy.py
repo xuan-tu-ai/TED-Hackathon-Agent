@@ -1,6 +1,6 @@
 """Association discrepancy loss for minimax anomaly-attention training.
 
-Computes the mean symmetric KL divergence between the prior and series
+Computes the mean Jensen-Shannon divergence between the prior and series
 association matrices, averaged over the batch, layers, and tokens.  This
 module **only** measures the magnitude of the discrepancy; the sign and
 stop-gradient logic are applied by the trainer (see below).
@@ -36,8 +36,12 @@ from .base import BaseAnomalyDetectionLoss
 class AssociationDiscrepancyLoss(BaseAnomalyDetectionLoss):
     """Mean association discrepancy over batch, layers, and tokens.
 
-    Computes the average symmetric KL divergence (already computed per-token
+    Computes the average Jensen-Shannon divergence (already computed per-token
     by AnomalyAttentionTransformer) as a scalar loss value.
+
+    JS divergence is bounded in [0, log(2)] ≈ [0, 0.69] for any pair of
+    normalized distributions, eliminating the eps-floor pathology that
+    inflated symmetric KL and made λ impossible to reason about.
 
     This module ONLY measures the magnitude of the discrepancy.
     The minimax sign and stop-gradient mechanics live in MaskFormerTrainer:
