@@ -1,3 +1,5 @@
+import math
+
 import pytest
 import torch
 
@@ -43,6 +45,13 @@ class TestAnomalyAttentionBlock:
         x = torch.randn(2, 84, 64)
         out = self.block(x)
         assert (out["discrepancy"] >= 0).all(), "JS divergence must be non-negative"
+
+    def test_discrepancy_bounded_by_log2(self):
+        x = torch.randn(2, 84, 64)
+        out = self.block(x)
+        assert (out["discrepancy"] <= math.log(2) + 1e-5).all(), (
+            "JS divergence must be <= log(2) ≈ 0.693"
+        )
 
     def test_detach_series_freezes_qkv_gradients(self):
         """With detach_mode='series', Q/K/V should NOT receive gradients."""

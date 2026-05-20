@@ -50,7 +50,7 @@ class TestMaskFormerTrainer:
         x = {"input": torch.randn(2, 6, 240)}
         out = trainer.train_step(x)
         expected = {"loss", "recon_loss", "assoc_loss_min", "assoc_loss_max",
-                     "orth_loss", "sigma_mean", "grad_ratio"}
+                     "orth_loss", "sigma_mean", "grad_ratio", "discrepancy_std"}
         assert set(out.keys()) == expected
 
     def test_train_step_no_nan(self):

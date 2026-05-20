@@ -12,8 +12,11 @@ from app.anomaly_detection.models.factory import create_model
 from app.anomaly_detection.layers.scorer import MADThreshold
 
 
+_BASE_META = {"num_sensors": 6, "seq_len": 240}
+
+
 def create_glc_flow_v7():
-    return create_model("glc_flow_v7")
+    return create_model("glc_flow_v7", _BASE_META)
 
 
 class TestStage1Trainer:
@@ -160,20 +163,20 @@ class TestEvaluator:
 
 class TestFlowMatchingTrainer:
     def test_initialization(self):
-        trainer = FlowMatchingTrainer()
+        trainer = FlowMatchingTrainer(_BASE_META)
         assert trainer.model is not None
         assert trainer.stage1_trainer is None
         assert trainer.stage2_trainer is None
 
     def test_initialization_with_metadata(self):
         from app.anomaly_detection.models.factory import create_model
-        trainer = FlowMatchingTrainer()
-        trainer.model = create_model("glc_flow_v7", metadata={"d_model": 64, "transformer_layers": 2})
+        trainer = FlowMatchingTrainer(_BASE_META)
+        trainer.model = create_model("glc_flow_v7", metadata={**_BASE_META, "d_model": 64, "transformer_layers": 2})
         assert trainer.model.d_model == 64
         assert trainer.model.transformer_layers == 2
 
     def test_train_stage1_history_keys(self):
-        trainer = FlowMatchingTrainer()
+        trainer = FlowMatchingTrainer(_BASE_META)
 
         train_data = [
             {"input": torch.randn(4, 6, 240)}
@@ -186,7 +189,7 @@ class TestFlowMatchingTrainer:
         assert len(history["loss"]) == 2
 
     def test_train_stage2_history_keys(self):
-        trainer = FlowMatchingTrainer()
+        trainer = FlowMatchingTrainer(_BASE_META)
 
         train_data = [
             {"input": torch.randn(4, 6, 240)}
@@ -199,7 +202,7 @@ class TestFlowMatchingTrainer:
         assert len(history["loss"]) == 2
 
     def test_evaluate_returns_result(self):
-        trainer = FlowMatchingTrainer()
+        trainer = FlowMatchingTrainer(_BASE_META)
 
         normal_files = [{"input": torch.randn(1, 6, 240)} for _ in range(6)]
         anomaly_files = [{"input": torch.randn(1, 6, 240)} for _ in range(6)]
@@ -211,7 +214,7 @@ class TestFlowMatchingTrainer:
         assert result.num_anomaly == 6
 
     def test_full_two_stage_pipeline(self):
-        trainer = FlowMatchingTrainer()
+        trainer = FlowMatchingTrainer(_BASE_META)
 
         train_data = [
             {"input": torch.randn(4, 6, 240)}

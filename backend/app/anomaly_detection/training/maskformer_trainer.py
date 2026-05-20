@@ -179,11 +179,16 @@ class MaskFormerTrainer:
             loss_a.backward()
             self.optimizer_main.step()
 
-        # Collect sigma mean (before Phase B, so it reflects current state)
+        # Collect sigma mean and discrepancy spread (before Phase B)
         sigma_values = []
         for layer in self.model.transformer.layers:
             sigma_values.append(layer.sigma.detach().mean())
         sigma_mean = torch.stack(sigma_values).mean()
+
+        # discrepancy_std: spread of discrepancy across tokens — proxy for discriminability
+        # High std = model assigns very different JS scores to different tokens (good).
+        # Low std (near 0) = all tokens get the same JS score = no spatial signal.
+        discrepancy_std = out_a["discrepancies"].std(dim=-1).mean().detach()
 
         # ------------------------------------------------------------------ #
         # Phase B: maximize L_assoc — sigma gets gradients                   #
@@ -217,6 +222,7 @@ class MaskFormerTrainer:
             "orth_loss": orth_loss.detach(),
             "sigma_mean": sigma_mean,
             "grad_ratio": torch.tensor(grad_ratio, device=loss_a.device),
+            "discrepancy_std": discrepancy_std,
         }
 
 
@@ -517,7 +523,7 @@ class MaskFormerTrainerRunner:
         history: dict[str, list] = {
             "loss": [], "recon_loss": [], "assoc_loss_min": [],
             "assoc_loss_max": [], "orth_loss": [], "sigma_mean": [],
-            "grad_ratio": [],
+            "grad_ratio": [], "discrepancy_std": [],
         }
         if val_loader is not None:
             history["val_loss"] = []
@@ -542,7 +548,6 @@ class MaskFormerTrainerRunner:
             # --- Training ---
             epoch_losses: dict[str, list] = {k: [] for k in history if k != "val_loss"}
             batch_pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}", unit="batch", leave=False)
-            grad_ratios_epoch: list[float] = []
             for x in batch_pbar:
                 x_dev = {
                     k: v.to(self.device) if isinstance(v, torch.Tensor) else v
@@ -551,22 +556,18 @@ class MaskFormerTrainerRunner:
                 step_out = self.trainer.train_step(x_dev, epoch=epoch)
                 for k in epoch_losses:
                     epoch_losses[k].append(step_out[k].item())
-                if self.log_grad_norms:
-                    grad_ratios_epoch.append(step_out["grad_ratio"].item())
 
-                batch_pbar.set_postfix({
-                    "loss": f"{step_out['loss']:.4f}",
+                postfix = {
                     "recon": f"{step_out['recon_loss']:.4f}",
                     "assoc": f"{step_out['assoc_loss_min']:.4f}",
-                })
+                    "dstd": f"{step_out['discrepancy_std']:.3f}",
+                }
+                if self.log_grad_norms:
+                    postfix["gr"] = f"{step_out['grad_ratio']:.2f}"
+                batch_pbar.set_postfix(postfix)
 
             for k in epoch_losses:
-                avg = sum(epoch_losses[k]) / len(epoch_losses[k])
-                history[k].append(avg)
-            if self.log_grad_norms and len(grad_ratios_epoch) > 0:
-                history["grad_ratio"].append(
-                    sum(grad_ratios_epoch) / len(grad_ratios_epoch)
-                )
+                history[k].append(sum(epoch_losses[k]) / len(epoch_losses[k]))
 
             # --- Validation ---
             if val_loader is not None:
@@ -591,27 +592,41 @@ class MaskFormerTrainerRunner:
                 if is_best:
                     best_val_loss = avg_val_loss
 
+                js_warn = "  ⚠ JS_SAT" if history["assoc_loss_min"][-1] > 0.6 else ""
+                grad_str = (
+                    f"  grad_r: {history['grad_ratio'][-1]:.2f}"
+                    if self.log_grad_norms and len(history["grad_ratio"]) > epoch
+                    else ""
+                )
                 print(
                     f"Epoch {epoch+1}/{epochs} — "
-                    f"loss: {history['loss'][-1]:.4f}  "
-                    f"val_loss: {avg_val_loss:.4f}  "
                     f"recon: {history['recon_loss'][-1]:.4f}  "
-                    f"assoc_min: {history['assoc_loss_min'][-1]:.4f}  "
+                    f"assoc: {history['assoc_loss_min'][-1]:.4f}  "
+                    f"dstd: {history['discrepancy_std'][-1]:.3f}  "
                     f"λ: {current_lambda:.4f}  "
                     f"sigma: {history['sigma_mean'][-1]:.3f}"
-                    + (f"  grad_ratio: {history['grad_ratio'][-1]:.2f}"
-                       if self.log_grad_norms and len(history['grad_ratio']) > epoch else "")
+                    f"  val: {avg_val_loss:.4f}"
+                    + grad_str
+                    + js_warn
                     + ("  **best**" if is_best else "")
                 )
             else:
                 if (epoch + 1) % max(1, epochs // 5) == 0:
+                    js_warn = "  ⚠ JS_SAT" if history["assoc_loss_min"][-1] > 0.6 else ""
+                    grad_str = (
+                        f"  grad_r: {history['grad_ratio'][-1]:.2f}"
+                        if self.log_grad_norms and len(history["grad_ratio"]) > epoch
+                        else ""
+                    )
                     print(
                         f"Epoch {epoch+1}/{epochs} — "
-                        f"loss: {history['loss'][-1]:.4f}  "
                         f"recon: {history['recon_loss'][-1]:.4f}  "
-                        f"assoc_min: {history['assoc_loss_min'][-1]:.4f}  "
+                        f"assoc: {history['assoc_loss_min'][-1]:.4f}  "
+                        f"dstd: {history['discrepancy_std'][-1]:.3f}  "
                         f"λ: {current_lambda:.4f}  "
                         f"sigma: {history['sigma_mean'][-1]:.3f}"
+                        + grad_str
+                        + js_warn
                     )
 
         return history

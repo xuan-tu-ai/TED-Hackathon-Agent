@@ -105,6 +105,7 @@ class MaskFormerLocalPreResult:
 
             score_accum = np.zeros((C, total_steps), dtype=np.float32)
             weight_accum = np.zeros(total_steps, dtype=np.float32)
+            window_scores: list[float] = []  # absolute per-window file scores
 
             batch_size = 16
             with torch.no_grad():
@@ -113,7 +114,16 @@ class MaskFormerLocalPreResult:
                     batch_raw = torch.from_numpy(windows[start_i:end_i].astype(np.float32)).to(self.device)
                     batch_serials = serials[start_i:end_i]
 
-                    heatmaps = self.model.compute_combined_heatmap({"input": batch_raw}, fast=fast)
+                    batch_dict = {"input": batch_raw}
+
+                    # File-level score: absolute raw recon mean — comparable across files.
+                    # compute_anomaly_score uses no per-sample normalization, so scores
+                    # reflect actual reconstruction difficulty, not relative within-file rank.
+                    abs_scores = self.model.compute_anomaly_score(batch_dict).cpu().numpy()
+                    window_scores.extend(abs_scores.tolist())
+
+                    # Heatmap: per-sample-normalized combined signal for localization only.
+                    heatmaps = self.model.compute_combined_heatmap(batch_dict, fast=fast)
                     heatmaps_np = heatmaps.cpu().numpy()
 
                     for bi in range(len(batch_raw)):
@@ -127,11 +137,16 @@ class MaskFormerLocalPreResult:
             valid_start = int(serials[k_skip] - min_s)
             valid_end = int(serials[-1 - k_skip] - min_s + W)
 
+            # File classification score: mean absolute recon error across valid windows.
+            # Using mean (not max) to reduce sensitivity to a single outlier window.
+            valid_window_scores = window_scores[k_skip : N - k_skip] if N > 2 * k_skip else window_scores
+            file_score = float(np.mean(valid_window_scores)) if valid_window_scores else 0.0
+
             res = {
                 "robot_code": str(rec["robot_code"]),
                 "program_number": int(rec["program_number"]),
                 "start_time": str(rec["start_time"]),
-                f"{pq}_score": float(np.percentile(final_map[:, valid_start:valid_end], q)),
+                f"{pq}_score": file_score,
                 "valid_start_idx": valid_start,
                 "valid_end_idx": valid_end,
             }

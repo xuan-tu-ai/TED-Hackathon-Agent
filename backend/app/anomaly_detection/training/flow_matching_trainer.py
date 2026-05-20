@@ -255,8 +255,10 @@ class FlowMatchingTrainer:
             self.config = model_or_config
             self.model = GLCFlowV7(**self.config.to_dict()).to(self.device)
         else:
-            self.config = GLCFlowV7Config()
-            self.model = GLCFlowV7(**self.config.to_dict()).to(self.device)
+            raise ValueError(
+                "model_or_config must be a GLCFlowV7 instance, GLCFlowV7Config, "
+                "or a dict with at least 'num_sensors' and 'seq_len'."
+            )
 
         self.stage1_trainer: Optional[Stage1Trainer] = None
         self.stage2_trainer: Optional[Stage2Trainer] = None

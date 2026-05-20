@@ -323,50 +323,38 @@ class GLCAnomalyMaskFormer(BaseAnomalyDetectionModel):
         }
 
     def compute_anomaly_score(self, batch: dict) -> torch.Tensor:
-        """Compute file-level anomaly score ``[B]``.
+        """Compute file-level anomaly score for cross-file AUROC.
 
-        Returns the maximum of the combined multiplicative heatmap
-        (reconstruction × association discrepancy) across all
-        (sensor, patch) positions.
+        Uses absolute raw reconstruction error (mean over tokens) without
+        per-sample normalization, so scores are comparable across files.
+
+        Note: PerPatchRevIN normalizes per-patch amplitude/offset anomalies.
+        Anomaly signal survives only as shape/pattern distortions in recon targets.
 
         Args:
-            batch: dict with ``"input"`` and optional
-                ``"robot_idx"`` / ``"program_idx"``.
+            batch: dict with ``"input"`` and optional robot/program idx.
 
         Returns:
             Tensor ``[B]`` — higher value = more anomalous.
         """
-        heatmaps = self.compute_combined_heatmap(batch, fast=True)
-        return heatmaps.amax(dim=(-1, -2))
+        recon_score, _ = self._compute_token_scores(batch, fast=True)
+        return recon_score.mean(dim=-1)
 
     @torch.no_grad()
-    def compute_combined_heatmap(
+    def _compute_token_scores(
         self,
         batch: dict,
         fast: bool = True,
-    ) -> torch.Tensor:
-        """Compute the multiplicative dual-criterion heatmap.
-
-        Step 1 — **Association Discrepancy** (single forward pass, no masking):
-            ``assoc_score[b, n] = -mean_layer_discrepancy[b, n]``
-            (negative because low discrepancy = anomalous — the token's
-            attention looks *too normal* / tightly concentrated).
-
-        Step 2 — **Reconstruction Error**:
-            *fast=True*: 10 random masking passes; average per-token MSE.
-            *fast=False*: 84 deterministic passes (one mask per token).
-            Slower but exact — recommended for forensic analysis.
-
-        Step 3 — **Multiplicative Combination**:
-            Both heatmaps normalised to ``[0, 1]`` per sample, then
-            multiplied element-wise.
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Compute raw per-token reconstruction error and association discrepancy.
 
         Args:
-            batch: dict with ``"input"`` key (``[B, C, T]``).
-            fast: Use approximate reconstruction (default True).
+            batch: dict with ``"input"`` and optional robot/program idx.
+            fast: Use approximate (10-pass) reconstruction scoring.
 
         Returns:
-            Combined heatmap ``[B, num_sensors, num_patches]`` in ``[0, 1]``.
+            recon_score: ``[B, N]`` mean per-token MSE (PerPatchRevIN units, absolute).
+            assoc_score: ``[B, N]`` negative mean discrepancy (higher = more anomalous).
         """
         was_training = self.training
         self.eval()
@@ -378,19 +366,13 @@ class GLCAnomalyMaskFormer(BaseAnomalyDetectionModel):
 
             tokens, local_patches = self._tokenize(raw, robot_idx, program_idx)
 
-            # Step 1: Association discrepancy
-            mask_none = torch.zeros(
-                B, self.num_tokens, dtype=torch.bool, device=raw.device,
-            )
-            t_out = self.transformer.forward_with_detach_mode(
-                tokens, detach="none",
-            )
+            # Association: low discrepancy → anomalous (series collapses to neighbors)
+            t_out = self.transformer.forward_with_detach_mode(tokens, detach="none")
             discrepancies = t_out["discrepancies"]  # [B, L, N]
-            assoc_score = -discrepancies.mean(dim=1)  # [B, N]
+            assoc_score = -discrepancies.mean(dim=1)  # [B, N] — higher = more anomalous
 
-            # Step 2: Reconstruction error
+            # Reconstruction error
             recon_score = torch.zeros(B, self.num_tokens, device=raw.device)
-
             if fast:
                 n_runs = 10
                 for _ in range(n_runs):
@@ -419,21 +401,42 @@ class GLCAnomalyMaskFormer(BaseAnomalyDetectionModel):
                     ).mean(dim=-1)
                     recon_score[:, i] = err
 
-            # Step 3: Normalise each to [0, 1] and multiply
-            def normalize_01(x: torch.Tensor) -> torch.Tensor:
-                mn = x.amin(dim=-1, keepdim=True)
-                mx = x.amax(dim=-1, keepdim=True)
-                return (x - mn) / (mx - mn + 1e-8)
-
-            assoc_norm = normalize_01(assoc_score)
-            recon_norm = normalize_01(recon_score)
-            combined = assoc_norm * recon_norm
-
-            combined = combined.reshape(B, self.num_sensors, self.num_patches)
-            return combined
+            return recon_score, assoc_score
         finally:
             if was_training:
                 self.train()
+
+    @torch.no_grad()
+    def compute_combined_heatmap(
+        self,
+        batch: dict,
+        fast: bool = True,
+    ) -> torch.Tensor:
+        """Compute the multiplicative dual-criterion heatmap (for visualization).
+
+        Both per-token scores are normalised to ``[0, 1]`` per-sample before
+        multiplying.  This is suitable for localization (hot-spot visualization)
+        but NOT for cross-file scoring — use ``compute_anomaly_score`` instead.
+
+        Args:
+            batch: dict with ``"input"`` key (``[B, C, T]``).
+            fast: Use approximate reconstruction (default True).
+
+        Returns:
+            Combined heatmap ``[B, num_sensors, num_patches]`` in ``[0, 1]``.
+        """
+        recon_score, assoc_score = self._compute_token_scores(batch, fast=fast)
+        B = recon_score.shape[0]
+
+        def normalize_01(x: torch.Tensor) -> torch.Tensor:
+            mn = x.amin(dim=-1, keepdim=True)
+            mx = x.amax(dim=-1, keepdim=True)
+            return (x - mn) / (mx - mn + 1e-8)
+
+        assoc_norm = normalize_01(assoc_score)
+        recon_norm = normalize_01(recon_score)
+        combined = assoc_norm * recon_norm
+        return combined.reshape(B, self.num_sensors, self.num_patches)
 
     def detect_anomaly(
         self,

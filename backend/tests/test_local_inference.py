@@ -84,7 +84,7 @@ def make_synthetic_recon_records(n_files: int = 4, n_windows: int = 5):
 
 class TestMaskFormerLocalPipeline:
     def setup_method(self):
-        self.model = create_model("glc_anomaly_maskformer", {"d_model": 32, "transformer_layers": 1, "transformer_heads": 2, "ffn_dim": 64, "use_context_embeddings": False})
+        self.model = create_model("glc_anomaly_maskformer", {"num_sensors": 6, "seq_len": 240, "num_robots": 4, "num_programs": 3, "d_model": 32, "transformer_layers": 1, "transformer_heads": 2, "ffn_dim": 64, "use_context_embeddings": False})
         self.metadata = self.model.get_metadata()
         self.state_dict = self.model.state_dict()
 
@@ -159,7 +159,7 @@ class TestMaskFormerLocalPipeline:
 
 class TestFlowMatchingLocalPipeline:
     def setup_method(self):
-        self.model = create_model("glc_flow_v7", {"d_model": 32, "transformer_layers": 1, "transformer_heads": 2, "ffn_dim": 64, "use_context_embeddings": False})
+        self.model = create_model("glc_flow_v7", {"num_sensors": 6, "seq_len": 240, "d_model": 32, "transformer_layers": 1, "transformer_heads": 2, "ffn_dim": 64, "use_context_embeddings": False})
         self.metadata = self.model.get_metadata()
         self.state_dict = self.model.state_dict()
 
