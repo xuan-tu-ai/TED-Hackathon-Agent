@@ -14,9 +14,7 @@
   "dropout": 0.1,
   "mask_ratio": 0.3,
   "initial_sigma": 5.0,
-  "lambda_assoc": 2.0,
-  "lambda_orth": 0.05,
-  "num_robots": 4,
-  "num_programs": 16,
+  "num_robots": 32,
+  "num_programs": 256,
   "use_context_embeddings": true
 }

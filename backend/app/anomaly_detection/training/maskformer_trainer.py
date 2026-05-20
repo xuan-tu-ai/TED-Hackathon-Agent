@@ -164,6 +164,72 @@ class MaskFormerTrainer:
         }
 
 
+    @torch.no_grad()
+    def val_step(self, x: dict) -> dict[str, torch.Tensor]:
+        """Compute losses for a validation batch without gradient updates.
+
+        Runs both forward passes (Phase-A and Phase-B style) with
+        ``torch.no_grad()`` so no gradients are computed and no model
+        parameters are updated.
+
+        Args:
+            x: batch dict with 'input' key (and optionally robot_idx, program_idx)
+
+        Returns:
+            dict with scalar tensors matching train_step: loss, recon_loss,
+            assoc_loss_min, assoc_loss_max, orth_loss, sigma_mean.
+        """
+        self.model.eval()
+
+        # Phase-A forward
+        out_a = self.model._forward_impl(
+            x["input"],
+            robot_idx=x.get("robot_idx"),
+            program_idx=x.get("program_idx"),
+            detach_mode="prior",
+        )
+
+        recon_dict = self.recon_loss_fn(
+            out_a["patches_pred"],
+            out_a["patches_target"],
+            out_a["mask"],
+        )
+        assoc_dict_min = self.assoc_loss_fn(out_a["discrepancies"])
+
+        z_g_flat = out_a["z_global"].mean(dim=1)
+        z_l_flat = out_a["z_local"].mean(dim=1)
+        z_pooled_orth = torch.cat([z_g_flat, z_l_flat], dim=-1)
+        orth_loss = self.orth_loss_fn(z_pooled_orth)
+
+        loss_a = (
+            recon_dict["loss"]
+            - self.lambda_assoc * assoc_dict_min["loss"]
+            + orth_loss
+        )
+
+        # Phase-B forward
+        out_b = self.model._forward_impl(
+            x["input"],
+            robot_idx=x.get("robot_idx"),
+            program_idx=x.get("program_idx"),
+            detach_mode="series",
+        )
+        assoc_dict_max = self.assoc_loss_fn(out_b["discrepancies"])
+
+        sigma_values = []
+        for layer in self.model.transformer.layers:
+            sigma_values.append(layer.sigma.detach().mean())
+        sigma_mean = torch.stack(sigma_values).mean()
+
+        return {
+            "loss": loss_a,
+            "recon_loss": recon_dict["loss"],
+            "assoc_loss_min": assoc_dict_min["loss"],
+            "assoc_loss_max": assoc_dict_max["loss"],
+            "orth_loss": orth_loss,
+            "sigma_mean": sigma_mean,
+        }
+
     def _clamp_sigma(self) -> None:
         """Hard-clip every layer's sigma to [1e-4, sigma_max] after each Phase-B step.
 
@@ -374,21 +440,26 @@ class MaskFormerTrainerRunner:
 
         Args:
             train_loader: List of batch dicts (each with 'input' key).
-            val_loader:   Optional validation batches (unused in loss; for monitoring).
+            val_loader:   Optional validation batches for per-epoch monitoring.
             epochs:       Number of training epochs.
             lr:           Learning rate for the main Adam optimiser.
 
         Returns:
-            Training history dict.
+            Training history dict.  Includes ``val_loss`` when ``val_loader`` is set.
         """
         self.trainer = self._build_trainer(lr)
         history: dict[str, list] = {
             "loss": [], "recon_loss": [], "assoc_loss_min": [],
             "assoc_loss_max": [], "orth_loss": [], "sigma_mean": [],
         }
+        if val_loader is not None:
+            history["val_loss"] = []
+
+        best_val_loss = float("inf")
 
         for epoch in tqdm(range(epochs), desc="Epochs", unit="epoch"):
-            epoch_losses: dict[str, list] = {k: [] for k in history}
+            # --- Training ---
+            epoch_losses: dict[str, list] = {k: [] for k in history if k != "val_loss"}
             batch_pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}", unit="batch", leave=False)
             for x in batch_pbar:
                 x_dev = {
@@ -396,7 +467,7 @@ class MaskFormerTrainerRunner:
                     for k, v in x.items()
                 }
                 step_out = self.trainer.train_step(x_dev)
-                for k in history:
+                for k in epoch_losses:
                     epoch_losses[k].append(step_out[k].item())
 
                 batch_pbar.set_postfix({
@@ -405,18 +476,51 @@ class MaskFormerTrainerRunner:
                     "assoc": f"{step_out['assoc_loss_min']:.4f}",
                 })
 
-            for k in history:
+            for k in epoch_losses:
                 avg = sum(epoch_losses[k]) / len(epoch_losses[k])
                 history[k].append(avg)
 
-            if (epoch + 1) % max(1, epochs // 5) == 0:
+            # --- Validation ---
+            if val_loader is not None:
+                val_losses: list[float] = []
+                val_pbar = tqdm(
+                    val_loader,
+                    desc=f"Epoch {epoch+1}/{epochs} (Val)",
+                    unit="batch",
+                    leave=False,
+                )
+                for x in val_pbar:
+                    x_dev = {
+                        k: v.to(self.device) if isinstance(v, torch.Tensor) else v
+                        for k, v in x.items()
+                    }
+                    v_out = self.trainer.val_step(x_dev)
+                    val_losses.append(v_out["loss"].item())
+                avg_val_loss = sum(val_losses) / len(val_losses)
+                history["val_loss"].append(avg_val_loss)
+
+                is_best = avg_val_loss < best_val_loss
+                if is_best:
+                    best_val_loss = avg_val_loss
+
                 print(
                     f"Epoch {epoch+1}/{epochs} — "
                     f"loss: {history['loss'][-1]:.4f}  "
+                    f"val_loss: {avg_val_loss:.4f}  "
                     f"recon: {history['recon_loss'][-1]:.4f}  "
                     f"assoc_min: {history['assoc_loss_min'][-1]:.4f}  "
                     f"sigma: {history['sigma_mean'][-1]:.3f}"
+                    + ("  **best**" if is_best else "")
                 )
+            else:
+                if (epoch + 1) % max(1, epochs // 5) == 0:
+                    print(
+                        f"Epoch {epoch+1}/{epochs} — "
+                        f"loss: {history['loss'][-1]:.4f}  "
+                        f"recon: {history['recon_loss'][-1]:.4f}  "
+                        f"assoc_min: {history['assoc_loss_min'][-1]:.4f}  "
+                        f"sigma: {history['sigma_mean'][-1]:.3f}"
+                    )
 
         return history
 
