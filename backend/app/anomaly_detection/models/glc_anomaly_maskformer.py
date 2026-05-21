@@ -15,27 +15,92 @@ Training uses a **minimax** strategy (implemented in the trainer):
   Maximise phase:  L = +λ_assoc * L_assoc  (sigma parameters only)
 """
 
+from dataclasses import dataclass, field, fields
 from typing import ClassVar, Optional
 
 import torch
 
-from app.anomaly_detection.schemas import GLCAnomalyMaskFormerConfig
-from app.anomaly_detection.layers.revin import GlobalRevIN, PerPatchRevIN
+from app.anomaly_detection.layers.normalization import GlobalRevIN, PerPatchRevIN
 from app.anomaly_detection.layers.patchify import Patchify, FlattenPatches
 from app.anomaly_detection.layers.encoders import (
     PatchEncoderGlobal, PatchEncoderLocal, PositionalEmbedding,
 )
-from app.anomaly_detection.layers.mask_token import MaskToken
-from app.anomaly_detection.layers.sensor_block_masking import SensorBlockMasking
-from app.anomaly_detection.layers.context_embedding import ContextEmbedding
-from app.anomaly_detection.layers.anomaly_attention import (
+from app.anomaly_detection.layers.masking import MaskToken, SensorBlockMasking
+from app.anomaly_detection.layers.embeddings import ContextEmbedding
+from app.anomaly_detection.layers.attention import (
     AnomalyAttentionTransformer,
 )
-from app.anomaly_detection.layers.reconstruction_decoder import (
+from app.anomaly_detection.layers.reconstruction import (
     PerTokenDecoder,
     CNNDecoder,
 )
 from app.anomaly_detection.models.base import BaseAnomalyDetectionModel
+
+
+@dataclass
+class GLCAnomalyMaskFormerConfig:
+    """Model hyperparameters for GLCAnomalyMaskFormer.
+
+    Only contains init-time hyperparameters.  Computed fields (``d_half``,
+    ``num_patches``, ``num_tokens``) are excluded from ``to_dict()`` and
+    recomputed on load via ``__post_init__``.
+
+    Attributes:
+        num_sensors: Number of sensor channels.
+        seq_len: Number of time steps per input.
+        num_robots: Number of robot IDs in the context embedding table
+            (paint-shop fleet size).
+        num_programs: Number of program IDs in the context embedding table.
+        patch_size: Width of each patch in time steps (default 32).
+        patch_stride: Stride between consecutive patches (default 16).
+        d_model: Hidden dimension for transformer and embeddings (default 128).
+        transformer_layers: Number of anomaly-attention layers (default 4).
+        transformer_heads: Number of attention heads per layer (default 4).
+        ffn_dim: Hidden dimension of the FFN (default 512).
+        dropout: Dropout probability (default 0.1).
+        mask_ratio: Fraction of time positions to mask during training
+            (default 0.3).  Each masked time position hides all sensor tokens.
+        initial_sigma: Initial value for the learnable sigma parameter in the
+            anomaly-attention Gaussian prior (default 5.0).
+        use_context_embeddings: If False, the model accepts only ``"input"``
+            (no robot/program), and the context embedding layer is omitted
+            (default True).
+        use_cnn_decoder: If True, replaces the per-token linear decoder with a
+            V6-style CNN decoder that adds depthwise-separable Conv1d temporal
+            refinement across patches (default False).
+    """
+    num_sensors: int
+    seq_len: int
+    num_robots: int
+    num_programs: int
+    patch_size: int = 32
+    patch_stride: int = 16
+    d_model: int = 128
+    transformer_layers: int = 4
+    transformer_heads: int = 4
+    ffn_dim: int = 512
+    dropout: float = 0.1
+    mask_ratio: float = 0.3
+    initial_sigma: float = 5.0
+    use_context_embeddings: bool = True
+    use_cnn_decoder: bool = False
+
+    d_half: int = field(init=False)
+    num_patches: int = field(init=False)
+    num_tokens: int = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.d_half = self.d_model // 2
+        self.num_patches = (self.seq_len - self.patch_size) // self.patch_stride + 1
+        self.num_tokens = self.num_sensors * self.num_patches
+
+    def to_dict(self) -> dict:
+        return {f.name: getattr(self, f.name) for f in fields(self) if f.init}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "GLCAnomalyMaskFormerConfig":
+        valid = {f.name for f in fields(cls) if f.init}
+        return cls(**{k: v for k, v in d.items() if k in valid})
 
 
 class GLCAnomalyMaskFormer(BaseAnomalyDetectionModel):

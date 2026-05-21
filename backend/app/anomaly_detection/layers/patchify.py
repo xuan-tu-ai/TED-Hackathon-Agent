@@ -85,15 +85,4 @@ class FlattenPatches(nn.Module):
         return f"patch_size={self.patch_size}"
 
 
-def unfold_to_patches(x: torch.Tensor, patch_size: int, patch_stride: int) -> torch.Tensor:
-    """Functional version of Patchify.forward().
 
-    Args:
-        x: [B, C, T]
-        patch_size: size of each patch
-        patch_stride: step between patches
-
-    Returns:
-        patches: [B, C, P, patch_size]
-    """
-    return x.unfold(dimension=-1, size=patch_size, step=patch_stride)

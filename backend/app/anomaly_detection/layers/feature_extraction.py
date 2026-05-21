@@ -7,16 +7,17 @@ in the older model variants:
     window via depthwise 1D convolutions.
 *   :class:`StatProjector` — projects per-window statistical features to the
     model dimension via a two-layer MLP.
-*   :class:`RelativePositionEncoder` — encodes relative window position.
-*   :class:`ContextualEmbedding` — legacy context embedding (robot + program);
-    distinct from the V7 MaskFormer's :class:`ContextEmbedding` in
-    ``context_embedding.py``.
+
+(``ContextualEmbedding`` and ``RelativePositionEncoder`` moved to
+``embeddings.py``.)
 
 .. note::
    These modules differ from the V7 encoder pipeline.  V7 uses
    :class:`PatchEncoderGlobal` / :class:`PatchEncoderLocal` in
    ``encoders.py`` instead.
 """
+
+from dataclasses import dataclass, field, fields
 
 import torch
 import torch.nn as nn
@@ -126,83 +127,9 @@ class StatProjector(nn.Module):
         return out
 
 
-class RelativePositionEncoder(nn.Module):
-    """Encodes the relative position of a window within a file.
-
-    Given a scalar position (normalised to ``[-1, 1]``), produces a dense
-    embedding via a small MLP (Linear → SiLU → Linear + LayerNorm).
-
-    Args:
-        d_model: Output feature dimension (D).
-    """
-
-    def __init__(self, d_model: int):
-        super().__init__()
-        self.d_model = d_model
-
-        self.encoder = nn.Sequential(
-            nn.Linear(1, d_model // 4),
-            nn.SiLU(),
-            nn.Linear(d_model // 4, d_model),
-            nn.LayerNorm(d_model),
+    def extra_repr(self) -> str:
+        return (
+            f"num_sensors={self.num_sensors}, "
+            f"num_stats_features={self.num_stats_features}, "
+            f"d_model={self.d_model}"
         )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Encode relative position.
-
-        Args:
-            x: Position scalar ``[B, 1]`` in range ``[-1, 1]``.
-
-        Returns:
-            Position embedding ``[B, 1, D]``.
-        """
-        out = self.encoder(x)
-        return out.unsqueeze(1)
-
-
-class ContextualEmbedding(nn.Module):
-    """Legacy robot + program context embedding (V1–V6).
-
-    Uses separate embedding tables for robot and program IDs (each D/2), then
-    concatenates and projects back to D.  This differs from the V7
-    :class:`ContextEmbedding` which sums independent robot/program embeddings
-    and broadcasts to ``[B, 1, D]``.
-
-    Args:
-        num_robots: Number of distinct robot identities.
-        num_programs: Number of distinct program identities.
-        d_model: Output embedding dimension (D).
-    """
-
-    def __init__(self, num_robots: int, num_programs: int, d_model: int):
-        super().__init__()
-        self.num_robots = num_robots
-        self.num_programs = num_programs
-        self.d_model = d_model
-
-        self.robot_embedding = nn.Embedding(num_robots, d_model // 2)
-        self.program_embedding = nn.Embedding(num_programs, d_model // 2)
-
-        self.projector = nn.Sequential(
-            nn.Linear(d_model, d_model),
-            nn.SiLU(),
-            nn.LayerNorm(d_model),
-        )
-
-    def forward(
-        self, robot_ids: torch.Tensor, program_ids: torch.Tensor,
-    ) -> torch.Tensor:
-        """Embed robot and program identities.
-
-        Args:
-            robot_ids: LongTensor ``[B]`` of robot indices.
-            program_ids: LongTensor ``[B]`` of program indices.
-
-        Returns:
-            Context embedding ``[B, D]``.
-        """
-        robot_emb = self.robot_embedding(robot_ids)
-        program_emb = self.program_embedding(program_ids)
-        combined_emb = torch.cat([robot_emb, program_emb], dim=-1)
-        out = self.projector(combined_emb)
-        return out

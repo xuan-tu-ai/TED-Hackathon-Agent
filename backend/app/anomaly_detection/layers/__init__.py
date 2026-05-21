@@ -3,55 +3,82 @@
 This package provides the building blocks for all anomaly detection models,
 organised into three groups:
 
-1. **Normalisation & Patchification** — ``revin``, ``patchify``, ``preprocessing``
-2. **Encoding & Transformation** — ``encoders``, ``transformer``,
-   ``feature_extraction``, ``backbone``, ``time_embedding``
+1. **Normalisation & Patchification** — ``normalization``, ``patchify``
+2. **Encoding, Embedding & Transformation** — ``encoders``, ``embeddings``,
+   ``feature_extraction``, ``attention``, ``mlp_mixer``, ``time_embedding``
 3. **Detection Heads** — ``cnf`` (flow matching), ``scorer`` (thresholding),
-   ``anomaly_attention`` (MaskFormer), ``bottleneck`` (VAE/VQ),
-   ``context_embedding``, ``mask_token``, ``sensor_block_masking``,
-   ``reconstruction_decoder``
+   ``bottleneck`` (VAE/VQ), ``reconstruction``, ``masking``
 """
 
-from .revin import GlobalRevIN, PerPatchRevIN, compute_file_stats, compute_patch_stats
+from .normalization import (
+    GlobalRevIN,
+    PerPatchRevIN,
+    RevIN,
+    LogScaler,
+    GlobalStatsStandardizer,
+)
 from .patchify import Patchify, FlattenPatches
 from .encoders import PatchEncoderGlobal, PatchEncoderLocal, PositionalEmbedding
-from .transformer import CLSToken, TransformerEncoder, DualPooling
-from .time_embedding import SinusoidalTimeEmbedding, get_time_embedding
+from .embeddings import ContextEmbedding, RelativePositionEncoder
+from .feature_extraction import ShapeEncoder, StatProjector
+from .attention import (
+    CLSToken,
+    TransformerEncoder,
+    DualPooling,
+    AnomalyAttentionBlock,
+    AnomalyAttentionTransformer,
+)
+from .mlp_mixer import MixerBlock, MLPMixerBackbone
+from .time_embedding import SinusoidalTimeEmbedding
 from .cnf import VectorFieldMLP, CNF
 from .scorer import MADThreshold, AnomalyScorer, PatchMasker, PerturbationLoop
-from .mask_token import MaskToken
-from .sensor_block_masking import SensorBlockMasking
-from .context_embedding import RobotEmbedding, ProgramEmbedding, ContextEmbedding
-from .anomaly_attention import AnomalyAttentionBlock, AnomalyAttentionTransformer
-from .reconstruction_decoder import ReconstructionDecoder
+from .bottleneck import (
+    MultitaskVAEHead,
+    FactorizedVectorQuantizerEMA,
+    ResidualFactorizedVectorQuantizerEMA,
+    LegacyFactorizedVectorQuantizerEMA,
+    MultiTaskVQVAEHead,
+)
+from .masking import MaskToken, SensorBlockMasking
+from .reconstruction import PerTokenDecoder, CNNDecoder, ReconstructionDecoder
 
 __all__ = [
     "GlobalRevIN",
     "PerPatchRevIN",
-    "compute_file_stats",
-    "compute_patch_stats",
+    "RevIN",
+    "LogScaler",
+    "GlobalStatsStandardizer",
     "Patchify",
     "FlattenPatches",
     "PatchEncoderGlobal",
     "PatchEncoderLocal",
     "PositionalEmbedding",
+    "ContextEmbedding",
+    "RelativePositionEncoder",
+    "ShapeEncoder",
+    "StatProjector",
     "CLSToken",
     "TransformerEncoder",
     "DualPooling",
+    "AnomalyAttentionBlock",
+    "AnomalyAttentionTransformer",
+    "MixerBlock",
+    "MLPMixerBackbone",
     "SinusoidalTimeEmbedding",
-    "get_time_embedding",
     "VectorFieldMLP",
     "CNF",
     "MADThreshold",
     "AnomalyScorer",
     "PatchMasker",
     "PerturbationLoop",
+    "MultitaskVAEHead",
+    "FactorizedVectorQuantizerEMA",
+    "ResidualFactorizedVectorQuantizerEMA",
+    "LegacyFactorizedVectorQuantizerEMA",
+    "MultiTaskVQVAEHead",
     "MaskToken",
     "SensorBlockMasking",
-    "RobotEmbedding",
-    "ProgramEmbedding",
-    "ContextEmbedding",
-    "AnomalyAttentionBlock",
-    "AnomalyAttentionTransformer",
+    "PerTokenDecoder",
+    "CNNDecoder",
     "ReconstructionDecoder",
 ]

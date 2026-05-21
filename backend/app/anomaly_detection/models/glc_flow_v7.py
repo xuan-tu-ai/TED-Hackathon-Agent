@@ -13,19 +13,19 @@ Training is two-stage:
              log-likelihood of normal samples.
 """
 
+from dataclasses import dataclass, field, fields
 from typing import ClassVar, Optional
 
 import torch
 
-from app.anomaly_detection.schemas import GLCFlowV7Config
-from app.anomaly_detection.layers.revin import (
+from app.anomaly_detection.layers.normalization import (
     GlobalRevIN, PerPatchRevIN,
 )
 from app.anomaly_detection.layers.patchify import Patchify, FlattenPatches
 from app.anomaly_detection.layers.encoders import (
     PatchEncoderGlobal, PatchEncoderLocal, PositionalEmbedding,
 )
-from app.anomaly_detection.layers.transformer import (
+from app.anomaly_detection.layers.attention import (
     CLSToken, TransformerEncoder, DualPooling,
 )
 from app.anomaly_detection.layers.time_embedding import SinusoidalTimeEmbedding
@@ -33,6 +33,84 @@ from app.anomaly_detection.layers.cnf import CNF
 from app.anomaly_detection.criterions.dual_head import GlobalHead, LocalHead
 from app.anomaly_detection.criterions.orthogonality import OrthogonalityLoss
 from app.anomaly_detection.models.base import BaseAnomalyDetectionModel
+
+
+@dataclass
+class GLCFlowV7Config:
+    """Model hyperparameters for GLC-Flow V7.
+
+    Attributes:
+        num_sensors: Number of input sensor channels.
+        seq_len: Length of the macro-window (time-steps) fed to the model.
+        patch_size: Width of each non-overlapping patch that a local encoder
+            operates on.
+        patch_stride: Stride between consecutive patches (controls patch
+            overlap / density).
+        d_model: Transformer backbone hidden dimension.
+        transformer_layers: Number of transformer encoder layers.
+        transformer_heads: Number of attention heads per layer.
+        ffn_dim: Feed-forward network hidden dimension inside each
+            transformer block.
+        dropout: Dropout probability applied throughout the model.
+        time_emb_dim: Dimension of the sinusoidal time embedding fed to the
+            CNF vector field.
+        cnff_dim: Hidden dimension of the CNF vector-field MLP.
+        lambda_orth: Weight for the orthogonality regularisation loss term.
+        lambda_recon: Weight for the reconstruction loss term in dual-head
+            training.
+        d_half: Computed as ``d_model // 2``; used for split encodings
+            (half to global, half to local).
+        num_patches: Number of patches derived from ``seq_len``, ``patch_size``,
+            and ``patch_stride``.
+    """
+    num_sensors: int
+    seq_len: int
+    patch_size: int = 32
+    patch_stride: int = 16
+    d_model: int = 128
+    transformer_layers: int = 4
+    transformer_heads: int = 4
+    ffn_dim: int = 256
+    dropout: float = 0.1
+    time_emb_dim: int = 32
+    cnff_dim: int = 256
+    lambda_orth: float = 0.05
+    lambda_recon: float = 1.0
+
+    d_half: int = field(init=False)
+    num_patches: int = field(init=False)
+
+    def __post_init__(self) -> None:
+        """Compute derived fields after initialisation."""
+        self.d_half = self.d_model // 2
+        self.num_patches = (self.seq_len - self.patch_size) // self.patch_stride + 1
+
+    def to_dict(self) -> dict:
+        """Serialize init-only fields to a plain dictionary.
+
+        Returns:
+            dict mapping field name → value for every field that can be
+            passed to the constructor.
+        """
+        return {f.name: getattr(self, f.name) for f in fields(self) if f.init}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "GLCFlowV7Config":
+        """Create an instance from a dictionary, ignoring unknown keys.
+
+        Args:
+            d: Dictionary that may contain arbitrary keys; only those matching
+                init fields of this dataclass are consumed.
+
+        Returns:
+            New :class:`GLCFlowV7Config` instance.
+        """
+        valid = {f.name for f in fields(cls) if f.init}
+        return cls(**{k: v for k, v in d.items() if k in valid})
+
+
+# Backward-compat alias
+GLCFlowConfig = GLCFlowV7Config
 
 
 class GLCFlowV7(BaseAnomalyDetectionModel):

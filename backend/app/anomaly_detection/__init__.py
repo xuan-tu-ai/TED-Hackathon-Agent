@@ -5,8 +5,7 @@ architecture:
 
 =================  ===========================================================
 **constants**      sensor names, statistical feature columns, window sizes
-**schemas**        typed configuration dataclasses (GLCFlowV7Config, RevINStat,
-                   PatchStats)
+**schemas**        (deprecated — model configs moved to their own modules)
 **layers**         reusable neural network building blocks (RevIN, patchify,
                    transformers, CNF, anomaly attention, …)
 **models**         concrete anomaly detection architectures extending

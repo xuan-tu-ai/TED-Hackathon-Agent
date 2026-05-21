@@ -5,7 +5,7 @@ sine/cosine functions at exponentially spaced frequencies (same positional
 encoding formula as "Attention Is All You Need", applied to continuous time).
 
 Both a module (:class:`SinusoidalTimeEmbedding`) and a convenience function
-(:func:`get_time_embedding`) are provided.
+(see :class:`SinusoidalTimeEmbedding`).
 """
 
 import math
@@ -65,21 +65,3 @@ class SinusoidalTimeEmbedding(nn.Module):
         return f"dim={self.dim}"
 
 
-def get_time_embedding(t: torch.Tensor, dim: int = 32) -> torch.Tensor:
-    """Functional version of SinusoidalTimeEmbedding.forward().
-
-    Args:
-        t: Scalar time tensor [B] or [B, 1]
-        dim: Embedding dimension (must be even)
-
-    Returns:
-        emb: [B, dim]
-    """
-    if t.ndim == 1:
-        t = t.unsqueeze(-1)
-    half_dim = dim // 2
-    freqs = torch.exp(
-        -math.log(10000) * torch.arange(0, half_dim, device=t.device, dtype=t.dtype) / (half_dim - 1)
-    )
-    args = t * freqs
-    return torch.cat([torch.sin(args), torch.cos(args)], dim=-1)

@@ -84,7 +84,7 @@ class Stage1Trainer:
         Returns:
             Dict with keys ``loss``, ``global_loss``, ``local_loss``, ``orth_loss``.
         """
-        from app.anomaly_detection.layers.revin import compute_file_stats, compute_patch_stats
+        from app.anomaly_detection.training._statics import compute_file_stats, compute_patch_stats
         self.optimizer.zero_grad()
         file_stats_target = compute_file_stats(x["input"])
         patch_stats_target = compute_patch_stats(

@@ -1,9 +1,11 @@
 import pytest
 import torch
 
-from app.anomaly_detection.layers.revin import (
+from app.anomaly_detection.layers.normalization import (
     GlobalRevIN,
     PerPatchRevIN,
+)
+from app.anomaly_detection.training._statics import (
     compute_file_stats,
     compute_patch_stats,
 )

@@ -1,15 +1,19 @@
-"""Reversible Instance Normalisation (RevIN) layers.
+"""Normalisation layers — RevIN variants, log-scaling, and standardisation.
 
-Provides two normalisation strategies used by V7 models:
+This module consolidates all normalisation layers previously split across
+``revin.py`` and ``preprocessing.py``:
 
+**V7 modern layers** (macro-window models):
 *   :class:`GlobalRevIN` — per-file z-score normalisation over the full
     sequence length (240 steps).  Catches baseline drift without amplifying
     small deviations on flat lines.
 *   :class:`PerPatchRevIN` — per-patch min-max normalisation to ``[-1, 1]``.
     Preserves the amplitude of local spikes relative to the patch's own range.
-
-Helper functions :func:`compute_file_stats` and :func:`compute_patch_stats`
-produce auxiliary targets for the V7 stage-1 training heads.
+**V1–V6 legacy layers** (short-window models):
+*   :class:`RevIN` — per-window z-score normalisation with denormalisation
+    (legacy, used by pre-V7 models).
+*   :class:`LogScaler` — signed log-transform for statistical features.
+*   :class:`GlobalStatsStandardizer` — online z-score via ``BatchNorm1d``.
 """
 
 import torch
@@ -136,52 +140,110 @@ class PerPatchRevIN(nn.Module):
         return (x_norm + 1.0) * denom / 2.0 + p_min
 
 
-def compute_file_stats(x: torch.Tensor) -> torch.Tensor:
-    """Compute file-level statistics for auxiliary head target.
-
-    Computes: mean, std, min, max, kurtosis proxy, slope
-    for each sensor channel over the full sequence.
-
-    Args:
-        x: Input tensor [B, num_sensors, seq_len]
-
-    Returns:
-        stats: [B, num_sensors, 6] — per-sensor file-level stats
-    """
-    B, C, T = x.shape
-
-    mu    = x.mean(dim=-1)                                          # [B, C]
-    sigma = x.std(dim=-1)                                          # [B, C]
-    mn    = x.amin(dim=-1)                                        # [B, C]
-    mx    = x.amax(dim=-1)                                        # [B, C]
-
-    x_c   = x - mu.unsqueeze(-1)
-    kurt  = (x_c ** 4).mean(dim=-1) / (sigma ** 4 + 1e-6)        # [B, C]
-
-    t     = torch.linspace(-1, 1, T, device=x.device).unsqueeze(0).unsqueeze(0)
-    slope = (x_c * t).mean(dim=-1) / (t ** 2).mean()              # [B, C]
-
-    return torch.stack([mu, sigma, mn, mx, kurt, slope], dim=-1)   # [B, C, 6]
+# ---------------------------------------------------------------------------
+# Legacy V1–V6 layers  (moved from preprocessing.py)
+# ---------------------------------------------------------------------------
 
 
-def compute_patch_stats(x: torch.Tensor, num_patches: int, patch_size: int, patch_stride: int) -> torch.Tensor:
-    """Compute patch-level statistics for local auxiliary head target.
+class RevIN(nn.Module):
+    """Legacy per-window RevIN for short sequences (V1–V6).
 
-    For each (sensor, patch), computes max and min values.
+    Computes z-score normalisation over the **time dimension** of each window
+    independently, per sensor channel.  Statistics are detached so gradients
+    do not flow through them.
 
     Args:
-        x: Input tensor [B, num_sensors, seq_len]
-        num_patches: Number of patches
-        patch_size: Size of each patch
-        patch_stride: Stride between patches
-
-    Returns:
-        stats: [B, num_sensors, num_patches, 2] — per-(sensor, patch) (max, min)
+        num_sensors: Number of sensor channels.
+        eps: Small constant to prevent division by zero (default 1e-5).
     """
-    B, C, T = x.shape
 
-    patches = x.unfold(-1, patch_size, patch_stride)  # [B, C, num_patches, patch_size]
-    patch_max = patches.amax(dim=-1)  # [B, C, num_patches]
-    patch_min = patches.amin(dim=-1)  # [B, C, num_patches]
+    def __init__(self, num_sensors: int, eps: float = 1e-5):
+        super().__init__()
+        self.num_sensors = num_sensors
+        self.eps = eps
 
-    return torch.stack([patch_max, patch_min], dim=-1)  # [B, C, num_patches, 2]
+    def forward(
+        self, x: torch.Tensor
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+        """Normalise input over the time dimension.
+
+        Args:
+            x: Input tensor ``[B, C, W]``.
+
+        Returns:
+            Tuple of ``(x_norm [B, C, W], (mean [B, C, 1], std [B, C, 1]))``.
+        """
+        mean = torch.mean(x, dim=-1, keepdim=True).detach()
+        stdev = torch.sqrt(
+            torch.var(x, dim=-1, keepdim=True, unbiased=False) + self.eps
+        ).detach()
+        x_norm = (x - mean) / stdev
+        return x_norm, (mean, stdev)
+
+    def denormalize(
+        self,
+        x_norm: torch.Tensor,
+        stats: tuple[torch.Tensor, torch.Tensor],
+    ) -> torch.Tensor:
+        """Reverse the normalisation.
+
+        Args:
+            x_norm: Normalised tensor ``[B, C, W]``.
+            stats: ``(mean, stdev)`` tuple from the forward pass.
+
+        Returns:
+            Denormalised tensor ``[B, C, W]``.
+        """
+        mean, stdev = stats
+        return x_norm * stdev + mean
+
+
+class LogScaler(nn.Module):
+    """Signed log-transform for statistical features.
+
+    Maps ``[-∞, ∞] → [-∞, ∞]`` via ``sign(x) * log(1 + |x|)``.
+    Reduces skew in heavy-tailed statistical distributions.
+
+    Input shape: ``[B, C, K]``.
+    """
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply signed log1p.
+
+        Args:
+            x: Input tensor.
+
+        Returns:
+            Log-transformed tensor of the same shape.
+        """
+        return torch.sign(x) * torch.log1p(torch.abs(x))
+
+
+class GlobalStatsStandardizer(nn.Module):
+    """Online z-score standardisation for statistical features.
+
+    Wraps ``nn.BatchNorm1d`` with ``affine=False`` to accumulate running
+    mean and variance across the training set.  This is applied **after**
+    :class:`LogScaler`.
+
+    Args:
+        num_sensors: Number of sensor channels.
+    """
+
+    def __init__(self, num_sensors: int):
+        super().__init__()
+        self.num_sensors = num_sensors
+        self.standarizer = nn.BatchNorm1d(
+            num_features=num_sensors, affine=False, track_running_stats=True,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Standardise input using running statistics.
+
+        Args:
+            x: Input ``[B, C, K]`` — log-scaled statistical features.
+
+        Returns:
+            Z-scored tensor of the same shape.
+        """
+        return self.standarizer(x)

@@ -1,13 +1,53 @@
-"""Sensor-block masking strategy for the MaskFormer V7 training.
+"""Masking layers for MaskFormer V7 training.
 
-Masks entire time columns across ALL sensors simultaneously, preventing
-cross-sensor shortcut learning.  If only one sensor at a time position is
-masked, the model could trivially reconstruct it from the other sensors
-(which are physically correlated — e.g. paint pressure and flow).
+Consolidates two masking-related modules previously split across files:
+
+*   :class:`MaskToken` — learnable ``[MASK]`` token that replaces masked
+    positions during training.
+*   :class:`SensorBlockMasking` — masks entire time columns across ALL sensors
+    simultaneously to prevent cross-sensor shortcut reconstruction.
 """
 
 import torch
 import torch.nn as nn
+
+
+class MaskToken(nn.Module):
+    """Learnable [MASK] embedding for masked predictive modeling.
+
+    A single learnable parameter [1, 1, D] that replaces masked token positions
+    during training. At inference, masking is disabled (no positions are replaced).
+
+    Convention follows CLSToken: the parameter is [1, 1, D]
+    and is broadcast to batch dimension at call time.
+
+    Args:
+        d_model: Model dimension (default 128).
+    """
+
+    def __init__(self, d_model: int = 128) -> None:
+        super().__init__()
+        self.d_model = d_model
+        self.token = nn.Parameter(torch.zeros(1, 1, d_model))
+        nn.init.normal_(self.token, std=0.02)
+
+    def forward(self, tokens: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        """Replace masked positions with the learnable [MASK] embedding.
+
+        Args:
+            tokens: Input token sequence [B, N, D]
+            mask:   Boolean mask [B, N] - True means this position is masked
+
+        Returns:
+            tokens_masked: [B, N, D] with masked positions replaced by MASK token
+        """
+        B, N, D = tokens.shape
+        mask_emb = self.token.expand(B, N, D)  # [B, N, D]
+        mask_3d = mask.unsqueeze(-1).expand_as(tokens)  # [B, N, D]
+        return torch.where(mask_3d, mask_emb, tokens)
+
+    def extra_repr(self) -> str:
+        return f"d_model={self.d_model}"
 
 
 class SensorBlockMasking(nn.Module):
@@ -15,7 +55,7 @@ class SensorBlockMasking(nn.Module):
 
     Masks entire time columns across ALL sensors simultaneously, preventing the
     model from learning a trivial cross-sensor shortcut. When time position p is
-    masked, all 6 sensor tokens at patch p are hidden — the model must use
+    masked, all 6 sensor tokens at patch p are hidden - the model must use
     temporal context from other time positions to predict them.
 
     Contrast with naive random token masking: if only paint_pressure at patch 7
@@ -25,7 +65,7 @@ class SensorBlockMasking(nn.Module):
     Args:
         num_sensors: Number of sensor channels (default 6).
         num_patches: Number of time positions / patches per sensor (default 14).
-        mask_ratio:  Fraction of time positions to mask (default 0.3 → 4 of 14).
+        mask_ratio:  Fraction of time positions to mask (default 0.3 -> 4 of 14).
     """
 
     def __init__(
@@ -43,7 +83,7 @@ class SensorBlockMasking(nn.Module):
     def forward(self, tokens: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute sensor-block mask for a batch of token sequences.
 
-        Does NOT apply the mask to the tokens — caller passes the returned
+        Does NOT apply the mask to the tokens - caller passes the returned
         boolean mask to MaskToken.forward() to perform the substitution.
 
         Args:
@@ -51,8 +91,8 @@ class SensorBlockMasking(nn.Module):
                     (used only to infer B and device; content is not modified)
 
         Returns:
-            mask:           BoolTensor [B, N] — True = masked position
-            masked_time_ids: LongTensor [B, n_masked] — which time positions were masked
+            mask:            BoolTensor [B, N] - True = masked position
+            masked_time_ids: LongTensor [B, n_masked] - which time positions were masked
         """
         B, N, _ = tokens.shape
         device = tokens.device

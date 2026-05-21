@@ -1,5 +1,5 @@
 import pytest
-from app.anomaly_detection.schemas import GLCFlowConfig, RevINStat, PatchStats
+from app.anomaly_detection.models.glc_flow_v7 import GLCFlowConfig
 
 
 _BASE = {"num_sensors": 6, "seq_len": 240}
@@ -33,22 +33,3 @@ class TestGLCFlowConfig:
     def test_d_half_d_model_even(self):
         config = GLCFlowConfig(**_BASE, d_model=128)
         assert config.d_model % 2 == 0
-
-    def test_rev_in_stat(self):
-        stat = RevINStat(mean=1.5, std=0.8)
-        assert stat.mean == 1.5
-        assert stat.std == 0.8
-
-    def test_patch_stats(self):
-        stats = PatchStats(
-            file_mean=0.5,
-            file_std=0.1,
-            file_slope=0.02,
-            file_peak=1.0,
-            file_rms=0.7,
-            file_range=0.8,
-            patch_max=0.9,
-            patch_min=0.1,
-        )
-        assert stats.file_mean == 0.5
-        assert stats.patch_max == 0.9

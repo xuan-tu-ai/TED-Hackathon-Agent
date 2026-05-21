@@ -2,7 +2,7 @@ import pytest
 import torch
 
 from app.anomaly_detection.models.factory import create_model, count_parameters
-from app.anomaly_detection.schemas import GLCFlowConfig
+from app.anomaly_detection.models.glc_flow_v7 import GLCFlowConfig
 from app.anomaly_detection.layers.scorer import MADThreshold, AnomalyScorer
 from app.anomaly_detection.training import FlowMatchingTrainer
 

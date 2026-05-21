@@ -13,9 +13,10 @@ from typing import ClassVar
 import torch
 import torch.nn as nn
 
-from ..layers.preprocessing import RevIN, LogScaler, GlobalStatsStandardizer
-from ..layers.feature_extraction import ShapeEncoder, StatProjector, RelativePositionEncoder, ContextualEmbedding
-from ..layers.backbone import MLPMixerBackbone
+from ..layers.normalization import RevIN, LogScaler, GlobalStatsStandardizer
+from ..layers.embeddings import ContextEmbedding, RelativePositionEncoder
+from ..layers.feature_extraction import ShapeEncoder, StatProjector
+from ..layers.mlp_mixer import MLPMixerBackbone
 from ..layers.bottleneck import MultiTaskVQVAEHead
 
 from .base import BaseAnomalyDetectionModel
@@ -111,8 +112,9 @@ class V5VQAnomalyDetectionModel(BaseAnomalyDetectionModel):
         self.log_scaler = LogScaler()
         self.stat_standardizer = GlobalStatsStandardizer(num_sensors=num_sensors)
         self.pos_encoder = RelativePositionEncoder(d_model=d_model)
-        self.context_embedding = ContextualEmbedding(
+        self.context_embedding = ContextEmbedding(
             num_robots=num_robots, num_programs=num_programs, d_model=d_model,
+            merge_mode="concat",
         )
 
         assert self.d_model % 2 == 0, "d_model must be even for the mixer blocks"
