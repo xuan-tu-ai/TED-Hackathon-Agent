@@ -44,9 +44,10 @@ class PerTokenDecoder(nn.Module):
             tokens: [B, N, D] — Transformer output tokens
 
         Returns:
-            patches_pred: [B, N, patch_size] — predicted patch values for each token
+            patches_pred: [B, N, patch_size] — predicted patch values bounded to [-1, 1]
+                (PerPatchRevIN targets are always in this range).
         """
-        return self.net(tokens)
+        return torch.tanh(self.net(tokens))
 
     def extra_repr(self) -> str:
         return f"d_model={self.d_model}, patch_size={self.patch_size}"
@@ -119,7 +120,8 @@ class CNNDecoder(nn.Module):
         refined = self.temporal_refine(signal)                # [B, C, P*PS]
 
         patches_out = refined.reshape(B, C, P, PS)
-        return patches_out.reshape(B, N, PS)
+        # Tanh bounds output to [-1, 1] matching PerPatchRevIN target range
+        return torch.tanh(patches_out.reshape(B, N, PS))
 
 
 # Backward-compatible alias

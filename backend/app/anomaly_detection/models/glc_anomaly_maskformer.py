@@ -538,4 +538,5 @@ class GLCAnomalyMaskFormer(BaseAnomalyDetectionModel):
             "num_robots": self.num_robots,
             "num_programs": self.num_programs,
             "use_context_embeddings": self.use_context_embeddings,
+            "use_cnn_decoder": self.use_cnn_decoder,
         }
