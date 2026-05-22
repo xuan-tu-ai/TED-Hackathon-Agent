@@ -12,7 +12,7 @@
   "transformer_heads": 4,
   "ffn_dim": 512,
   "dropout": 0.1,
-  "mask_ratio": 0.15,
+  "mask_ratio": 0.2,
   "initial_sigma": 4.5,
   "num_robots": 32,
   "num_programs": 256,

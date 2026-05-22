@@ -16,11 +16,11 @@ build/
 data/chroma_db/
 data/*.db
 
-# Models
-models/checkpoints/
-*.pt
-*.pth
-*.ckpt
+# # Models
+# models/checkpoints/
+# *.pt
+# *.pth
+# *.ckpt
 
 # Frontend
 node_modules/
