@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
+from ..agent.config import config
 from ..db.models import HitlQueue, create_session_factory, get_default_db_url
 
 logger = logging.getLogger("hitl")
@@ -89,7 +89,7 @@ def hitl_check(
     Returns:
         A :class:`HitlCheckResult` describing the outcome.
     """
-    db_url = db_url or os.getenv("DATABASE_URL") or get_default_db_url()
+    db_url = db_url or config.database_url
 
     # Split multi-action strings (comma-separated) for individual checks
     actions_to_check = [a.strip() for a in action.split(",") if a.strip()]
@@ -184,7 +184,7 @@ def resolve_hitl_entry(
     Returns:
         True if the entry was found and updated, False otherwise.
     """
-    db_url = db_url or os.getenv("DATABASE_URL") or get_default_db_url()
+    db_url = db_url or config.database_url
     session = create_session_factory(db_url)()
     try:
         entry = session.get(HitlQueue, queue_id)
@@ -242,7 +242,7 @@ def get_pending_entries(db_url: str | None = None) -> list[dict[str, Any]]:
         List of dicts, each containing the entry's fields,
         with ``created_at`` serialised to ISO format.
     """
-    db_url = db_url or os.getenv("DATABASE_URL") or get_default_db_url()
+    db_url = db_url or config.database_url or get_default_db_url()
     session = create_session_factory(db_url)()
     try:
         entries = session.query(HitlQueue).filter(HitlQueue.status == "PENDING").all()

@@ -23,16 +23,14 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Engine, URL
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
+from ..agent.config import config
+
 
 logger_db = logging.getLogger(__name__)
 
 
 def get_default_db_url() -> str:
-    env_url = os.getenv("DATABASE_URL")
-    if env_url:
-        return _normalize_sqlite_scheme(env_url)
-    root = Path(__file__).resolve().parents[4]
-    return f"sqlite+pysqlite:///{root / 'data' / 'demo.db'}"
+    return _normalize_sqlite_scheme(config.database_url)
 
 
 def _normalize_sqlite_scheme(url: str) -> str:
@@ -53,15 +51,13 @@ def _is_azure_host(url_str: str) -> bool:
     return ".postgres.database.azure.com" in url_str
 
 
-DATABASE_URL = get_default_db_url()
-
 JSONType = JSON().with_variant(JSONB, "postgresql")
 
 _engine_cache: dict[str, Engine] = {}
 
 
 def get_db_engine(db_url: str | None = None) -> Engine:
-    key = db_url or DATABASE_URL
+    key = db_url or get_default_db_url()
     if key not in _engine_cache:
         _engine_cache[key] = _build_engine(key)
         logger_db.debug("Created DB engine: %s", key)

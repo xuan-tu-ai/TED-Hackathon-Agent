@@ -21,12 +21,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any, ClassVar
-
-from dotenv import load_dotenv
-
-load_dotenv()
 
 import ast
 import dspy
@@ -35,10 +30,10 @@ import re
 from .event_emitter import AgentEventEmitter
 from .hitl_gate import HitlGate
 from .plan_manager import PlanManager
-from .llm_config import get_lm, get_llm_config
+from .config import config
 from .rag_tools import QueryPMCardsTool
 from .session_trace import SessionTraceWriter
-from .skills import LoadSkillTool, SKILLS_BASE
+from .skills import LoadSkillTool
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,8 +41,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("diagnostic_agent")
 
-AGENTS_MD = Path(__file__).resolve().parents[3] / "agent_knowledge" / "AGENTS.md"
-HITL_RULES_MD = Path(__file__).resolve().parents[3] / "agent_knowledge" / "rules" / "hitl-rules.md"
+AGENTS_MD_PATH = config.agents_md_path
+HITL_RULES_MD_PATH = config.rules_dir / "hitl-rules.md"
 
 @dataclass
 class DiagnosticIncident:
@@ -170,8 +165,8 @@ class DiagnosticAgent:
         Tool names the LLM may invoke.
     """
 
-    SYSTEM_PROMPT: ClassVar[str] = AGENTS_MD.read_text(encoding="utf-8")
-    TIER2_RULES: ClassVar[str] = HITL_RULES_MD.read_text(encoding="utf-8")
+    SYSTEM_PROMPT: ClassVar[str] = AGENTS_MD_PATH.read_text(encoding="utf-8")
+    TIER2_RULES: ClassVar[str] = HITL_RULES_MD_PATH.read_text(encoding="utf-8")
     AVAILABLE_TOOLS: ClassVar[list[str]] = [
         "load_skill",
         "query_pm_cards",
@@ -203,7 +198,7 @@ class DiagnosticAgent:
         returns a formatted string for inclusion in the DSPy prompt.
         """
         catalog = []
-        skills_dir = SKILLS_BASE
+        skills_dir = config.skills_base
         if not skills_dir.exists():
             return "No skills found."
 
@@ -382,7 +377,7 @@ class DiagnosticAgent:
         ``create-plan`` skill and build a task roadmap. Returns
         updated loaded-skills content and step history.
         """
-        lm = get_lm()
+        lm = config.get_lm()
         predictor = dspy.ChainOfThought(AgentStepSignature)
 
         plan_turn_count = 0
@@ -487,7 +482,7 @@ class DiagnosticAgent:
         and stops when the agent calls ``complete`` or the state becomes
         ``blocked`` / ``failed``.
         """
-        lm = get_lm()
+        lm = config.get_lm()
         predictor = dspy.ChainOfThought(AgentStepSignature)
         execute_turn_count = 0
         max_execute_turns = 20
@@ -711,7 +706,7 @@ class DiagnosticAgent:
         past_steps_list = []
         diagnose_skill_used: str | None = None
 
-        lm = get_lm()
+        lm = config.get_lm()
         if lm is None:
             logger.error("No LM configured - cannot run agent")
             self.state = "failed"
@@ -723,7 +718,7 @@ class DiagnosticAgent:
                 "steps": [],
             }
 
-        cfg = get_llm_config()
+        cfg = config.get_llm_config()
         logger.info(f"Using LLM: {cfg.provider}/{cfg.model} (Base: {cfg.api_base})")
 
         self.state = "running"

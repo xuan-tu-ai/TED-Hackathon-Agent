@@ -14,19 +14,18 @@ ALLOWED_SKILLS : frozenset[str]
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import ClassVar
 
-
-SKILLS_BASE = Path(__file__).resolve().parents[3] / "agent_knowledge" / "skills"
+from .config import config
 
 
 def _discover_allowed_skills() -> frozenset[str]:
-    """Scan ``SKILLS_BASE`` for directories containing a ``SKILL.md`` file."""
-    if not SKILLS_BASE.exists():
+    """Scan ``config.skills_base`` for directories containing a ``SKILL.md`` file."""
+    skills_dir = config.skills_base
+    if not skills_dir.exists():
         return frozenset()
     return frozenset(
-        d.name for d in SKILLS_BASE.iterdir()
+        d.name for d in skills_dir.iterdir()
         if d.is_dir() and (d / "SKILL.md").exists()
     )
 
@@ -70,12 +69,12 @@ class Skill:
             # Normalise "refs/" to "references/"
             if ref_part.startswith("refs/"):
                 ref_part = "references/" + ref_part[5:]
-            skill_path = SKILLS_BASE / parent_skill / ref_part
+            skill_path = config.skills_base / parent_skill / ref_part
             if not skill_path.exists():
                 # Try appending .md
-                skill_path = SKILLS_BASE / parent_skill / f"{ref_part}.md"
+                skill_path = config.skills_base / parent_skill / f"{ref_part}.md"
         else:
-            skill_path = SKILLS_BASE / skill_name / "SKILL.md"
+            skill_path = config.skills_base / skill_name / "SKILL.md"
 
         if not skill_path.exists():
             raise FileNotFoundError(f"Skill not found: {skill_name} at {skill_path}")

@@ -119,9 +119,8 @@ def run_poller(
     poll_interval: int = 10,
     robots: list[str] | None = None,
 ) -> None:
-    import os
-    from ..db.models import get_default_db_url
-    db_url = db_url or os.getenv("DATABASE_URL", get_default_db_url())
+    from ..agent.config import config
+    db_url = db_url or config.database_url
     poller = CognitivePoller(
         db_url=db_url,
         robots=robots,

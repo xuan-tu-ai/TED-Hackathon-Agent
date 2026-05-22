@@ -97,8 +97,8 @@ class CSVWriter:
         writer.write_test(batch_gen, num_cycles=2000, anomaly_ratio=0.5)
     """
 
-    def __init__(self, output_dir: str = "data/generated", chunk_size: int = 10000):
-        self.output_dir = output_dir
+    def __init__(self, output_dir: str | None = None, chunk_size: int = 10000):
+        self.output_dir = output_dir or os.getenv("GENERATED_DATA_DIR", "data/generated")
         self.chunk_size = chunk_size
 
     def write_train(

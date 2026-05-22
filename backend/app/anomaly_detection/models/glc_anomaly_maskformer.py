@@ -388,13 +388,7 @@ class GLCAnomalyMaskFormer(BaseAnomalyDetectionModel):
         }
 
     def compute_anomaly_score(self, batch: dict) -> torch.Tensor:
-        """Compute file-level anomaly score for cross-file AUROC.
-
-        Uses absolute raw reconstruction error (mean over tokens) without
-        per-sample normalization, so scores are comparable across files.
-
-        Note: PerPatchRevIN normalizes per-patch amplitude/offset anomalies.
-        Anomaly signal survives only as shape/pattern distortions in recon targets.
+        """File-level anomaly score: max raw recon MSE across all tokens.
 
         Args:
             batch: dict with ``"input"`` and optional robot/program idx.
@@ -403,7 +397,7 @@ class GLCAnomalyMaskFormer(BaseAnomalyDetectionModel):
             Tensor ``[B]`` — higher value = more anomalous.
         """
         recon_score, _ = self._compute_token_scores(batch, fast=True)
-        return recon_score.mean(dim=-1)
+        return recon_score.max(dim=-1).values  # [B]
 
     @torch.no_grad()
     def _compute_token_scores(
@@ -411,15 +405,23 @@ class GLCAnomalyMaskFormer(BaseAnomalyDetectionModel):
         batch: dict,
         fast: bool = True,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Compute raw per-token reconstruction error and association discrepancy.
+        """Compute raw per-token reconstruction error.
+
+        Association discrepancy is returned as a zero tensor (kept for API
+        compatibility) — it is not used for scoring because the minimax
+        training was not effective (grad_ratio ≈ 0) and the inference-time
+        unmasked forward pass mismatches the masked training distribution.
 
         Args:
             batch: dict with ``"input"`` and optional robot/program idx.
-            fast: Use approximate (10-pass) reconstruction scoring.
+            fast: ``True`` → k-coverage systematic sensor-block masking
+                  (each of the num_patches positions masked exactly k=2 times,
+                  mask_per_pass positions per forward pass, sensor-block style).
+                  ``False`` → exhaustive single-token masking (num_tokens passes).
 
         Returns:
-            recon_score: ``[B, N]`` mean per-token MSE (PerPatchRevIN units, absolute).
-            assoc_score: ``[B, N]`` negative mean discrepancy (higher = more anomalous).
+            recon_score: ``[B, N]`` mean per-token MSE (PerPatchRevIN units).
+            assoc_score: ``[B, N]`` zeros (unused, kept for API compatibility).
         """
         was_training = self.training
         self.eval()
@@ -431,17 +433,37 @@ class GLCAnomalyMaskFormer(BaseAnomalyDetectionModel):
 
             tokens, local_patches = self._tokenize(raw, robot_idx, program_idx)
 
-            # Association: low discrepancy → anomalous (series collapses to neighbors)
-            t_out = self.transformer.forward_with_detach_mode(tokens, detach="none")
-            discrepancies = t_out["discrepancies"]  # [B, L, N]
-            assoc_score = -discrepancies.mean(dim=1)  # [B, N] — higher = more anomalous
-
-            # Reconstruction error
+            # Reconstruction error (only signal used for anomaly scoring)
             recon_score = torch.zeros(B, self.num_tokens, device=raw.device)
             if fast:
-                n_runs = 10
-                for _ in range(n_runs):
-                    mask, _ = self.sensor_block_masking(tokens)
+                # k-coverage systematic sensor-block masking.
+                # Each of the num_patches time positions is masked in exactly k
+                # passes; each pass masks mask_per_pass positions simultaneously
+                # with all sensors at each position masked (sensor-block), matching
+                # the training masking distribution.
+                k = 2
+                mask_per_pass = max(2, int(self.num_patches * self.mask_ratio))
+
+                # Build schedule: each position repeated k times, then shuffled
+                schedule = list(range(self.num_patches)) * k
+                g = torch.Generator()
+                g.manual_seed(0)
+                perm = torch.randperm(len(schedule), generator=g).tolist()
+                schedule = [schedule[i] for i in perm]
+                # Pad to a full multiple of mask_per_pass
+                r = len(schedule) % mask_per_pass
+                if r:
+                    schedule += schedule[:mask_per_pass - r]
+
+                mask_counts = torch.zeros(B, self.num_tokens, device=raw.device)
+                for i in range(0, len(schedule), mask_per_pass):
+                    positions = schedule[i : i + mask_per_pass]
+                    mask = torch.zeros(
+                        B, self.num_tokens, dtype=torch.bool, device=raw.device
+                    )
+                    for t in positions:
+                        for c in range(self.num_sensors):
+                            mask[:, c * self.num_patches + t] = True
                     tokens_masked = self.mask_token(tokens, mask)
                     out_t = self.transformer.forward_with_detach_mode(
                         tokens_masked, detach="none",
@@ -449,7 +471,8 @@ class GLCAnomalyMaskFormer(BaseAnomalyDetectionModel):
                     pred = self.decoder(out_t["out"])
                     err = ((pred - local_patches) ** 2).mean(dim=-1)
                     recon_score += err * mask.float()
-                recon_score = recon_score / (n_runs * self.mask_ratio + 1e-8)
+                    mask_counts += mask.float()
+                recon_score = recon_score / mask_counts.clamp(min=1)
             else:
                 for i in range(self.num_tokens):
                     mask_single = torch.zeros(
@@ -466,6 +489,7 @@ class GLCAnomalyMaskFormer(BaseAnomalyDetectionModel):
                     ).mean(dim=-1)
                     recon_score[:, i] = err
 
+            assoc_score = torch.zeros_like(recon_score)
             return recon_score, assoc_score
         finally:
             if was_training:
@@ -503,6 +527,24 @@ class GLCAnomalyMaskFormer(BaseAnomalyDetectionModel):
         combined = assoc_norm * recon_norm
         return combined.reshape(B, self.num_sensors, self.num_patches)
 
+    @torch.no_grad()
+    def compute_recon_heatmap(self, batch: dict, fast: bool = True) -> torch.Tensor:
+        """Raw reconstruction-error heatmap for cross-file anomaly scoring.
+
+        Uses k-coverage systematic sensor-block masked-token MSE.
+        No per-sample normalization — values are cross-file comparable.
+
+        Args:
+            batch: dict with ``"input"`` key (``[B, C, T]``).
+            fast: Use k-coverage approximate reconstruction (default True).
+
+        Returns:
+            Raw MSE heatmap ``[B, num_sensors, num_patches]``.
+        """
+        recon_score, _ = self._compute_token_scores(batch, fast=fast)
+        return recon_score.reshape(recon_score.shape[0], self.num_sensors, self.num_patches)
+
+    @torch.no_grad()
     def detect_anomaly(
         self,
         raw_file: torch.Tensor,
@@ -525,45 +567,32 @@ class GLCAnomalyMaskFormer(BaseAnomalyDetectionModel):
                 - **anomaly_score**: Scalar — max of combined heatmap.
                 - **is_anomaly**: Boolean (False if threshold is None).
                 - **heatmap**: Combined heatmap ``[num_sensors, num_patches]``.
-                - **assoc_heatmap**: Association-only heatmap.
-                - **recon_heatmap**: Reconstruction-only heatmap.
+                - **assoc_heatmap**: Raw association score (per-token, unnormalised).
+                - **recon_heatmap**: Masked reconstruction error (per-token, unnormalised).
         """
         if raw_file.ndim == 2:
             raw_file = raw_file.unsqueeze(0)
 
-        with torch.no_grad():
-            batch: dict = {"input": raw_file}
-            if robot_idx is not None:
-                batch["robot_idx"] = robot_idx
-            if program_idx is not None:
-                batch["program_idx"] = program_idx
+        batch: dict = {"input": raw_file}
+        if robot_idx is not None:
+            batch["robot_idx"] = robot_idx
+        if program_idx is not None:
+            batch["program_idx"] = program_idx
 
-            combined = self.compute_combined_heatmap(batch, fast=fast)
-            heatmap = combined.squeeze(0)
-            anomaly_score = heatmap.max().item()
+        # _compute_token_scores enforces eval mode and torch.no_grad internally
+        recon_score, assoc_score = self._compute_token_scores(batch, fast=fast)
 
-            # Individual heatmaps for explainability
-            tokens, local_patches = self._tokenize(
-                raw_file, robot_idx, program_idx,
-            )
-            self.eval()
-            t_out = self.transformer.forward_with_detach_mode(
-                tokens, detach="none",
-            )
-            discrepancies = t_out["discrepancies"]
-            assoc_raw = (
-                -discrepancies.mean(dim=1)
-                .squeeze(0)
-                .reshape(self.num_sensors, self.num_patches)
-            )
+        def _norm01(x: torch.Tensor) -> torch.Tensor:
+            mn = x.amin(dim=-1, keepdim=True)
+            mx = x.amax(dim=-1, keepdim=True)
+            return (x - mn) / (mx - mn + 1e-8)
 
-            pred = self.decoder(t_out["out"])
-            recon_raw = (
-                ((pred - local_patches) ** 2)
-                .mean(dim=-1)
-                .squeeze(0)
-                .reshape(self.num_sensors, self.num_patches)
-            )
+        combined = _norm01(assoc_score) * _norm01(recon_score)  # [1, N]
+        heatmap = combined.squeeze(0).reshape(self.num_sensors, self.num_patches)
+        anomaly_score = heatmap.max().item()
+
+        assoc_heatmap = assoc_score.squeeze(0).reshape(self.num_sensors, self.num_patches)
+        recon_heatmap = recon_score.squeeze(0).reshape(self.num_sensors, self.num_patches)
 
         return {
             "anomaly_score": anomaly_score,
@@ -571,8 +600,8 @@ class GLCAnomalyMaskFormer(BaseAnomalyDetectionModel):
                 (anomaly_score > threshold) if threshold is not None else False
             ),
             "heatmap": heatmap.cpu(),
-            "assoc_heatmap": assoc_raw.cpu(),
-            "recon_heatmap": recon_raw.cpu(),
+            "assoc_heatmap": assoc_heatmap.cpu(),
+            "recon_heatmap": recon_heatmap.cpu(),
         }
 
     def extra_repr(self) -> str:

@@ -9,32 +9,38 @@ import pytest
 
 
 def test_llm_config_defaults():
-    from app.robot_agent.agent.llm_config import LLMConfig, get_llm_config
+    from app.robot_agent.agent.config import config
 
-    config = get_llm_config()
-    assert config.provider in {"openai", "anthropic", "google"}
-    assert config.model is not None
-    assert isinstance(config.is_configured, bool)
+    llm_cfg = config.get_llm_config()
+    assert llm_cfg.provider in {"openai", "anthropic", "google"}
+    assert llm_cfg.model is not None
+    assert isinstance(llm_cfg.is_configured, bool)
 
 
 def test_llm_config_explicit():
-    from app.robot_agent.agent.llm_config import LLMConfig
+    # The config singleton reads from env; verify the raw env-reading path works
+    from app.robot_agent.agent.config import AppConfig
 
-    config = LLMConfig(provider="openai", model="gpt-4o-mini", api_key="test-key")
-    assert config.provider == "openai"
-    assert config.model == "gpt-4o-mini"
-    assert config.api_key == "test-key"
-    assert config.is_configured is True
+    cfg = AppConfig()
+    assert cfg.lm_provider is not None
+    assert cfg.lm_model is not None
 
 
 def test_llm_config_not_configured():
-    from app.robot_agent.agent.llm_config import LLMConfig
+    from app.robot_agent.agent.config import config
 
-    config = LLMConfig(provider="openai", model="gpt-4o-mini", api_key="your_openai_key_here")
-    assert config.is_configured is False
+    # Set a known-bad key and re-check
+    old_key = config.lm_api_key
+    config.lm_api_key = "your_openai_key_here"
+    assert config.is_lm_configured is False
+    config.lm_api_key = old_key  # restore
 
 
-def test_configure_dspy_no_error():
-    from app.robot_agent.agent.llm_config import configure_dspy
+def test_get_lm_returns_none_when_not_configured():
+    from app.robot_agent.agent.config import config
 
-    configure_dspy()
+    old_key = config.lm_api_key
+    config.lm_api_key = ""
+    lm = config.get_lm()
+    assert lm is None
+    config.lm_api_key = old_key  # restore

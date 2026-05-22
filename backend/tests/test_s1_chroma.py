@@ -9,8 +9,11 @@ import pytest
 
 
 def test_chroma_dir_created():
-    chroma_dir = Path("data/chroma_db")
-    assert chroma_dir.exists()
+    from app.robot_agent.chroma.client import get_client
+    client = get_client()
+    assert client is not None
+    from app.robot_agent.agent.config import config
+    assert config.chroma_db_dir.exists()
 
 
 def test_chroma_get_client():
@@ -27,5 +30,5 @@ def test_chroma_get_collection():
 
 
 def test_chroma_persistent_path():
-    from app.robot_agent.chroma.client import CHROMA_DIR
-    assert CHROMA_DIR == Path("data/chroma_db")
+    from app.robot_agent.agent.config import config
+    assert str(config.chroma_db_dir).endswith("chroma_db")

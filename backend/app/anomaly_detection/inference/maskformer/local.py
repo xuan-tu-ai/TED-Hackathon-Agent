@@ -12,6 +12,7 @@ import numpy as np
 
 import app.anomaly_detection.constants as constants
 from app.anomaly_detection.models import MaskFormerModels, create_model
+from app.anomaly_detection.layers.scorer import MADThreshold
 
 
 
@@ -44,12 +45,16 @@ class MaskFormerLocalPreResult:
         k_skip: int = 1,
         fast: bool = True,
         device: str = "cpu",
+        sensors: Optional[list[str]] = None,
     ):
         self.metadata = metadata
         self.k_skip = k_skip
         self.quantile = quantile
         self.fast = fast
         self.device = torch.device(device)
+        # Explicit sensor name list takes priority.  If omitted, falls back to
+        # constants.SENSORS when counts match; otherwise uses generic "sensor_N" names.
+        self._sensors_override = sensors
 
         self.model = create_model(model_version, self.metadata)
         self.model.load_state_dict(state_dict)
@@ -71,7 +76,15 @@ class MaskFormerLocalPreResult:
                 heatmap_{s} (per-sensor timestep array),
                 valid_start_idx, valid_end_idx
         """
-        C = constants.NUM_SENSORS
+        # Derive sensor count and names from model metadata rather than from the global
+        # constants module so this class works with any sensor configuration.
+        C = self.metadata.get("num_sensors") or self.model.num_sensors
+        if self._sensors_override is not None:
+            sensors = self._sensors_override
+        elif C == constants.NUM_SENSORS:
+            sensors = constants.SENSORS
+        else:
+            sensors = [f"sensor_{i}" for i in range(C)]
         pq = f"p{self.quantile * 100:.0f}"
         q = self.quantile * 100
         k_skip = self.k_skip
@@ -95,7 +108,7 @@ class MaskFormerLocalPreResult:
                     "valid_start_idx": 0,
                     "valid_end_idx": 0,
                 }
-                for s in constants.SENSORS:
+                for s in sensors:
                     res[f"heatmap_{s}"] = []
                 results.append(res)
                 continue
@@ -105,7 +118,6 @@ class MaskFormerLocalPreResult:
 
             score_accum = np.zeros((C, total_steps), dtype=np.float32)
             weight_accum = np.zeros(total_steps, dtype=np.float32)
-            window_scores: list[float] = []  # absolute per-window file scores
 
             batch_size = 16
             with torch.no_grad():
@@ -114,16 +126,8 @@ class MaskFormerLocalPreResult:
                     batch_raw = torch.from_numpy(windows[start_i:end_i].astype(np.float32)).to(self.device)
                     batch_serials = serials[start_i:end_i]
 
-                    batch_dict = {"input": batch_raw}
-
-                    # File-level score: absolute raw recon mean — comparable across files.
-                    # compute_anomaly_score uses no per-sample normalization, so scores
-                    # reflect actual reconstruction difficulty, not relative within-file rank.
-                    abs_scores = self.model.compute_anomaly_score(batch_dict).cpu().numpy()
-                    window_scores.extend(abs_scores.tolist())
-
-                    # Heatmap: per-sample-normalized combined signal for localization only.
-                    heatmaps = self.model.compute_combined_heatmap(batch_dict, fast=fast)
+                    # Raw recon MSE heatmap — cross-file comparable (no per-sample normalisation).
+                    heatmaps = self.model.compute_recon_heatmap({"input": batch_raw}, fast=fast)
                     heatmaps_np = heatmaps.cpu().numpy()
 
                     for bi in range(len(batch_raw)):
@@ -137,10 +141,9 @@ class MaskFormerLocalPreResult:
             valid_start = int(serials[k_skip] - min_s)
             valid_end = int(serials[-1 - k_skip] - min_s + W)
 
-            # File classification score: mean absolute recon error across valid windows.
-            # Using mean (not max) to reduce sensitivity to a single outlier window.
-            valid_window_scores = window_scores[k_skip : N - k_skip] if N > 2 * k_skip else window_scores
-            file_score = float(np.mean(valid_window_scores)) if valid_window_scores else 0.0
+            # File classification score: q-th percentile of the accumulated combined
+            # heatmap in the valid region — identical to spark.py pq_score computation.
+            file_score = float(np.percentile(final_map[:, valid_start:valid_end], q))
 
             res = {
                 "robot_code": str(rec["robot_code"]),
@@ -150,7 +153,7 @@ class MaskFormerLocalPreResult:
                 "valid_start_idx": valid_start,
                 "valid_end_idx": valid_end,
             }
-            for c, s in enumerate(constants.SENSORS):
+            for c, s in enumerate(sensors):
                 res[f"heatmap_{s}"] = final_map[c].tolist()
 
             results.append(res)
@@ -159,30 +162,54 @@ class MaskFormerLocalPreResult:
 
 
 class MaskFormerLocalThresholdCreator:
-    """Spark-free percentile threshold creator for MaskFormer scores.
+    """Spark-free MAD-based threshold creator for MaskFormer scores.
 
-    Mirrors the original MaskFormerThresholdCreator (already Spark-free).
+    Uses Median Absolute Deviation (MAD) for contamination-robust threshold
+    estimation, as specified in the design doc §9.2.  MAD is insensitive to
+    up to ~50% contamination, making it safe when the calibration set may
+    contain a small fraction of unlabelled anomalous files.
+
+    threshold = median + 3 × 1.4826 × MAD
+
+    The ``quantile`` parameter controls which ``pq_score`` key is read from
+    the pre-result dicts (e.g. ``quantile=0.95`` → ``"p95_score"``).  It does
+    NOT affect how the threshold is computed.
     """
 
     def __init__(self, quantile: float = 0.95):
         self.quantile = quantile
         self.threshold: Optional[float] = None
+        self._median: Optional[float] = None
+        self._mad: Optional[float] = None
 
     def fit(self, normal_scores: torch.Tensor) -> "MaskFormerLocalThresholdCreator":
-        self.threshold = torch.quantile(normal_scores, self.quantile).item()
+        """Compute MAD-based threshold from calibration scores."""
+        mad_thresh = MADThreshold(k=3.0)
+        mad_thresh.fit(normal_scores)
+        self.threshold = mad_thresh.threshold.item()
+        self._median = mad_thresh.median.item()
+        self._mad = mad_thresh.mad.item()
         return self
 
     def fit_from_pre_results(self, pre_result_list: list[dict]) -> "MaskFormerLocalThresholdCreator":
-        scores = torch.tensor([r[f"p{self.quantile * 100:.0f}_score"] for r in pre_result_list], dtype=torch.float32)
+        pq = f"p{self.quantile * 100:.0f}_score"
+        scores = torch.tensor([r[pq] for r in pre_result_list], dtype=torch.float32)
         return self.fit(scores)
 
     def to_dict(self) -> dict:
-        return {"threshold": self.threshold, "quantile": self.quantile}
+        return {
+            "threshold": self.threshold,
+            "quantile": self.quantile,
+            "median": self._median,
+            "mad": self._mad,
+        }
 
     @classmethod
     def from_dict(cls, d: dict) -> "MaskFormerLocalThresholdCreator":
         obj = cls(quantile=d.get("quantile", 0.95))
         obj.threshold = d.get("threshold")
+        obj._median = d.get("median")
+        obj._mad = d.get("mad")
         return obj
 
 
@@ -211,6 +238,12 @@ class MaskFormerLocalApplier:
         global_thresh = self.threshold_config.get("global_threshold", 0.5)
         sensor_thresholds = self.threshold_config.get("sensors", {})
 
+        # Infer sensor names from the first pre-result rather than from the global
+        # constants module, so the applier works with any sensor configuration.
+        if not pre_results:
+            return []
+        sensors = [k[len("heatmap_"):] for k in pre_results[0] if k.startswith("heatmap_")]
+
         results = []
         for row in pre_results:
             score = row[f"{pq}_score"]
@@ -227,7 +260,7 @@ class MaskFormerLocalApplier:
             valid_start = int(row.get("valid_start_idx", 0))
             valid_end = int(row.get("valid_end_idx", 0)) or None
 
-            for s in constants.SENSORS:
+            for s in sensors:
                 heatmap = row.get(f"heatmap_{s}", [])
                 res[f"heatmap_{s}"] = heatmap
 

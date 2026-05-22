@@ -56,9 +56,9 @@ def start_simulation(req: StartRequest) -> StartResponse:
     state.reset()
     state.set_status("idle")
 
+    from ..agent.config import config
     from ..db import init_db
-    from ..db.models import get_default_db_url
-    db_url = os.getenv("DATABASE_URL") or get_default_db_url()
+    db_url = config.database_url
 
     logger.info("Starting simulation with DB: %s", db_url)
     try:

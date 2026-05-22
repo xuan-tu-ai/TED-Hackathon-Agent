@@ -7,18 +7,19 @@ create named collections (primarily ``pm_cards``).
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import chromadb
-from chromadb.config import Settings
 
 
-_CHROMA_DIR = Path(__file__).resolve().parents[4] / "data" / "chroma_db"
-_CHROMA_DIR.mkdir(parents=True, exist_ok=True)
+def _get_chroma_dir():
+    """Lazy import to avoid circular dependency via agent.__init__."""
+    from ..agent.config import config
+    return config.chroma_db_dir
 
 
 def get_client():
-    return chromadb.PersistentClient(path=str(_CHROMA_DIR))
+    chroma_dir = _get_chroma_dir()
+    chroma_dir.mkdir(parents=True, exist_ok=True)
+    return chromadb.PersistentClient(path=str(chroma_dir))
 
 
 def get_collection(name: str = "pm_cards"):

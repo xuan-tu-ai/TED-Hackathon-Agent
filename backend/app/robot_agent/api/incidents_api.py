@@ -20,9 +20,9 @@ from pydantic import BaseModel
 
 load_dotenv()
 
+from ..agent.config import config
 from ..agent.diagnostic_agent import DiagnosticAgent, DiagnosticIncident
 from ..agent.hitl import get_pending_entries
-from ..agent.session_trace import SESSION_DIR as SESSIONS_DIR
 from ..seed import create_session_factory
 from ..db.models import Incident
 
@@ -145,7 +145,7 @@ def trigger_demo_incident(background_tasks: BackgroundTasks):
 
 
 def _get_trace_path(incident_id: str) -> Path | None:
-    data_dir = SESSIONS_DIR
+    data_dir = config.session_dir
     if not data_dir.exists():
         return None
     for f in data_dir.glob("*.jsonl"):

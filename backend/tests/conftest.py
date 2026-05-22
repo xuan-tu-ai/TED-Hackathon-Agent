@@ -11,6 +11,20 @@ All fixtures respect the ``TEST_DATABASE_URL`` environment variable
 import os
 from pathlib import Path
 
+# ── Required env vars for AppConfig (set before any app imports) ──
+os.environ.setdefault(
+    "AGENT_KNOWLEDGE_DIR",
+    str(Path(__file__).resolve().parents[1] / "agent_knowledge"),
+)
+os.environ.setdefault(
+    "DATA_DIR",
+    str(Path(__file__).resolve().parents[2] / "data"),
+)
+os.environ.setdefault(
+    "DATABASE_URL",
+    f"sqlite+pysqlite:///{Path(__file__).resolve().parents[2] / 'data' / 'demo.db'}",
+)
+
 import pytest
 
 

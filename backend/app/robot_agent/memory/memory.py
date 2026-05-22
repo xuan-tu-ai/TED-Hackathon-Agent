@@ -23,14 +23,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from ..agent.config import config
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("memory")
 
 
-MEMORY_DIR = Path("data") / "memory"
-SESSION_DIR = MEMORY_DIR / "sessions"
-SESSION_DIR.mkdir(parents=True, exist_ok=True)
+MEMORY_DIR = config.memory_dir
+SESSION_DIR = config.session_dir
 
 
 @dataclass
@@ -163,8 +164,7 @@ class Tier0ContextCompaction:
 
 
 class Tier2ProjectRules:
-    RULES_DIR = Path(__file__).resolve().parents[3] / "agent_knowledge" / "rules"
-    RULES_DIR.mkdir(parents=True, exist_ok=True)
+    RULES_DIR = config.rules_dir
 
     @classmethod
     def get_rule(cls, rule_name: str) -> str:

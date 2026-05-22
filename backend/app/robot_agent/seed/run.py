@@ -16,15 +16,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..agent.config import config
 from ..db.models import Base, create_db_engine, create_session_factory, seed_maintenance_events
 from .perception_results import seed_perception_results
 from .pm_cards import seed_pm_cards
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
-DATA_DIR = PROJECT_ROOT / "data"
-SQL_DIR = DATA_DIR / "sql"
-DB_PATH = DATA_DIR / "demo.db"
+DATA_DIR = config.data_dir
+SQL_DIR = config.sql_dir
+DB_PATH = config.db_path
 SQL_PATH = SQL_DIR / "seed_snapshot.sql"
 
 

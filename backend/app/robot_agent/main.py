@@ -24,8 +24,8 @@ logger = logging.getLogger("startup")
 
 load_dotenv()
 
-from .db.models import get_default_db_url
-os.environ["DATABASE_URL"] = get_default_db_url()
+from .agent.config import config
+os.environ["DATABASE_URL"] = config.database_url
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

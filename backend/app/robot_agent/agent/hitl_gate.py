@@ -8,10 +8,10 @@ or reject an action via the simulation state's threading.Event mechanism.
 from __future__ import annotations
 
 import logging
-import os
 import threading
 from typing import Any
 
+from .config import config
 from .event_emitter import AgentEventEmitter
 from .hitl import HitlResult, hitl_check as perform_hitl_check
 from ..seed import create_session_factory
@@ -136,9 +136,8 @@ class HitlGate:
                     "timeout": True,
                 }
 
-            from ..db.models import HitlQueue, get_default_db_url
-            _db_url = os.getenv("DATABASE_URL") or get_default_db_url()
-            _session = create_session_factory(_db_url)()
+            from ..db.models import HitlQueue
+            _session = create_session_factory(config.database_url)()
             try:
                 entry = _session.get(HitlQueue, result.queue_id)
                 entry_status = entry.status if entry else None

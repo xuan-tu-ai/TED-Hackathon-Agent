@@ -6,15 +6,16 @@ from sqlalchemy import pool
 
 from alembic import context
 
+from app.robot_agent.agent.config import config as app_config
 from app.robot_agent.db.models import Base
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
-config = context.config
+alembic_config = context.config
 
-# Override sqlalchemy.url with DATABASE_URL env var if set.
-if db_url := os.getenv("DATABASE_URL"):
-    config.set_main_option("sqlalchemy.url", db_url)
+# Override sqlalchemy.url with DATABASE_URL from central config if set.
+if app_config.database_url:
+    alembic_config.set_main_option("sqlalchemy.url", app_config.database_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

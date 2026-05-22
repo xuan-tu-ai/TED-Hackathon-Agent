@@ -94,11 +94,11 @@ class TestMaskFormerLocalPipeline:
         records = make_synthetic_maskformer_records(3, 5)
         results = pre.score_batch(records)
         assert len(results) == 3
-        expected_keys = {"robot_code", "program_number", "start_time", "p95_score", "valid_start_idx", "valid_end_idx"}
-        for s in ["air_motor_rotation_speed", "electro_pneumatic_output", "high_pressure_current", "high_pressure_voltage", "paint_pressure", "paint_flow_rate"]:
-            expected_keys.add(f"heatmap_{s}")
+        required = {"robot_code", "program_number", "start_time", "p95_score", "valid_start_idx", "valid_end_idx"}
         for r in results:
-            assert expected_keys.issubset(set(r.keys()))
+            assert required.issubset(set(r.keys()))
+            heatmap_keys = [k for k in r if k.startswith("heatmap_")]
+            assert len(heatmap_keys) == self.model.num_sensors
 
     def test_local_pre_result_scores_are_finite(self):
         from app.anomaly_detection.inference.maskformer.local import MaskFormerLocalPreResult
@@ -132,12 +132,13 @@ class TestMaskFormerLocalPipeline:
         applier = MaskFormerLocalApplier({"global_threshold": tc.threshold}, quantile=0.95)
         applied = applier.apply(results)
         assert len(applied) == 4
-        expected = {"robot_code", "program_number", "start_time", "is_file_anomaly", "p95_score"}
-        for s in ["air_motor_rotation_speed", "electro_pneumatic_output", "high_pressure_current", "high_pressure_voltage", "paint_pressure", "paint_flow_rate"]:
-            expected.add(f"heatmap_{s}")
-            expected.add(f"is_anomaly_{s}")
+        required = {"robot_code", "program_number", "start_time", "is_file_anomaly", "p95_score"}
         for r in applied:
-            assert expected.issubset(set(r.keys()))
+            assert required.issubset(set(r.keys()))
+            heatmap_keys = [k for k in r if k.startswith("heatmap_")]
+            is_anomaly_keys = [k for k in r if k.startswith("is_anomaly_")]
+            assert len(heatmap_keys) == self.model.num_sensors
+            assert len(is_anomaly_keys) == self.model.num_sensors
 
     def test_full_pipeline_end_to_end(self):
         from app.anomaly_detection.inference.maskformer.local import MaskFormerLocalPreResult, MaskFormerLocalThresholdCreator, MaskFormerLocalApplier
@@ -149,7 +150,11 @@ class TestMaskFormerLocalPipeline:
         applier = MaskFormerLocalApplier({"global_threshold": tc.threshold}, quantile=0.95)
         applied = applier.apply(pre_scores)
         assert all(isinstance(r["is_file_anomaly"], bool) for r in applied)
-        assert all(isinstance(r[f"is_anomaly_air_motor_rotation_speed"], bool) for r in applied)
+        # Check all per-sensor is_anomaly flags are bool regardless of sensor naming
+        for r in applied:
+            for k, v in r.items():
+                if k.startswith("is_anomaly_"):
+                    assert isinstance(v, bool)
 
 
 # =============================================================================

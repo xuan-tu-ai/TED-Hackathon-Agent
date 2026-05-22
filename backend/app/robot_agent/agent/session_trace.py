@@ -12,8 +12,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .config import config
 
-SESSION_DIR = Path(__file__).resolve().parents[4] / "data" / "sessions"
+
+SESSION_DIR = config.session_dir
 
 
 class SessionTraceWriter:

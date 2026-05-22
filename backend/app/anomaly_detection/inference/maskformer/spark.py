@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 from pyspark.sql.types import (
-    StructType, StructField, StringType, IntegerType, FloatType, ArrayType,
+    StructType, StructField, StringType, IntegerType, FloatType, ArrayType, BooleanType,
 )
 from pyspark import Broadcast
 

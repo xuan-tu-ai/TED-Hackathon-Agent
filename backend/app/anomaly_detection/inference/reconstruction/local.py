@@ -223,6 +223,16 @@ class ReconLocalThresholdCreator:
         pre_result_list: list[dict],
         sensors: Optional[list[str]] = None,
     ) -> "ReconLocalThresholdCreator":
+        if sensors is None and pre_result_list:
+            import re
+            row0 = pre_result_list[0]
+            prefix = "shape_map_"
+            detected = [k[len(prefix):] for k in row0 if k.startswith(prefix)]
+            if not detected:
+                pat = re.compile(r"^p\d+_shape_(.+)$")
+                detected = [m.group(1) for k in row0 if (m := pat.match(k))]
+            if detected:
+                sensors = detected
         return self.fit(pre_result_list, sensors=sensors)
 
     def to_dict(self) -> dict:
@@ -260,7 +270,7 @@ class ReconLocalApplier:
         """
         pq = f"p{self.quantile * 100:.0f}"
         thresh_dict = self.threshold_config  # {sensor: {"shape": float, "win": float}}
-        sensors_list = list(constants.SENSORS)
+        sensors_list = list(thresh_dict.keys()) if thresh_dict else list(constants.SENSORS)
 
         results = []
         for row in pre_results:
