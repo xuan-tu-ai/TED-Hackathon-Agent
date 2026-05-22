@@ -12,8 +12,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from .config import config
 from .event_emitter import AgentEventEmitter
-from . import skills as _skills_module
 
 logger = logging.getLogger("plan_manager")
 
@@ -45,7 +45,7 @@ class PlanManager:
         Returns:
             True if at least one task was parsed, False otherwise.
         """
-        template_path = _skills_module.SKILLS_BASE / "create-plan" / "_template.md"
+        template_path = config.skills_base / "create-plan" / "_template.md"
         if not template_path.exists():
             logger.error("Plan template not found at %s", template_path)
             return False

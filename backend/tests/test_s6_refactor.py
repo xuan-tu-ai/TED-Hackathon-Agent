@@ -68,11 +68,10 @@ class TestPlanManager:
             "- [ ] **Item 3:** Query PM cards.\n"
         )
 
-        from app.robot_agent.agent.skills import SKILLS_BASE
-        old_base = SKILLS_BASE
+        from app.robot_agent.agent.config import config
+        old_base = config.skills_base
         try:
-            import app.robot_agent.agent.skills as sk_mod
-            sk_mod.SKILLS_BASE = skills_dir
+            config.skills_base = skills_dir
             pm.__init__(AgentEventEmitter())
             result = pm.parse_from_template()
             assert result is True
@@ -81,7 +80,7 @@ class TestPlanManager:
             assert pm.current_plan["tasks"][0]["name"] == "Load routing skill"
             assert pm.current_plan["tasks"][0]["status"] == "pending"
         finally:
-            sk_mod.SKILLS_BASE = old_base
+            config.skills_base = old_base
 
     def test_update_task_and_get_current_task(self):
         from app.robot_agent.agent.plan_manager import PlanManager
