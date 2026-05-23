@@ -14,7 +14,7 @@ from typing import Iterator
 
 import numpy as np
 
-from backend.data_simulator.generator import WeldingSampleGenerator, WeldingSampleNoisy
+from .generator import WeldingSampleGenerator, WeldingSampleNoisy
 
 
 # Sampling parameters
@@ -30,17 +30,22 @@ CYCLE_GAP_MINUTES = (1, 5)
 
 @dataclass
 class CycleRow:
-    """A single row of the output CSV."""
+    """A single row of the output CSV.
+
+    Each row represents one timestep (250ms) of one welding cycle.
+    Rows belonging to the same cycle share the same ``cycle_id``.
+    """
+    cycle_id: int                      # unique cycle identifier
     robot_code: int
     start_time: str
     program_number: int
-    infer_recorded_date: str
     serial_number: int
     phase: str
     wire_feed_speed_mm_min: float
     wire_temperature_c: float
     welding_current_a: float
     timestamp: str
+    anomaly_type: str = "none"          # anomaly type (or "none" for normal)
 
 
 def _phase_label(
@@ -80,43 +85,54 @@ class BatchGenerator:
     ):
         self._rng = random.Random(seed)
         self.sample_gen = sample_generator or WeldingSampleGenerator(seed=seed)
+        self._cycle_counter: int = 0  # auto-incrementing cycle ID
 
     def reseed(self, seed: int) -> None:
         self._rng = random.Random(seed)
         self.sample_gen.reseed(seed)
+        self._cycle_counter = 0
 
     def _sample_to_rows(
         self,
         sample: WeldingSampleNoisy,
         start_datetime: datetime,
+        cycle_id: int,
+        anomaly_type: str = "none",
     ) -> list[CycleRow]:
         """Convert a WeldingSampleNoisy to a list of CycleRow dicts.
 
         Each row corresponds to one timestep (250ms).
+
+        Args:
+            sample: The noisy welding sample.
+            start_datetime: Start time of the cycle.
+            cycle_id: Unique cycle identifier.
+            anomaly_type: Anomaly type string ("none" for normal).
+
+        Returns:
+            List of CycleRow instances.
         """
         n = len(sample.wire_feed_speed)
         rows: list[CycleRow] = []
 
         start_time_str = start_datetime.strftime("%Y-%m-%d %H:%M:%S")
-        # Base start_time for the cycle (the day begins here)
 
         for step_idx in range(n):
             ts = start_datetime + timedelta(seconds=step_idx * SECONDS_PER_STEP)
-            infer_recorded = ts.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-
             phase = _phase_label(step_idx, sample.phase_boundaries)
 
             rows.append(CycleRow(
+                cycle_id=cycle_id,
                 robot_code=sample.robot_id,
                 start_time=start_time_str,
                 program_number=sample.program_id,
-                infer_recorded_date=infer_recorded,
                 serial_number=step_idx + 1,
                 phase=phase,
                 wire_feed_speed_mm_min=round(float(sample.wire_feed_speed[step_idx]), 1),
                 wire_temperature_c=round(float(sample.temperature[step_idx]), 1),
                 welding_current_a=round(float(sample.welding_current[step_idx]), 1),
                 timestamp=ts.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "+00:00",
+                anomaly_type=anomaly_type,
             ))
 
         return rows
@@ -164,7 +180,10 @@ class BatchGenerator:
                     robot_id=robot_id,
                 )
 
-                rows = self._sample_to_rows(sample, day_start)
+                self._cycle_counter += 1
+                rows = self._sample_to_rows(
+                    sample, day_start, cycle_id=self._cycle_counter,
+                )
 
                 # Advance time by the cycle duration + a gap
                 cycle_duration = len(sample.wire_feed_speed) * SECONDS_PER_STEP
@@ -181,12 +200,16 @@ class BatchGenerator:
         self,
         num_days: int = 30,
         robots: list[int] | None = None,
+        start_date: datetime | None = None,
     ) -> Iterator[CycleRow]:
         """Generate 100% normal training data for the specified period.
 
         Args:
             num_days: Number of days to generate (default: 30).
             robots: List of robot IDs. If None, uses [0, 1, 2, 3].
+            start_date: First day of data generation. If None, defaults to
+                2025-07-01. Each robot runs 16-20 hours/day with cycles
+                spaced 1-5 min apart. Robots are processed sequentially.
 
         Yields:
             CycleRow instances (one per timestep).
@@ -194,7 +217,8 @@ class BatchGenerator:
         if robots is None:
             robots = [0, 1, 2, 3]
 
-        start_date = datetime(2025, 7, 1, 0, 0, 0)
+        if start_date is None:
+            start_date = datetime(2025, 7, 1, 0, 0, 0)
 
         for robot_id in robots:
             for rows in self._generate_cycles_for_robot(

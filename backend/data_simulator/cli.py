@@ -13,9 +13,9 @@ import os
 import sys
 import time
 
-from backend.data_simulator.batch_generator import BatchGenerator
-from backend.data_simulator.writer import CSVWriter
-from backend.data_simulator.config import SimulatorConfig
+from .batch_generator import BatchGenerator
+from .writer import CSVWriter
+from .config import SimulatorConfig
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

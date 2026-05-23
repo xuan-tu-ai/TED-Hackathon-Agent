@@ -13,7 +13,7 @@ from typing import Any
 
 import numpy as np
 
-from backend.data_simulator.generator import WeldingSample, WeldingSampleNoisy
+from data_simulator.generator import WeldingSample, WeldingSampleNoisy
 
 
 def inject_spike(

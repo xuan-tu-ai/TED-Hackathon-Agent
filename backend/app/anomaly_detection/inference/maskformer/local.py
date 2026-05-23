@@ -29,6 +29,89 @@ def _heatmap_to_timestep_scores(
     return score_map
 
 
+def _detect_phase_regions(
+    heatmap: np.ndarray,
+    sensor_names: list[str],
+    window_size: int = 10,
+) -> dict[str, tuple[int, int]]:
+    """Detect welding phase regions from the accumulated heatmap.
+
+    Uses the S0 (wire_feed_speed) signal to identify phase transitions:
+    - Rampup: region where S0 is rising from 0 to target value.
+    - Active: region where S0 is stable at target (near max).
+    - Winddown: region where S0 is falling back to 0.
+
+    This is signal-derived (not metadata-derived) so it works on inference
+    data where ground-truth phase labels do not exist.
+
+    Args:
+        heatmap: Accumulated score map ``[C, T]`` where C includes sensor 0.
+        sensor_names: List of sensor names; the function looks for one
+            containing "feed" or "speed" to identify S0.
+        window_size: Smoothing window for gradient computation.
+
+    Returns:
+        dict with keys ``"rampup"``, ``"active"``, ``"winddown"``, each
+        being a ``(start, end)`` tuple.  Returns all-zero ranges if detection
+        fails (e.g. flat signal or no feed sensor found).
+    """
+    C, T = heatmap.shape
+
+    # Find the feed sensor index
+    feed_idx = -1
+    for i, name in enumerate(sensor_names):
+        if "feed" in name.lower() or "speed" in name.lower():
+            feed_idx = i
+            break
+    if feed_idx < 0:
+        feed_idx = 0  # fallback: assume first sensor is feed
+
+    feed_signal = heatmap[feed_idx]
+
+    # Smooth the signal before computing gradient
+    from scipy.ndimage import uniform_filter1d
+    smoothed = uniform_filter1d(feed_signal, size=window_size, mode="reflect")
+
+    # Compute gradient
+    grad = np.gradient(smoothed)
+
+    # Thresholds: use percentiles of the signal magnitude
+    max_val = max(np.max(smoothed), 1e-6)
+    active_thresh = max_val * 0.3
+
+    # Find regions
+    above_active = smoothed > active_thresh
+    rising = grad > max_val * 0.01
+    falling = grad < -max_val * 0.01
+
+    # Rampup: start = first rising index before active, end = first active index
+    active_indices = np.where(above_active)[0]
+    rising_indices = np.where(rising)[0]
+    falling_indices = np.where(falling)[0]
+
+    if len(active_indices) == 0:
+        return {"rampup": (0, 0), "active": (0, 0), "winddown": (0, 0)}
+
+    active_start = int(active_indices[0])
+    active_end = int(active_indices[-1])
+
+    # Rampup: from first rise before active_start to active_start
+    rise_before_active = rising_indices[rising_indices < active_start]
+    rampup_start = int(rise_before_active[0]) if len(rise_before_active) > 0 else max(0, active_start - 20)
+    rampup_end = active_start
+
+    # Winddown: from active_end to last fall after active_end
+    fall_after_active = falling_indices[falling_indices > active_end]
+    winddown_start = active_end
+    winddown_end = int(fall_after_active[-1]) if len(fall_after_active) > 0 else min(T, active_end + 20)
+
+    return {
+        "rampup": (rampup_start, rampup_end),
+        "active": (active_start, active_end),
+        "winddown": (winddown_start, winddown_end),
+    }
+
+
 class MaskFormerLocalPreResult:
     """Compute dual-criterion anomaly heatmaps without Spark/Broadcast.
 
@@ -141,17 +224,39 @@ class MaskFormerLocalPreResult:
             valid_start = int(serials[k_skip] - min_s)
             valid_end = int(serials[-1 - k_skip] - min_s + W)
 
-            # File classification score: q-th percentile of the accumulated combined
-            # heatmap in the valid region — identical to spark.py pq_score computation.
-            file_score = float(np.percentile(final_map[:, valid_start:valid_end], q))
+            # File classification score: q-th percentile of the accumulated
+            # heatmap in the valid region — global score (existing behaviour).
+            file_score_global = float(np.percentile(final_map[:, valid_start:valid_end], q))
+
+            # Phase-specific scores: rampup and active region P95.
+            # Rampup-localized anomalies (phase shift, overshoot degradation)
+            # are diluted by global P95 but amplified in phase-specific scores.
+            phase_regions = _detect_phase_regions(final_map, sensors)
+            rampup_start, rampup_end = phase_regions["rampup"]
+            active_start, active_end = phase_regions["active"]
+
+            file_score_rampup = 0.0
+            file_score_active = 0.0
+            if rampup_end > rampup_start:
+                file_score_rampup = float(np.percentile(
+                    final_map[:, rampup_start:rampup_end], q
+                ))
+            if active_end > active_start:
+                file_score_active = float(np.percentile(
+                    final_map[:, active_start:active_end], q
+                ))
 
             res = {
                 "robot_code": str(rec["robot_code"]),
                 "program_number": int(rec["program_number"]),
                 "start_time": str(rec["start_time"]),
-                f"{pq}_score": file_score,
+                f"{pq}_score": file_score_global,
+                f"{pq}_score_rampup": file_score_rampup,
+                f"{pq}_score_active": file_score_active,
                 "valid_start_idx": valid_start,
                 "valid_end_idx": valid_end,
+                "phase_rampup": (rampup_start, rampup_end),
+                "phase_active": (active_start, active_end),
             }
             for c, s in enumerate(sensors):
                 res[f"heatmap_{s}"] = final_map[c].tolist()
@@ -164,57 +269,103 @@ class MaskFormerLocalPreResult:
 class MaskFormerLocalThresholdCreator:
     """Spark-free MAD-based threshold creator for MaskFormer scores.
 
+    Supports multi-score threshold: can calibrate separate MAD thresholds
+    for each score key (e.g. ``p95_score``, ``p95_score_rampup``,
+    ``p95_score_active``).  When multiple keys are provided, a file is
+    flagged as anomalous if ANY score exceeds its corresponding threshold
+    (OR logic).
+
     Uses Median Absolute Deviation (MAD) for contamination-robust threshold
-    estimation, as specified in the design doc §9.2.  MAD is insensitive to
-    up to ~50% contamination, making it safe when the calibration set may
-    contain a small fraction of unlabelled anomalous files.
+    estimation.  threshold = median + 3 × 1.4826 × MAD
 
-    threshold = median + 3 × 1.4826 × MAD
-
-    The ``quantile`` parameter controls which ``pq_score`` key is read from
-    the pre-result dicts (e.g. ``quantile=0.95`` → ``"p95_score"``).  It does
-    NOT affect how the threshold is computed.
+    The ``quantile`` parameter controls the score key prefix (e.g. ``0.95``
+    → ``"p95_score"``).
     """
 
-    def __init__(self, quantile: float = 0.95):
+    def __init__(
+        self,
+        quantile: float = 0.95,
+        score_keys: list[str] | None = None,
+    ):
         self.quantile = quantile
-        self.threshold: Optional[float] = None
-        self._median: Optional[float] = None
-        self._mad: Optional[float] = None
+        self.score_keys = score_keys or [f"p{quantile * 100:.0f}_score"]
+        self.thresholds: dict[str, float] = {}
+        self._medians: dict[str, float] = {}
+        self._mads: dict[str, float] = {}
 
-    def fit(self, normal_scores: torch.Tensor) -> "MaskFormerLocalThresholdCreator":
-        """Compute MAD-based threshold from calibration scores."""
-        mad_thresh = MADThreshold(k=3.0)
-        mad_thresh.fit(normal_scores)
-        self.threshold = mad_thresh.threshold.item()
-        self._median = mad_thresh.median.item()
-        self._mad = mad_thresh.mad.item()
+    def fit(self, normal_scores: dict[str, torch.Tensor]) -> "MaskFormerLocalThresholdCreator":
+        """Compute MAD-based thresholds from calibration scores dict.
+
+        Args:
+            normal_scores: dict mapping score_key -> tensor of scores for
+                normal files.  Each tensor is ``[N]`` where N is the number
+                of calibration files.
+
+        Returns:
+            self.
+        """
+        for key in self.score_keys:
+            if key not in normal_scores:
+                continue
+            scores = normal_scores[key]
+            mad_thresh = MADThreshold(k=3.0)
+            mad_thresh.fit(scores)
+            self.thresholds[key] = mad_thresh.threshold.item()
+            self._medians[key] = mad_thresh.median.item()
+            self._mads[key] = mad_thresh.mad.item()
         return self
 
-    def fit_from_pre_results(self, pre_result_list: list[dict]) -> "MaskFormerLocalThresholdCreator":
-        pq = f"p{self.quantile * 100:.0f}_score"
-        scores = torch.tensor([r[pq] for r in pre_result_list], dtype=torch.float32)
-        return self.fit(scores)
+    def fit_from_pre_results(
+        self, pre_result_list: list[dict]
+    ) -> "MaskFormerLocalThresholdCreator":
+        """Fit from pre-result dicts (output of score_batch)."""
+        scores_dict: dict[str, list[float]] = {}
+        for key in self.score_keys:
+            scores_dict[key] = [r[key] for r in pre_result_list if key in r]
+        normal_scores = {
+            key: torch.tensor(vals, dtype=torch.float32)
+            for key, vals in scores_dict.items()
+            if vals
+        }
+        return self.fit(normal_scores)
 
     def to_dict(self) -> dict:
         return {
-            "threshold": self.threshold,
+            "thresholds": self.thresholds,
             "quantile": self.quantile,
-            "median": self._median,
-            "mad": self._mad,
+            "score_keys": self.score_keys,
+            "medians": self._medians,
+            "mads": self._mads,
         }
 
     @classmethod
     def from_dict(cls, d: dict) -> "MaskFormerLocalThresholdCreator":
-        obj = cls(quantile=d.get("quantile", 0.95))
-        obj.threshold = d.get("threshold")
-        obj._median = d.get("median")
-        obj._mad = d.get("mad")
+        obj = cls(
+            quantile=d.get("quantile", 0.95),
+            score_keys=d.get("score_keys"),
+        )
+        obj.thresholds = d.get("thresholds", {})
+        obj._medians = d.get("medians", {})
+        obj._mads = d.get("mads", {})
         return obj
+
+    @property
+    def threshold(self) -> float | None:
+        """Backward-compatible single-threshold accessor.
+
+        Returns the threshold for the first score key (typically global).
+        """
+        if self.thresholds:
+            return next(iter(self.thresholds.values()))
+        return None
 
 
 class MaskFormerLocalApplier:
     """Apply per-sensor heatmap thresholds without Spark/Broadcast.
+
+    Supports multi-score verdict: a file is anomalous if ANY score exceeds
+    its corresponding threshold (OR logic).  The ``triggered_by`` field
+    indicates which score(s) triggered the anomaly verdict.
 
     Mirrors MaskFormerApplier but accepts a plain dict for threshold
     config and returns ``list[dict]`` instead of a Pandas UDF.
@@ -232,30 +383,55 @@ class MaskFormerLocalApplier:
 
         Returns:
             list[dict] with added keys:
-                is_file_anomaly, is_anomaly_{s} (per sensor)
+                is_file_anomaly, is_anomaly_{s} (per sensor),
+                triggered_by (list of score keys that triggered)
         """
         pq = f"p{self.quantile * 100:.0f}"
         global_thresh = self.threshold_config.get("global_threshold", 0.5)
         sensor_thresholds = self.threshold_config.get("sensors", {})
 
-        # Infer sensor names from the first pre-result rather than from the global
-        # constants module, so the applier works with any sensor configuration.
+        # Multi-score thresholds: dict of score_key -> threshold
+        score_thresholds: dict[str, float] = self.threshold_config.get("score_thresholds", {})
+
+        # Infer sensor names from the first pre-result
         if not pre_results:
             return []
         sensors = [k[len("heatmap_"):] for k in pre_results[0] if k.startswith("heatmap_")]
 
+        # Known score keys that may exist in pre_results
+        score_keys = [f"{pq}_score", f"{pq}_score_rampup", f"{pq}_score_active"]
+
         results = []
         for row in pre_results:
-            score = row[f"{pq}_score"]
-            is_file_anomaly = bool(score > global_thresh)
+            # Check all score keys — OR logic
+            triggered_by: list[str] = []
+            for sk in score_keys:
+                if sk not in row:
+                    continue
+                score_val = float(row[sk])
+                thresh = score_thresholds.get(sk, global_thresh)
+                if score_val > thresh:
+                    triggered_by.append(sk)
+
+            # Also check global threshold as fallback
+            global_score = float(row.get(f"{pq}_score", 0.0))
+            if not triggered_by and global_score > global_thresh:
+                triggered_by.append(f"{pq}_score")
+
+            is_file_anomaly = len(triggered_by) > 0
 
             res = {
                 "robot_code": row["robot_code"],
                 "program_number": row["program_number"],
                 "start_time": row["start_time"],
                 "is_file_anomaly": is_file_anomaly,
-                f"{pq}_score": float(score),
+                "triggered_by": triggered_by,
+                f"{pq}_score": float(global_score),
             }
+            # Pass through phase-specific scores if present
+            for sk in score_keys:
+                if sk in row:
+                    res[sk] = float(row[sk])
 
             valid_start = int(row.get("valid_start_idx", 0))
             valid_end = int(row.get("valid_end_idx", 0)) or None

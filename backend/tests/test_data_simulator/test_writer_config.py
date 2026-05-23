@@ -71,10 +71,10 @@ class TestCSVWriter:
             reader = csv.reader(f)
             header = next(reader)
         expected = [
-            "robot_code", "start_time", "program_number",
-            "infer_recorded_date", "serial_number", "phase",
+            "cycle_id", "robot_code", "start_time", "program_number",
+            "serial_number", "phase",
             "wire_feed_speed_mm_min", "wire_temperature_c",
-            "welding_current_a", "timestamp",
+            "welding_current_a", "anomaly_type", "timestamp",
         ]
         assert header == expected
 
@@ -88,10 +88,12 @@ class TestCSVWriter:
             row = next(reader)
 
         # Check column values are valid
+        assert row["cycle_id"].isdigit()
         assert row["robot_code"].isdigit()
         assert row["program_number"].isdigit()
         assert row["serial_number"].isdigit()
         assert row["phase"] in ("idle", "rampup", "active", "winddown", "shutdown")
+        assert row["anomaly_type"] == "none"
         assert row["timestamp"].endswith("+00:00")
 
     def test_train_file_has_data(self, tmpdir):
@@ -138,6 +140,8 @@ class TestCSVWriter:
         with open(label_path) as f:
             reader = csv.DictReader(f)
             for label in reader:
+                assert "cycle_id" in label
+                assert label["cycle_id"].isdigit()
                 assert "robot_code" in label
                 assert "start_time" in label
                 assert "program_number" in label
@@ -145,7 +149,10 @@ class TestCSVWriter:
                 assert "anomaly_type" in label
                 assert label["is_anomaly"] in ("0", "1")
                 assert label["anomaly_type"] in (
-                    "spike", "thermal_drift", "flatline", "phase_shift", "normal"
+                    "spike", "thermal_drift", "flatline", "phase_shift",
+                    "wire_stutter", "arc_blow", "gas_blockage",
+                    "sticky_tc", "cable_wear", "overshoot_degradation",
+                    "normal",
                 )
 
     def test_chunked_writing(self, tmpdir):

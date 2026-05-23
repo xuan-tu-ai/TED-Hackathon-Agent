@@ -15,32 +15,40 @@ from pathlib import Path
 from typing import Iterator
 import random
 
-from backend.data_simulator.batch_generator import BatchGenerator, CycleRow, _phase_label, SECONDS_PER_STEP
-from backend.data_simulator.anomalies import (
+from .batch_generator import BatchGenerator, CycleRow, _phase_label, SECONDS_PER_STEP
+from .generator import WeldingSample
+from .anomalies import (
     inject_spike,
     inject_thermal_drift,
     inject_flatline,
     inject_phase_shift,
+    inject_wire_stutter,
+    inject_arc_blow,
+    inject_gas_blockage,
+    inject_sticky_tc,
+    inject_cable_wear,
+    inject_overshoot_degradation,
 )
-from backend.data_simulator.config import SimulatorConfig
 
 
-# CSV column order matching legacy schema
+# CSV column order (cycle_id replaces the triple-key grouping)
 CSV_HEADER = [
+    "cycle_id",
     "robot_code",
     "start_time",
     "program_number",
-    "infer_recorded_date",
     "serial_number",
     "phase",
     "wire_feed_speed_mm_min",
     "wire_temperature_c",
     "welding_current_a",
+    "anomaly_type",
     "timestamp",
 ]
 
-# Label CSV header
+# Label CSV header (cycle_id is the unique key)
 LABEL_HEADER = [
+    "cycle_id",
     "robot_code",
     "start_time",
     "program_number",
@@ -58,15 +66,16 @@ def _write_rows_to_csv(rows: list[CycleRow], filepath: str) -> None:
             writer.writerow(CSV_HEADER)
         for row in rows:
             writer.writerow([
+                row.cycle_id,
                 row.robot_code,
                 row.start_time,
                 row.program_number,
-                row.infer_recorded_date,
                 row.serial_number,
                 row.phase,
                 row.wire_feed_speed_mm_min,
                 row.wire_temperature_c,
                 row.welding_current_a,
+                row.anomaly_type,
                 row.timestamp,
             ])
 
@@ -80,6 +89,7 @@ def _write_labels_to_csv(labels: list[dict], filepath: str) -> None:
             writer.writerow(LABEL_HEADER)
         for label in labels:
             writer.writerow([
+                label["cycle_id"],
                 label["robot_code"],
                 label["start_time"],
                 label["program_number"],
@@ -106,6 +116,8 @@ class CSVWriter:
         batch_gen: BatchGenerator,
         num_days: int = 30,
         robots: list[int] | None = None,
+        start_date: datetime | None = None,
+        output_filename: str | None = None,
     ) -> tuple[str, int]:
         """Write the training dataset (100% normal cycles).
 
@@ -113,12 +125,21 @@ class CSVWriter:
             batch_gen: BatchGenerator instance.
             num_days: Number of days to generate.
             robots: List of robot IDs.
+            start_date: First day of training data. If None, defaults to
+                2025-07-01. Robots operate 16-20 hours/day with 1-5 min
+                gaps between cycles, simulating realistic daily schedules.
+            output_filename: Custom output filename. If None, defaults to
+                ``"train_welding_robot.csv"``.  Use this to produce a
+                separate validation file (e.g. ``"val_welding_robot.csv"``)
+                by calling ``write_train`` a second time with a different
+                ``start_date``.
 
         Returns:
             (filepath, row_count) tuple.
         """
         os.makedirs(self.output_dir, exist_ok=True)
-        filepath = os.path.join(self.output_dir, "train_welding_robot.csv")
+        fname = output_filename or "train_welding_robot.csv"
+        filepath = os.path.join(self.output_dir, fname)
 
         # Remove existing file to start fresh
         if os.path.exists(filepath):
@@ -127,7 +148,9 @@ class CSVWriter:
         chunk: list[CycleRow] = []
         row_count = 0
 
-        for row in batch_gen.generate_train(num_days=num_days, robots=robots):
+        for row in batch_gen.generate_train(
+            num_days=num_days, robots=robots, start_date=start_date,
+        ):
             chunk.append(row)
             row_count += 1
             if len(chunk) >= self.chunk_size:
@@ -147,8 +170,13 @@ class CSVWriter:
         anomaly_ratio: float = 0.5,
         robots: list[int] | None = None,
         seed: int = 42,
+        start_date: datetime | None = None,
     ) -> tuple[str, str, int]:
         """Write the test dataset with both normal and anomalous cycles.
+
+        All cycles share the same start_date (no multi-day scheduling in
+        the test set). This is intentional — test data focuses on per-cycle
+        anomaly detection, not day-spanning pattern detection.
 
         Args:
             batch_gen: BatchGenerator instance.
@@ -156,6 +184,8 @@ class CSVWriter:
             anomaly_ratio: Fraction of cycles that are anomalous.
             robots: List of robot IDs.
             seed: Random seed for anomaly selection.
+            start_date: Date to use for all cycles. If None, defaults to
+                2025-07-01 at 06:00.
 
         Returns:
             (csv_filepath, labels_filepath, row_count) tuple.
@@ -173,12 +203,22 @@ class CSVWriter:
                 os.remove(p)
 
         rng = random.Random(seed)
-        anomaly_types = ["spike", "thermal_drift", "flatline", "phase_shift"]
+        anomaly_types = [
+            "spike", "thermal_drift", "flatline", "phase_shift",
+            "wire_stutter", "arc_blow", "gas_blockage",
+            "sticky_tc", "cable_wear", "overshoot_degradation",
+        ]
         anomaly_fns = {
             "spike": inject_spike,
             "thermal_drift": inject_thermal_drift,
             "flatline": inject_flatline,
             "phase_shift": inject_phase_shift,
+            "wire_stutter": inject_wire_stutter,
+            "arc_blow": inject_arc_blow,
+            "gas_blockage": inject_gas_blockage,
+            "sticky_tc": inject_sticky_tc,
+            "cable_wear": inject_cable_wear,
+            "overshoot_degradation": inject_overshoot_degradation,
         }
 
         chunk: list[CycleRow] = []
@@ -193,21 +233,34 @@ class CSVWriter:
             # Decide if this cycle is anomalous
             is_anomaly = rng.random() < anomaly_ratio and cycles_written < num_cycles
 
+            batch_gen._cycle_counter += 1
+            cycle_id = batch_gen._cycle_counter
+
             if is_anomaly:
                 anomaly_type = rng.choice(anomaly_types)
                 inject_fn = anomaly_fns[anomaly_type]
                 noisy_sample = inject_fn(clean_sample, rng)
+                if anomaly_type == "overshoot_degradation":
+                    noisy_sample = batch_gen.sample_gen.add_noise(
+                        WeldingSample(
+                            robot_id=noisy_sample.robot_id,
+                            program_id=noisy_sample.program_id,
+                            profile=noisy_sample.profile,
+                            wire_feed_speed=noisy_sample.wire_feed_speed,
+                            welding_current=noisy_sample.welding_current,
+                            temperature=noisy_sample.temperature,
+                            phase_boundaries=noisy_sample.phase_boundaries,
+                        )
+                    )
             else:
                 anomaly_type = "normal"
                 noisy_sample = batch_gen.sample_gen.add_noise(clean_sample)
 
-            # Generate start time (for labeling)
-            # We use a simplified timestamp since we're not scheduling over days
-            base_date = datetime(2025, 7, 1)
-            start_dt = base_date.replace(hour=6, minute=0, second=0)
+            if start_date is None:
+                start_date = datetime(2025, 7, 1)
+            start_dt = start_date.replace(hour=6, minute=0, second=0)
             start_time_str = start_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-            # Convert to CycleRows
             n = len(noisy_sample.wire_feed_speed)
 
             for step_idx in range(n):
@@ -215,15 +268,16 @@ class CSVWriter:
                 phase = _phase_label(step_idx, noisy_sample.phase_boundaries)
 
                 chunk.append(CycleRow(
+                    cycle_id=cycle_id,
                     robot_code=noisy_sample.robot_id,
                     start_time=start_time_str,
                     program_number=noisy_sample.program_id,
-                    infer_recorded_date=ts.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
                     serial_number=step_idx + 1,
                     phase=phase,
                     wire_feed_speed_mm_min=round(float(noisy_sample.wire_feed_speed[step_idx]), 1),
                     wire_temperature_c=round(float(noisy_sample.temperature[step_idx]), 1),
                     welding_current_a=round(float(noisy_sample.welding_current[step_idx]), 1),
+                    anomaly_type=anomaly_type,
                     timestamp=ts.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "+00:00",
                 ))
 
@@ -232,8 +286,8 @@ class CSVWriter:
                     _write_rows_to_csv(chunk, csv_path)
                     chunk = []
 
-            # Record label
             labels.append({
+                "cycle_id": cycle_id,
                 "robot_code": noisy_sample.robot_id,
                 "start_time": start_time_str,
                 "program_number": noisy_sample.program_id,
@@ -246,7 +300,6 @@ class CSVWriter:
                 _write_labels_to_csv(labels, labels_path)
                 labels = []
 
-        # Write remaining chunks and labels
         if chunk:
             _write_rows_to_csv(chunk, csv_path)
         if labels:

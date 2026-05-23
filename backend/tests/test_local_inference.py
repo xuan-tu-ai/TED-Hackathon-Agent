@@ -94,11 +94,78 @@ class TestMaskFormerLocalPipeline:
         records = make_synthetic_maskformer_records(3, 5)
         results = pre.score_batch(records)
         assert len(results) == 3
-        required = {"robot_code", "program_number", "start_time", "p95_score", "valid_start_idx", "valid_end_idx"}
+        required = {"robot_code", "program_number", "start_time", "p95_score",
+                     "p95_score_rampup", "p95_score_active",
+                     "valid_start_idx", "valid_end_idx"}
         for r in results:
             assert required.issubset(set(r.keys()))
             heatmap_keys = [k for k in r if k.startswith("heatmap_")]
             assert len(heatmap_keys) == self.model.num_sensors
+
+    def test_phase_scores_detected(self):
+        """Phase-specific scores should be present and finite in all results."""
+        from app.anomaly_detection.inference.maskformer.local import MaskFormerLocalPreResult
+        pre = MaskFormerLocalPreResult(MaskFormerModels.GLC_ANOMALY_MASKFORMER, self.metadata, self.state_dict, quantile=0.95, k_skip=0, fast=True, device="cpu")
+        records = make_synthetic_maskformer_records(4, 5)
+        results = pre.score_batch(records)
+        for r in results:
+            assert np.isfinite(r["p95_score"])
+            assert np.isfinite(r["p95_score_rampup"])
+            assert np.isfinite(r["p95_score_active"])
+            # Phase regions should be detected (even if all-zero for random data)
+            r_start, r_end = r.get("phase_rampup", (0, 0))
+            a_start, a_end = r.get("phase_active", (0, 0))
+            assert r_start >= 0 and r_end >= r_start
+            assert a_start >= 0 and a_end >= a_start
+
+    def test_multi_score_threshold_creator(self):
+        """ThresholdCreator should support multiple score keys."""
+        from app.anomaly_detection.inference.maskformer.local import (
+            MaskFormerLocalPreResult, MaskFormerLocalThresholdCreator,
+        )
+        pre = MaskFormerLocalPreResult(MaskFormerModels.GLC_ANOMALY_MASKFORMER, self.metadata, self.state_dict, quantile=0.95, k_skip=0, fast=True, device="cpu")
+        records = make_synthetic_maskformer_records(4, 5)
+        results = pre.score_batch(records)
+        # Multi-score with all 3 keys
+        tc = MaskFormerLocalThresholdCreator(quantile=0.95, score_keys=["p95_score", "p95_score_rampup", "p95_score_active"])
+        tc.fit_from_pre_results(results)
+        assert "p95_score" in tc.thresholds
+        # p95_score_rampup and p95_score_active may be 0 for random data
+        # (no phase structure detected) — that's acceptable, just check keys exist
+        for key in ["p95_score_rampup", "p95_score_active"]:
+            assert key in tc.thresholds, f"Missing threshold key: {key}"
+        # Global score should have a non-zero threshold
+        assert tc.thresholds["p95_score"] > 0.0
+        d = tc.to_dict()
+        tc2 = MaskFormerLocalThresholdCreator.from_dict(d)
+        assert tc2.thresholds == tc.thresholds
+
+    def test_multi_score_applier_or_logic(self):
+        """Applier with multi-score thresholds should flag file if ANY score exceeds threshold."""
+        from app.anomaly_detection.inference.maskformer.local import (
+            MaskFormerLocalPreResult, MaskFormerLocalThresholdCreator, MaskFormerLocalApplier,
+        )
+        pre = MaskFormerLocalPreResult(MaskFormerModels.GLC_ANOMALY_MASKFORMER, self.metadata, self.state_dict, quantile=0.95, k_skip=0, fast=True, device="cpu")
+        records = make_synthetic_maskformer_records(4, 5)
+        results = pre.score_batch(records)
+        tc = MaskFormerLocalThresholdCreator(quantile=0.95, score_keys=["p95_score", "p95_score_rampup", "p95_score_active"])
+        tc.fit_from_pre_results(results)
+        # Use a low global threshold to force trigger (rampup may be 0 for random data)
+        low_thresholds = {"p95_score": tc.thresholds["p95_score"] * 0.01}
+        applier = MaskFormerLocalApplier({
+            "global_threshold": 1e10,
+            "score_thresholds": low_thresholds,
+        }, quantile=0.95)
+        applied = applier.apply(results)
+        # At least one file should be flagged due to the low global threshold
+        any_flagged = any(r["is_file_anomaly"] for r in applied)
+        assert any_flagged, "Expected at least one file flagged with low thresholds"
+        # Check that triggered_by contains the score key that triggered
+        for r in applied:
+            if r["is_file_anomaly"]:
+                assert "p95_score" in r["triggered_by"], (
+                    f"Expected p95_score in triggered_by, got {r['triggered_by']}"
+                )
 
     def test_local_pre_result_scores_are_finite(self):
         from app.anomaly_detection.inference.maskformer.local import MaskFormerLocalPreResult
@@ -117,10 +184,12 @@ class TestMaskFormerLocalPipeline:
         tc.fit_from_pre_results(results)
         assert tc.threshold is not None
         assert tc.threshold > 0.0
+        assert "p95_score" in tc.thresholds
         d = tc.to_dict()
-        assert "threshold" in d
+        assert "thresholds" in d
+        assert "p95_score" in d["thresholds"]
         tc2 = MaskFormerLocalThresholdCreator.from_dict(d)
-        assert tc2.threshold == tc.threshold
+        assert tc2.thresholds == tc.thresholds
 
     def test_local_applier_output_keys(self):
         from app.anomaly_detection.inference.maskformer.local import MaskFormerLocalPreResult, MaskFormerLocalThresholdCreator, MaskFormerLocalApplier

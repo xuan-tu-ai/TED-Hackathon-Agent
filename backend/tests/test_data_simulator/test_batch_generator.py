@@ -55,15 +55,16 @@ class TestBatchGenerator:
         """Each row must have all required fields."""
         gen = BatchGenerator(seed=42)
         for row in gen.generate_train(num_days=1, robots=[0]):
+            assert hasattr(row, "cycle_id")
             assert hasattr(row, "robot_code")
             assert hasattr(row, "start_time")
             assert hasattr(row, "program_number")
-            assert hasattr(row, "infer_recorded_date")
             assert hasattr(row, "serial_number")
             assert hasattr(row, "phase")
             assert hasattr(row, "wire_feed_speed_mm_min")
             assert hasattr(row, "wire_temperature_c")
             assert hasattr(row, "welding_current_a")
+            assert hasattr(row, "anomaly_type")
             assert hasattr(row, "timestamp")
             break
 

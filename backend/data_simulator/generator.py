@@ -12,7 +12,7 @@ import random
 
 import numpy as np
 
-from backend.data_simulator.profiles import (
+from .profiles import (
     PROGRAM_PROFILES,
     SampledProfile,
     build_phase_envelope,
@@ -20,7 +20,7 @@ from backend.data_simulator.profiles import (
     sample_profile,
     sample_random_profile,
 )
-from backend.data_simulator.physics import CurrentDynamics, ThermalDynamics, NoiseGenerator
+from .physics import CurrentDynamics, ThermalDynamics, NoiseGenerator
 
 
 @dataclass

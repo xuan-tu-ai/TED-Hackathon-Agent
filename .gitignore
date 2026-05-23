@@ -14,7 +14,9 @@ build/
 *.db
 *.sqlite
 data/chroma_db/
-data/*.db
+data/*
+backend/notebooks/data/*
+backend/data/*
 
 # # Models
 # models/checkpoints/
@@ -47,6 +49,6 @@ logs/
 
 .python-version
 
-data
+
 .docker-data/
 

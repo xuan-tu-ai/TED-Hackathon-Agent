@@ -152,22 +152,14 @@ Status legend: `[ ]` pending / `[~]` in progress / `[x]` done
 
 ### Phase 7: Tune Mask Ratio — Validated by AUROC, not assumed
 
-- [ ] **T18: Add mask_ratio grid search to training notebook**
-  - Define mask_ratios = [0.15, 0.30, 0.50].
-  - Train short runs (5–10 epochs) with each ratio, record AUROC.
-  - Plot AUROC vs mask_ratio.
-  - File: `backend/notebooks/Training-MaskFormer.ipynb`
+- [x] **T18: Add mask_ratio grid search to training notebook**
+  - Short runs with mask_ratios [0.15, 0.30, 0.50], plot AUROC vs mask_ratio.
 
-- [ ] **T19: Select optimal mask_ratio**
-  - Pick ratio with highest AUROC on held-out data.
-  - Rationale: for high-frequency welding signals, lower masking may reduce MSE blur.
-  - Document selection in notebook markdown cell.
+- [x] **T19: Select optimal mask_ratio**
+  - Selected highest AUROC ratio; documented in notebook.
 
-- [ ] **T20: Apply selected mask_ratio to final training run**
-  - Set `mask_ratio` in `GLCAnomalyMaskFormerConfig`.
-  - Run full training with all previous fixes (JS + CNN + warmup + ramp).
-  - Save final checkpoint and training_extra.json.
-  - File: `backend/notebooks/Training-MaskFormer.ipynb`
+- [x] **T20: Apply selected mask_ratio to final training run**
+  - Full training with all fixes (JS + CNN + warmup + ramp); checkpoint saved.
 
 ---
 

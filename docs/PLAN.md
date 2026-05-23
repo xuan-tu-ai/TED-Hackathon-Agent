@@ -8,23 +8,24 @@
 Current test count: **~180+ tests** across anomaly detection (Sprint 1), agent system (Sprint 2), and codebase unification (Sprint 3).
 
 ## Active Sprints
-- [Sprint 8](docs/sprint-plans/sprint-8.md) — *Planned* — Codebase Documentation: Google Style docstrings + module README.md for every sub-package
-- [Sprint 11](docs/sprint-plans/sprint-11.md) — *Planned* — Multi-DB Compatibility: SQLite (local) + PostgreSQL (local Docker + Azure) via single `DATABASE_URL` env var
-- [Sprint 12](docs/sprint-plans/sprint-12.md) — *Planned* — GLC-AnomalyMaskFormer Correctness Fixes: vectorize GPU bottlenecks, numerical stability, RevIN pure-Tensor API, 2D axial PE, Minimax Phase B sign bug
-- [Sprint 13](docs/sprint-plans/sprint-13.md) — *Planned* — Local Inference API: Spark-free `*LocalInference` classes for all 3 variants (maskformer, flow_matching, reconstruction)
-- [Sprint 14](docs/sprint-plans/sprint-14.md) — *Completed* — Physics-based Welding Robot Data Simulator: LTI dynamics, colored noise, 4 anomaly types, 30-day dataset generation
-- [Sprint 15](docs/sprint-plans/sprint-15.md) — *Planned* — MaskFormer Training Fixes: JS divergence, CNN decoder, Phase-A warmup, gradient-norm logging, λ ramp, mask_ratio tuning
+- [Sprint 16](docs/sprint-plans/sprint-16.md) — *In Progress* — Data Simulator Realism + 6 New Anomalies + Phase-Aware Scoring
 
 ## Completed Sprints
 - [Sprint 0](docs/sprint-plans/sprint-0.md) — *Completed* — Project structure, directories, `__init__.py` files
 - [Sprint 1](docs/sprint-plans/sprint-1.md) — *Completed* — GLC-Flow V7 Model (24 tasks, 152+ tests)
 - [Sprint 2](docs/sprint-plans/sprint-2.md) — *Completed* — Multi-Agent System Migration (FastAPI + DSPy agents + React dashboard)
-- [Sprint 3](docs/sprint-plans/sprint-3.md) — *Completed* — Anomaly Detection module restructured to follow v6 patterns (Phase 1 migration + Phase 2 codebase unification: 3-axis separation)
-- [Sprint 4](docs/sprint-plans/sprint-4.md) — *Completed* — HITL auto-accept bug fix, rejection/timeout handling, defense-in-depth, frontend migration (SSE reconnection, Skip-to-Alert, stale closure fix, ChatPanel auto-scroll, CollapsibleStep redesign, PlanTracker improvements)
+- [Sprint 3](docs/sprint-plans/sprint-3.md) — *Completed* — Anomaly Detection codebase restructured to follow v6 patterns
+- [Sprint 4](docs/sprint-plans/sprint-4.md) — *Completed* — HITL bug fix, rejection/timeout handling, defense-in-depth, frontend migration
 - [Sprint 5](docs/sprint-plans/sprint-5.md) — *Completed* — ChatPanel bubble-based UI redesign (Issue 4)
 - [Sprint 6](docs/sprint-plans/sprint-6.md) — *Completed* — Backend concern separation & refactor (Issue 3)
-- [Sprint 7](docs/sprint-plans/sprint-7.md) — *Completed* — GLC-Anomaly-MaskFormer V7: Masked Predictive + Association Discrepancy dual-criterion anomaly detector
-- [Sprint 10](docs/sprint-plans/sprint-10.md) — *Completed* — Agent-Side Fixes: PlanTracker sync, Skill Library cleanup, Task/Step synchronization, backend/skill/frontend rendering fixes
+- [Sprint 7](docs/sprint-plans/sprint-7.md) — *Completed* — GLC-Anomaly-MaskFormer V7 dual-criterion detector
+- [Sprint 8](docs/sprint-plans/sprint-8.md) — *Completed* — Codebase Documentation: Google Style docstrings + module READMEs
+- [Sprint 10](docs/sprint-plans/sprint-10.md) — *Completed* — Agent-Side Fixes: PlanTracker sync, Skill Library cleanup
+- [Sprint 11](docs/sprint-plans/sprint-11.md) — *Completed* — Multi-DB Compatibility: SQLite + PostgreSQL via `DATABASE_URL`
+- [Sprint 12](docs/sprint-plans/sprint-12.md) — *Completed* — MaskFormer Correctness Fixes: GPU vectorization, RevIN API, 2D PE, Minimax sign bug
+- [Sprint 13](docs/sprint-plans/sprint-13.md) — *Completed* — Local Inference API: Spark-free `*LocalInference` classes for all 3 variants
+- [Sprint 14](docs/sprint-plans/sprint-14.md) — *Completed* — Physics-based Welding Robot Data Simulator
+- [Sprint 15](docs/sprint-plans/sprint-15.md) — *Completed* — MaskFormer Training Fixes: JS divergence, CNN decoder, warmup, λ ramp
 
 ## Milestones
 - [x] **M1:** GLC-Flow V7 Model Implementation (Sprint 1)
@@ -41,7 +42,7 @@ Current test count: **~180+ tests** across anomaly detection (Sprint 1), agent s
 - [ ] **M12:** GLC-AnomalyMaskFormer Correctness Fixes — GPU vectorization, numerical stability, RevIN API, 2D PE, Minimax convergence (Sprint 12)
 - [ ] **M13:** Local Inference API — Spark-free `*LocalInference` for all 3 variants (Sprint 13)
 - [x] **M14:** Physics-based Welding Robot Data Simulator — LTI dynamics, colored noise, 4 anomaly types, 30-day dataset (Sprint 14)
-- [ ] **M15:** MaskFormer Training Fixes — JS divergence, CNN decoder, Phase-A warmup, λ ramp, mask_ratio tuning (Sprint 15)
+- [x] **M15:** MaskFormer Training Fixes — JS divergence, CNN decoder, Phase-A warmup, λ ramp, mask_ratio tuning (Sprint 15)
 - [ ] **M16:** Real OT Data Integration
 - [ ] **M17:** Production Deployment & Hardening
 
@@ -88,11 +89,12 @@ frontend/                         ← React 18 + Vite + Zustand (SSE streaming, 
 | 7 | GLC-Anomaly-MaskFormer V7 | ✅ Done | New model (`GLCAnomalyMaskFormer`) implementing Masked Predictive + Association Discrepancy; reuses V7 RevIN/Patchify/encoders + OrthogonalityLoss + MADThreshold; new layers (MaskToken, SensorBlockMasking, AnomalyAttention, ReconstructionDecoder, ContextEmbedding); new criterions (MaskedReconstructionLoss, AssociationDiscrepancyLoss); single-stage minimax trainer; dual-scoring inference (recon × discrepancy heatmap); 5 new test files |
 | 8 | Codebase Documentation | ✅ Done | Google Style docstrings for every class/function/file across `anomaly_detection/` (48 files), `robot_agent/` (40 files), `agent_knowledge/`; module README.md files (18+) for each sub-package explaining structure, development patterns, and design rationale |
 | 10 | Agent-Side Fixes | ✅ Done | PlanTracker sync, skill library cleanup, task/step desync fix, backend/skill/frontend rendering fixes |
-| 11 | Multi-DB Compatibility | 📝 Planned | Env-driven `DATABASE_URL`; cross-dialect JSON columns (`JSONB` on Postgres); Alembic baseline migration; driver-aware engine options (SSL for Azure, pooling for Postgres, `check_same_thread` for SQLite); test suite parameterized; Docker Compose for local Postgres; Azure Flexible Server deployment docs |
-| 12 | MaskFormer Correctness Fixes | 📝 Planned | Vectorize SensorBlockMasking (scatter_); KL log stability; RevIN pure-Tensor API; delete broken `flatten_to_tokens`; 2D axial PositionalEmbedding; fix Minimax Phase B sign bug |
-| 13 | Local Inference API | 📝 Planned | Spark-free `*LocalInference` classes for all 3 variants (maskformer, flow_matching, reconstruction) — `score_batch()` + `fit_threshold()` + `apply_threshold()` with plain Python args |
-| 14 | Welding Data Simulator | ✅ Done | Physics-based generator: LTI current dynamics, exponential thermal model, colored noise per sensor, 16 program profiles, 4 robots, 4 anomaly types (spike, thermal drift, flatline, phase shift), 30-day CSV output |
-| 15 | MaskFormer Training Fixes | 📝 Planned | JS divergence, CNN decoder, Phase-A warmup, gradient-norm logging, λ ramp schedule, mask_ratio grid search (20 tasks, 7 phases) |
+| 11 | Multi-DB Compatibility | ✅ Done | SQLite + PostgreSQL via single `DATABASE_URL` env var; Alembic migrations; Docker Compose; Azure deployment |
+| 12 | MaskFormer Correctness Fixes | ✅ Done | GPU vectorization, RevIN pure-Tensor API, 2D axial PE, Minimax Phase B sign fix |
+| 13 | Local Inference API | ✅ Done | Spark-free `*LocalInference` for maskformer, flow_matching, reconstruction |
+| 14 | Welding Data Simulator | ✅ Done | LTI dynamics, colored noise, 4 anomaly types, 30-day CSV output |
+| 15 | MaskFormer Training Fixes | ✅ Done | JS divergence, CNN decoder, Phase-A warmup, gradient-norm logging, λ ramp, mask_ratio tuning |
+| 16 | Data Simulator Realism + 6 New Anomalies + Phase-Aware Scoring | 🏗️ In Progress | Momentum noise (AR-1), local-window variance, U-pattern; 6 new anomaly types; phase-aware scoring with rampup/active P95 thresholds; 138/138 tests passing |
 
 ## Backlog / Future Work
 - **Real OT data integration** — Replace mock simulation with live paint-shop sensor data feed
