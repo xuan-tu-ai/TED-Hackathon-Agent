@@ -22,8 +22,10 @@ from .v6_vq import V6VQAnomalyDetectionModel
 from .v6_rvq import V6RVQAnomalyDetectionModel
 from .glc_flow_v7 import GLCFlowV7
 from .glc_recon_v8 import GLCReconV8
+from .glc_mae_v8 import GLCMaeV8
 
 _STR_TO_MODEL_CLS = {
+    "glc_mae_v8": GLCMaeV8,
     "glc_recon_v8": GLCReconV8,
     "glc_flow_v7": GLCFlowV7,
     "v6_rvq": V6RVQAnomalyDetectionModel,
@@ -47,6 +49,7 @@ class SupportedAnomalyDetectionModels(Enum):
     V6_RVQ = V6RVQAnomalyDetectionModel
     GLC_FLOW_V7 = GLCFlowV7
     GLC_RECON_V8 = GLCReconV8
+    GLC_MAE_V8 = GLCMaeV8
 
 
 class ReconstructionModels(Enum):
@@ -62,6 +65,7 @@ class ReconstructionModels(Enum):
     V6_VQ = V6VQAnomalyDetectionModel
     V6_RVQ = V6RVQAnomalyDetectionModel
     GLC_RECON_V8 = GLCReconV8
+    GLC_MAE_V8 = GLCMaeV8
 
 
 class FlowMatchingModels(Enum):

@@ -36,7 +36,8 @@ from .bottleneck import (
     LegacyFactorizedVectorQuantizerEMA,
 )
 
-from .reconstruction import PerTokenDecoder, CNNDecoder, ReconstructionDecoder
+from .reconstruction import PerTokenDecoder, CNNDecoder, ReconstructionDecoder, LightDecoder
+from .masking import MaskToken, random_masking
 
 __all__ = [
     "GlobalRevIN",
@@ -75,4 +76,7 @@ __all__ = [
     "PerTokenDecoder",
     "CNNDecoder",
     "ReconstructionDecoder",
+    "LightDecoder",
+    "MaskToken",
+    "random_masking",
 ]

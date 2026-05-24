@@ -33,3 +33,4 @@ from .v6_vq import V6VQAnomalyDetectionModel
 from .v6_rvq import V6RVQAnomalyDetectionModel
 from .glc_flow_v7 import GLCFlowV7
 from .glc_recon_v8 import GLCReconV8
+from .glc_mae_v8 import GLCMaeV8, GLCMaeV8Config

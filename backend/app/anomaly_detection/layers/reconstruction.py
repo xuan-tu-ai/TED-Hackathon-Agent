@@ -108,7 +108,7 @@ class CNNDecoder(nn.Module):
         Returns:
             patches_pred: [B, N, patch_size]
         """
-        B, N, D = tokens.shape
+        B, N, _ = tokens.shape
         C, P, PS = self.num_sensors, self.num_patches, self.patch_size
 
         # Stage 1: per-token decode
@@ -122,6 +122,45 @@ class CNNDecoder(nn.Module):
         patches_out = refined.reshape(B, C, P, PS)
         # Tanh bounds output to [-1, 1] matching PerPatchRevIN target range
         return torch.tanh(patches_out.reshape(B, N, PS))
+
+
+class LightDecoder(nn.Module):
+    """Lightweight 2-layer MLP decoder for MAE reconstruction.
+
+    Maps each token [D] → [patch_size] via a hidden bottleneck with GELU.
+    No Tanh — GlobalRevIN targets are not bounded to [-1, 1].
+
+    Used by GLCMaeV8 instead of CNNDecoder.  Discarded after training
+    (only the encoder weights matter for anomaly scoring).
+
+    Args:
+        d_model:    Model dimension D (default 128).
+        patch_size: Number of timesteps per patch (default 32).
+    """
+
+    def __init__(self, d_model: int = 128, patch_size: int = 32) -> None:
+        super().__init__()
+        self.d_model = d_model
+        self.patch_size = patch_size
+        self.net = nn.Sequential(
+            nn.Linear(d_model, d_model // 2),
+            nn.GELU(),
+            nn.Linear(d_model // 2, patch_size),
+        )
+
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+        """Decode all token positions independently.
+
+        Args:
+            tokens: [B, N, D]
+
+        Returns:
+            patches_pred: [B, N, patch_size]  (unbounded)
+        """
+        return self.net(tokens)
+
+    def extra_repr(self) -> str:
+        return f"d_model={self.d_model}, patch_size={self.patch_size}"
 
 
 # Backward-compatible alias
