@@ -13,7 +13,7 @@ Methodologies
 -------------
 - ``reconstruction`` — v1–v6 VQ/RVQ bottleneck models (dual shape + window errors)
 - ``flow_matching`` — GLCFlowV7 CNF-based NLL scores + MAD threshold
-- ``maskformer`` — GLCAnomalyMaskFormer dual heatmap + percentile threshold
+- ``recon_v8`` — GLCReconV8 per-patch reconstruction error + multi-score MAD threshold
 """
 from app.anomaly_detection.inference.reconstruction import (
     ReconPreResult,
@@ -33,12 +33,10 @@ from app.anomaly_detection.inference.flow_matching import (
     FlowMatchingLocalThresholdCreator,
     FlowMatchingLocalApplier,
 )
-from app.anomaly_detection.inference.maskformer import (
-    MaskFormerPreResult,
-    MaskFormerApplier,
-    MaskFormerLocalPreResult,
-    MaskFormerLocalThresholdCreator,
-    MaskFormerLocalApplier,
+from app.anomaly_detection.inference.recon_v8 import (
+    Reconf8LocalPreResult,
+    Reconf8LocalThresholdCreator,
+    Reconf8LocalApplier,
 )
 
 __all__ = [
@@ -58,10 +56,8 @@ __all__ = [
     "FlowMatchingLocalPreResult",
     "FlowMatchingLocalThresholdCreator",
     "FlowMatchingLocalApplier",
-    # MaskFormer (GLCAnomalyMaskFormer)
-    "MaskFormerPreResult",
-    "MaskFormerApplier",
-    "MaskFormerLocalPreResult",
-    "MaskFormerLocalThresholdCreator",
-    "MaskFormerLocalApplier",
+    # Recon V8 (GLCReconV8)
+    "Reconf8LocalPreResult",
+    "Reconf8LocalThresholdCreator",
+    "Reconf8LocalApplier",
 ]

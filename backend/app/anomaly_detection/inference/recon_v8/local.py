@@ -1,8 +1,18 @@
-"""Local-compatible inference classes for MaskFormer methodology.
+"""Local-compatible inference classes for GLCReconV8 methodology.
 
-Provides Spark-free equivalents of MaskFormerPreResult, MaskFormerThresholdCreator,
-and MaskFormerApplier that accept plain Python dicts / torch tensors / np.ndarrays
-instead of Spark Broadcast variables and Pandas UDFs.
+GLCReconV8 is a full-reconstruction model operating on macro-windows with
+patch-based processing.  The inference pipeline:
+
+1. **PreResult**: score each file by sliding a 240-step window with 16-step
+   stride, computing per-patch reconstruction MSE heatmap via
+   ``compute_heatmap()``, and aggregating into a timestep-level score map.
+   Produces global + phase-aware (rampup/active) P95 scores.
+   Optionally passes robot/program context indices to the model.
+
+2. **ThresholdCreator**: calibrate multi-score MAD threshold from normal-file
+   pre-results (one threshold per score key).
+
+3. **Applier**: apply OR-logic verdict using the multi-score thresholds.
 """
 
 from typing import Optional
@@ -11,9 +21,8 @@ import torch
 import numpy as np
 
 import app.anomaly_detection.constants as constants
-from app.anomaly_detection.models import MaskFormerModels, create_model
+from app.anomaly_detection.models import ReconstructionModels, create_model
 from app.anomaly_detection.layers.scorer import MADThreshold
-
 
 
 def _heatmap_to_timestep_scores(
@@ -25,7 +34,7 @@ def _heatmap_to_timestep_scores(
     for p in range(P):
         t_s = p * patch_stride
         t_e = min(t_s + patch_size, seq_len)
-        score_map[:, t_s:t_e] = np.maximum(score_map[:, t_s:t_e], heatmap[:, p : p + 1])
+        score_map[:, t_s:t_e] = np.maximum(score_map[:, t_s:t_e], heatmap[:, p: p + 1])
     return score_map
 
 
@@ -40,9 +49,6 @@ def _detect_phase_regions(
     - Rampup: region where S0 is rising from 0 to target value.
     - Active: region where S0 is stable at target (near max).
     - Winddown: region where S0 is falling back to 0.
-
-    This is signal-derived (not metadata-derived) so it works on inference
-    data where ground-truth phase labels do not exist.
 
     Args:
         heatmap: Accumulated score map ``[C, T]`` where C includes sensor 0.
@@ -112,36 +118,60 @@ def _detect_phase_regions(
     }
 
 
-class MaskFormerLocalPreResult:
-    """Compute dual-criterion anomaly heatmaps without Spark/Broadcast.
+class Reconf8LocalPreResult:
+    """Compute per-patch reconstruction error heatmaps for GLCReconV8.
 
-    Mirrors MaskFormerPreResult but accepts plain Python arguments.
-    Exposes ``score_batch(records)`` returning ``list[dict]``.
+    Mirrors the MaskFormerLocalPreResult pattern but uses
+    ``GLCReconV8.compute_heatmap()`` instead of the MaskFormer dual-criterion
+    heatmap.  Operates on macro-window records with sliding window aggregation.
+
+    Optionally passes robot/program context to the model via codebook dicts:
+        robot_codebook:   {"robot_code_str": int_idx, ...}
+        program_codebook: {"program_number_str": int_idx, ...}
+
+    If the codebooks are provided and a record has "robot_code" / "program_number",
+    the corresponding indices are passed to ``compute_heatmap``.
     """
 
     def __init__(
         self,
-        model_version: MaskFormerModels,
+        model_version: ReconstructionModels,
         metadata: dict,
         state_dict: dict,
         quantile: float = 0.95,
         k_skip: int = 1,
-        fast: bool = True,
         device: str = "cpu",
         sensors: Optional[list[str]] = None,
+        robot_codebook: Optional[dict[str, int]] = None,
+        program_codebook: Optional[dict[str, int]] = None,
     ):
         self.metadata = metadata
         self.k_skip = k_skip
         self.quantile = quantile
-        self.fast = fast
         self.device = torch.device(device)
-        # Explicit sensor name list takes priority.  If omitted, falls back to
-        # constants.SENSORS when counts match; otherwise uses generic "sensor_N" names.
         self._sensors_override = sensors
+        self.robot_codebook = robot_codebook or {}
+        self.program_codebook = program_codebook or {}
 
         self.model = create_model(model_version, self.metadata)
         self.model.load_state_dict(state_dict)
         self.model.to(self.device).eval()
+
+    def _get_context_tensors(
+        self, robot_code: str, program_number: str
+    ) -> tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
+        """Look up robot/program indices from codebooks and return tensors."""
+        robot_idx = None
+        program_idx = None
+        if self.robot_codebook and str(robot_code) in self.robot_codebook:
+            robot_idx = torch.tensor(
+                [self.robot_codebook[str(robot_code)]], dtype=torch.long, device=self.device
+            )
+        if self.program_codebook and str(program_number) in self.program_codebook:
+            program_idx = torch.tensor(
+                [self.program_codebook[str(program_number)]], dtype=torch.long, device=self.device
+            )
+        return robot_idx, program_idx
 
     def score_batch(self, records: list[dict]) -> list[dict]:
         """Compute per-file anomaly scores for a batch of records.
@@ -156,11 +186,10 @@ class MaskFormerLocalPreResult:
         Returns:
             list[dict] with keys:
                 robot_code, program_number, start_time, p{q}_score,
+                p{q}_score_rampup, p{q}_score_active,
                 heatmap_{s} (per-sensor timestep array),
                 valid_start_idx, valid_end_idx
         """
-        # Derive sensor count and names from model metadata rather than from the global
-        # constants module so this class works with any sensor configuration.
         C = self.metadata.get("num_sensors") or self.model.num_sensors
         if self._sensors_override is not None:
             sensors = self._sensors_override
@@ -171,8 +200,7 @@ class MaskFormerLocalPreResult:
         pq = f"p{self.quantile * 100:.0f}"
         q = self.quantile * 100
         k_skip = self.k_skip
-        fast = self.fast
-        W = self.metadata.get("window_size") or self.metadata.get("seq_len") or 240
+        W = self.metadata.get("seq_len") or 240
         patch_size = self.metadata.get("patch_size", 32)
         patch_stride = self.metadata.get("patch_stride", 16)
 
@@ -196,6 +224,12 @@ class MaskFormerLocalPreResult:
                 results.append(res)
                 continue
 
+            # Resolve context indices once per record (same for all windows)
+            robot_idx_rec, program_idx_rec = self._get_context_tensors(
+                str(rec.get("robot_code", "")),
+                str(rec.get("program_number", "")),
+            )
+
             min_s = int(serials[0])
             total_steps = int(serials[-1] - min_s + W)
 
@@ -206,31 +240,39 @@ class MaskFormerLocalPreResult:
             with torch.no_grad():
                 for start_i in range(0, N, batch_size):
                     end_i = min(start_i + batch_size, N)
-                    batch_raw = torch.from_numpy(windows[start_i:end_i].astype(np.float32)).to(self.device)
+                    batch_raw = torch.from_numpy(
+                        windows[start_i:end_i].astype(np.float32)
+                    ).to(self.device)
                     batch_serials = serials[start_i:end_i]
+                    cur_B = len(batch_raw)
 
-                    # Raw recon MSE heatmap — cross-file comparable (no per-sample normalisation).
-                    heatmaps = self.model.compute_recon_heatmap({"input": batch_raw}, fast=fast)
+                    # Build context tensors expanded to current batch size
+                    batch_ctx: dict = {"input": batch_raw}
+                    if robot_idx_rec is not None:
+                        batch_ctx["robot_idx"] = robot_idx_rec.expand(cur_B)
+                    if program_idx_rec is not None:
+                        batch_ctx["program_idx"] = program_idx_rec.expand(cur_B)
+
+                    heatmaps = self.model.compute_heatmap(batch_ctx)
                     heatmaps_np = heatmaps.cpu().numpy()
 
-                    for bi in range(len(batch_raw)):
+                    for bi in range(cur_B):
                         t_off = int(batch_serials[bi] - min_s)
-                        ts_scores = _heatmap_to_timestep_scores(heatmaps_np[bi], W, patch_size, patch_stride)
-                        score_accum[:, t_off : t_off + W] += ts_scores
-                        weight_accum[t_off : t_off + W] += 1.0
+                        ts_scores = _heatmap_to_timestep_scores(
+                            heatmaps_np[bi], W, patch_size, patch_stride
+                        )
+                        score_accum[:, t_off: t_off + W] += ts_scores
+                        weight_accum[t_off: t_off + W] += 1.0
 
             final_map = score_accum / (weight_accum[None, :] + 1e-6)
 
             valid_start = int(serials[k_skip] - min_s)
             valid_end = int(serials[-1 - k_skip] - min_s + W)
 
-            # File classification score: q-th percentile of the accumulated
-            # heatmap in the valid region — global score (existing behaviour).
+            # File classification score: q-th percentile of accumulated heatmap
             file_score_global = float(np.percentile(final_map[:, valid_start:valid_end], q))
 
-            # Phase-specific scores: rampup and active region P95.
-            # Rampup-localized anomalies (phase shift, overshoot degradation)
-            # are diluted by global P95 but amplified in phase-specific scores.
+            # Phase-specific scores
             phase_regions = _detect_phase_regions(final_map, sensors)
             rampup_start, rampup_end = phase_regions["rampup"]
             active_start, active_end = phase_regions["active"]
@@ -266,8 +308,8 @@ class MaskFormerLocalPreResult:
         return results
 
 
-class MaskFormerLocalThresholdCreator:
-    """Spark-free MAD-based threshold creator for MaskFormer scores.
+class Reconf8LocalThresholdCreator:
+    """Multi-score MAD threshold creator for GLCReconV8 scores.
 
     Supports multi-score threshold: can calibrate separate MAD thresholds
     for each score key (e.g. ``p95_score``, ``p95_score_rampup``,
@@ -276,10 +318,7 @@ class MaskFormerLocalThresholdCreator:
     (OR logic).
 
     Uses Median Absolute Deviation (MAD) for contamination-robust threshold
-    estimation.  threshold = median + 3 × 1.4826 × MAD
-
-    The ``quantile`` parameter controls the score key prefix (e.g. ``0.95``
-    → ``"p95_score"``).
+    estimation.  threshold = median + 3 * 1.4826 * MAD
     """
 
     def __init__(
@@ -293,7 +332,7 @@ class MaskFormerLocalThresholdCreator:
         self._medians: dict[str, float] = {}
         self._mads: dict[str, float] = {}
 
-    def fit(self, normal_scores: dict[str, torch.Tensor]) -> "MaskFormerLocalThresholdCreator":
+    def fit(self, normal_scores: dict[str, torch.Tensor]) -> "Reconf8LocalThresholdCreator":
         """Compute MAD-based thresholds from calibration scores dict.
 
         Args:
@@ -317,7 +356,7 @@ class MaskFormerLocalThresholdCreator:
 
     def fit_from_pre_results(
         self, pre_result_list: list[dict]
-    ) -> "MaskFormerLocalThresholdCreator":
+    ) -> "Reconf8LocalThresholdCreator":
         """Fit from pre-result dicts (output of score_batch)."""
         scores_dict: dict[str, list[float]] = {}
         for key in self.score_keys:
@@ -339,7 +378,7 @@ class MaskFormerLocalThresholdCreator:
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> "MaskFormerLocalThresholdCreator":
+    def from_dict(cls, d: dict) -> "Reconf8LocalThresholdCreator":
         obj = cls(
             quantile=d.get("quantile", 0.95),
             score_keys=d.get("score_keys"),
@@ -351,24 +390,18 @@ class MaskFormerLocalThresholdCreator:
 
     @property
     def threshold(self) -> float | None:
-        """Backward-compatible single-threshold accessor.
-
-        Returns the threshold for the first score key (typically global).
-        """
+        """Backward-compatible single-threshold accessor (first score key)."""
         if self.thresholds:
             return next(iter(self.thresholds.values()))
         return None
 
 
-class MaskFormerLocalApplier:
-    """Apply per-sensor heatmap thresholds without Spark/Broadcast.
+class Reconf8LocalApplier:
+    """Apply per-sensor heatmap thresholds for GLCReconV8.
 
     Supports multi-score verdict: a file is anomalous if ANY score exceeds
     its corresponding threshold (OR logic).  The ``triggered_by`` field
     indicates which score(s) triggered the anomaly verdict.
-
-    Mirrors MaskFormerApplier but accepts a plain dict for threshold
-    config and returns ``list[dict]`` instead of a Pandas UDF.
     """
 
     def __init__(self, threshold_config: dict, quantile: float = 0.95):
@@ -379,7 +412,7 @@ class MaskFormerLocalApplier:
         """Apply thresholds to pre-result dicts.
 
         Args:
-            pre_results: Output from MaskFormerLocalPreResult.score_batch().
+            pre_results: Output from Reconf8LocalPreResult.score_batch().
 
         Returns:
             list[dict] with added keys:
@@ -393,7 +426,6 @@ class MaskFormerLocalApplier:
         # Multi-score thresholds: dict of score_key -> threshold
         score_thresholds: dict[str, float] = self.threshold_config.get("score_thresholds", {})
 
-        # Infer sensor names from the first pre-result
         if not pre_results:
             return []
         sensors = [k[len("heatmap_"):] for k in pre_results[0] if k.startswith("heatmap_")]

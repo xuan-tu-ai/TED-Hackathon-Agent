@@ -8,9 +8,7 @@ Available constructors:
   - FlowMatchingTrainer        — two-stage trainer for GLC-Flow V7 (encoder + CNF).
   - Stage1Trainer / Stage2Trainer — internal building blocks for the two stages.
   - Evaluator / EvalResult     — evaluation harness and result container.
-  - MaskFormerTrainer          — minimax trainer for GLCAnomalyMaskFormer.
-  - MaskFormerEvaluator        — evaluation harness specific to MaskFormer.
-  - MaskFormerTrainerRunner    — top-level orchestrator (parallel to FlowMatchingTrainer).
+  - GLCReconV8Trainer          — simple full-reconstruction trainer for GLCReconV8.
   - RawWindowDataset / RawWindowMosaicDataset    — raw-only datasets.
   - StatWindowDataset / StatWindowMosaicDataset  — stat-context datasets.
   - write_sdf_to_mds           — Spark-to-MDS serialisation helper.
@@ -30,8 +28,6 @@ from app.anomaly_detection.training.flow_matching_trainer import (
     Evaluator,
     EvalResult,
 )
-from app.anomaly_detection.training.maskformer_trainer import (
-    MaskFormerTrainer,
-    MaskFormerEvaluator,
-    MaskFormerTrainerRunner,
+from app.anomaly_detection.training.glc_recon_v8_trainer import (
+    GLCReconV8Trainer,
 )

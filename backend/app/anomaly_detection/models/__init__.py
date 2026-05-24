@@ -9,8 +9,8 @@ This package provides the concrete neural-network models that implement the
 *   **V6 VQ / V6 RVQ** — Residual VQ extensions over V5.
 *   **GLC-Flow V7** — Continuous Normalising Flow with dual-stream encoder,
     transformer backbone, and CNF likelihood head (flow-matching paradigm).
-*   **GLC-Anomaly-MaskFormer V7** — Masked predictive patch reconstruction +
-    association discrepancy dual-criterion detector (maskformer paradigm).
+*   **GLC-Recon V8** — Full reconstruction with dual-stream CNN encoders,
+    standard transformer backbone, and per-token MSE loss (recon paradigm).
 
 All models are instantiated through :func:`create_model` (see
 :mod:`app.anomaly_detection.models.factory`) — never directly.
@@ -21,7 +21,6 @@ from .factory import (
     SupportedAnomalyDetectionModels,
     ReconstructionModels,
     FlowMatchingModels,
-    MaskFormerModels,
     create_model,
     count_parameters,
     get_model_summary,
@@ -33,4 +32,4 @@ from .v5_vq_file import V5VQFileAnomalyDetectionModel
 from .v6_vq import V6VQAnomalyDetectionModel
 from .v6_rvq import V6RVQAnomalyDetectionModel
 from .glc_flow_v7 import GLCFlowV7
-from .glc_anomaly_maskformer import GLCAnomalyMaskFormer
+from .glc_recon_v8 import GLCReconV8

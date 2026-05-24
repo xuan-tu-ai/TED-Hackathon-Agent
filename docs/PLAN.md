@@ -9,6 +9,7 @@ Current test count: **~180+ tests** across anomaly detection (Sprint 1), agent s
 
 ## Active Sprints
 - [Sprint 16](docs/sprint-plans/sprint-16.md) — *In Progress* — Data Simulator Realism + 6 New Anomalies + Phase-Aware Scoring
+- [Sprint 17](docs/sprint-plans/sprint-17.md) — *Planned* — GLC-Recon V8 refactor: full reconstruction + dual-stream CNN encoders
 
 ## Completed Sprints
 - [Sprint 0](docs/sprint-plans/sprint-0.md) — *Completed* — Project structure, directories, `__init__.py` files
@@ -95,6 +96,7 @@ frontend/                         ← React 18 + Vite + Zustand (SSE streaming, 
 | 14 | Welding Data Simulator | ✅ Done | LTI dynamics, colored noise, 4 anomaly types, 30-day CSV output |
 | 15 | MaskFormer Training Fixes | ✅ Done | JS divergence, CNN decoder, Phase-A warmup, gradient-norm logging, λ ramp, mask_ratio tuning |
 | 16 | Data Simulator Realism + 6 New Anomalies + Phase-Aware Scoring | 🏗️ In Progress | Momentum noise (AR-1), local-window variance, U-pattern; 6 new anomaly types; phase-aware scoring with rampup/active P95 thresholds; 138/138 tests passing |
+| 17 | GLC-Recon V8 Refactor | Planned | Replace MaskFormer with full reconstruction, dual-stream CNN encoders, new trainer |
 
 ## Backlog / Future Work
 - **Real OT data integration** — Replace mock simulation with live paint-shop sensor data feed

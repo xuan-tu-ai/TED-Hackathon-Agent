@@ -1,4 +1,4 @@
-"""Tests for local-compatible inference classes (MaskFormer, FlowMatching, Reconstruction).
+"""Tests for local-compatible inference classes (ReconV8, FlowMatching, Reconstruction).
 
 Each variant is tested end-to-end with synthetic data:
 1. Instantiate all 3 classes (LocalPreResult, LocalThresholdCreator, LocalApplier)
@@ -14,15 +14,15 @@ import torch
 import numpy as np
 
 from app.anomaly_detection.models import (
-    MaskFormerModels,
+    ReconstructionModels,
     FlowMatchingModels,
     SupportedAnomalyDetectionModels,
     create_model,
 )
 
 
-def make_synthetic_maskformer_records(n_files: int = 4, n_windows: int = 5):
-    """Create synthetic records mimicking the MaskFormerPreResult input format."""
+def make_synthetic_recon_v8_records(n_files: int = 4, n_windows: int = 5):
+    """Create synthetic records mimicking the Reconf8LocalPreResult input format."""
     C, W = 6, 240
     records = []
     for i in range(n_files):
@@ -78,20 +78,20 @@ def make_synthetic_recon_records(n_files: int = 4, n_windows: int = 5):
 
 
 # =============================================================================
-# MaskFormer
+# Recon V8 (GLCReconV8)
 # =============================================================================
 
 
-class TestMaskFormerLocalPipeline:
+class TestReconf8LocalPipeline:
     def setup_method(self):
-        self.model = create_model("glc_anomaly_maskformer", {"num_sensors": 6, "seq_len": 240, "num_robots": 4, "num_programs": 3, "d_model": 32, "transformer_layers": 1, "transformer_heads": 2, "ffn_dim": 64, "use_context_embeddings": False})
+        self.model = create_model("glc_recon_v8", {"num_sensors": 6, "seq_len": 240, "d_model": 32, "transformer_layers": 1, "transformer_heads": 2, "ffn_dim": 64})
         self.metadata = self.model.get_metadata()
         self.state_dict = self.model.state_dict()
 
     def test_local_pre_result_output_keys(self):
-        from app.anomaly_detection.inference.maskformer.local import MaskFormerLocalPreResult
-        pre = MaskFormerLocalPreResult(MaskFormerModels.GLC_ANOMALY_MASKFORMER, self.metadata, self.state_dict, quantile=0.95, k_skip=1, fast=True, device="cpu")
-        records = make_synthetic_maskformer_records(3, 5)
+        from app.anomaly_detection.inference.recon_v8.local import Reconf8LocalPreResult
+        pre = Reconf8LocalPreResult(ReconstructionModels.GLC_RECON_V8, self.metadata, self.state_dict, quantile=0.95, k_skip=1, device="cpu")
+        records = make_synthetic_recon_v8_records(3, 5)
         results = pre.score_batch(records)
         assert len(results) == 3
         required = {"robot_code", "program_number", "start_time", "p95_score",
@@ -104,15 +104,14 @@ class TestMaskFormerLocalPipeline:
 
     def test_phase_scores_detected(self):
         """Phase-specific scores should be present and finite in all results."""
-        from app.anomaly_detection.inference.maskformer.local import MaskFormerLocalPreResult
-        pre = MaskFormerLocalPreResult(MaskFormerModels.GLC_ANOMALY_MASKFORMER, self.metadata, self.state_dict, quantile=0.95, k_skip=0, fast=True, device="cpu")
-        records = make_synthetic_maskformer_records(4, 5)
+        from app.anomaly_detection.inference.recon_v8.local import Reconf8LocalPreResult
+        pre = Reconf8LocalPreResult(ReconstructionModels.GLC_RECON_V8, self.metadata, self.state_dict, quantile=0.95, k_skip=0, device="cpu")
+        records = make_synthetic_recon_v8_records(4, 5)
         results = pre.score_batch(records)
         for r in results:
             assert np.isfinite(r["p95_score"])
             assert np.isfinite(r["p95_score_rampup"])
             assert np.isfinite(r["p95_score_active"])
-            # Phase regions should be detected (even if all-zero for random data)
             r_start, r_end = r.get("phase_rampup", (0, 0))
             a_start, a_end = r.get("phase_active", (0, 0))
             assert r_start >= 0 and r_end >= r_start
@@ -120,47 +119,40 @@ class TestMaskFormerLocalPipeline:
 
     def test_multi_score_threshold_creator(self):
         """ThresholdCreator should support multiple score keys."""
-        from app.anomaly_detection.inference.maskformer.local import (
-            MaskFormerLocalPreResult, MaskFormerLocalThresholdCreator,
+        from app.anomaly_detection.inference.recon_v8.local import (
+            Reconf8LocalPreResult, Reconf8LocalThresholdCreator,
         )
-        pre = MaskFormerLocalPreResult(MaskFormerModels.GLC_ANOMALY_MASKFORMER, self.metadata, self.state_dict, quantile=0.95, k_skip=0, fast=True, device="cpu")
-        records = make_synthetic_maskformer_records(4, 5)
+        pre = Reconf8LocalPreResult(ReconstructionModels.GLC_RECON_V8, self.metadata, self.state_dict, quantile=0.95, k_skip=0, device="cpu")
+        records = make_synthetic_recon_v8_records(4, 5)
         results = pre.score_batch(records)
-        # Multi-score with all 3 keys
-        tc = MaskFormerLocalThresholdCreator(quantile=0.95, score_keys=["p95_score", "p95_score_rampup", "p95_score_active"])
+        tc = Reconf8LocalThresholdCreator(quantile=0.95, score_keys=["p95_score", "p95_score_rampup", "p95_score_active"])
         tc.fit_from_pre_results(results)
         assert "p95_score" in tc.thresholds
-        # p95_score_rampup and p95_score_active may be 0 for random data
-        # (no phase structure detected) — that's acceptable, just check keys exist
         for key in ["p95_score_rampup", "p95_score_active"]:
             assert key in tc.thresholds, f"Missing threshold key: {key}"
-        # Global score should have a non-zero threshold
         assert tc.thresholds["p95_score"] > 0.0
         d = tc.to_dict()
-        tc2 = MaskFormerLocalThresholdCreator.from_dict(d)
+        tc2 = Reconf8LocalThresholdCreator.from_dict(d)
         assert tc2.thresholds == tc.thresholds
 
     def test_multi_score_applier_or_logic(self):
         """Applier with multi-score thresholds should flag file if ANY score exceeds threshold."""
-        from app.anomaly_detection.inference.maskformer.local import (
-            MaskFormerLocalPreResult, MaskFormerLocalThresholdCreator, MaskFormerLocalApplier,
+        from app.anomaly_detection.inference.recon_v8.local import (
+            Reconf8LocalPreResult, Reconf8LocalThresholdCreator, Reconf8LocalApplier,
         )
-        pre = MaskFormerLocalPreResult(MaskFormerModels.GLC_ANOMALY_MASKFORMER, self.metadata, self.state_dict, quantile=0.95, k_skip=0, fast=True, device="cpu")
-        records = make_synthetic_maskformer_records(4, 5)
+        pre = Reconf8LocalPreResult(ReconstructionModels.GLC_RECON_V8, self.metadata, self.state_dict, quantile=0.95, k_skip=0, device="cpu")
+        records = make_synthetic_recon_v8_records(4, 5)
         results = pre.score_batch(records)
-        tc = MaskFormerLocalThresholdCreator(quantile=0.95, score_keys=["p95_score", "p95_score_rampup", "p95_score_active"])
+        tc = Reconf8LocalThresholdCreator(quantile=0.95, score_keys=["p95_score", "p95_score_rampup", "p95_score_active"])
         tc.fit_from_pre_results(results)
-        # Use a low global threshold to force trigger (rampup may be 0 for random data)
         low_thresholds = {"p95_score": tc.thresholds["p95_score"] * 0.01}
-        applier = MaskFormerLocalApplier({
+        applier = Reconf8LocalApplier({
             "global_threshold": 1e10,
             "score_thresholds": low_thresholds,
         }, quantile=0.95)
         applied = applier.apply(results)
-        # At least one file should be flagged due to the low global threshold
         any_flagged = any(r["is_file_anomaly"] for r in applied)
         assert any_flagged, "Expected at least one file flagged with low thresholds"
-        # Check that triggered_by contains the score key that triggered
         for r in applied:
             if r["is_file_anomaly"]:
                 assert "p95_score" in r["triggered_by"], (
@@ -168,19 +160,19 @@ class TestMaskFormerLocalPipeline:
                 )
 
     def test_local_pre_result_scores_are_finite(self):
-        from app.anomaly_detection.inference.maskformer.local import MaskFormerLocalPreResult
-        pre = MaskFormerLocalPreResult(MaskFormerModels.GLC_ANOMALY_MASKFORMER, self.metadata, self.state_dict, quantile=0.95, k_skip=0, fast=True, device="cpu")
-        records = make_synthetic_maskformer_records(3, 5)
+        from app.anomaly_detection.inference.recon_v8.local import Reconf8LocalPreResult
+        pre = Reconf8LocalPreResult(ReconstructionModels.GLC_RECON_V8, self.metadata, self.state_dict, quantile=0.95, k_skip=0, device="cpu")
+        records = make_synthetic_recon_v8_records(3, 5)
         results = pre.score_batch(records)
         for r in results:
             assert np.isfinite(r["p95_score"])
 
     def test_local_threshold_creator_fit_and_serialize(self):
-        from app.anomaly_detection.inference.maskformer.local import MaskFormerLocalPreResult, MaskFormerLocalThresholdCreator
-        pre = MaskFormerLocalPreResult(MaskFormerModels.GLC_ANOMALY_MASKFORMER, self.metadata, self.state_dict, quantile=0.95, k_skip=0, fast=True, device="cpu")
-        records = make_synthetic_maskformer_records(4, 5)
+        from app.anomaly_detection.inference.recon_v8.local import Reconf8LocalPreResult, Reconf8LocalThresholdCreator
+        pre = Reconf8LocalPreResult(ReconstructionModels.GLC_RECON_V8, self.metadata, self.state_dict, quantile=0.95, k_skip=0, device="cpu")
+        records = make_synthetic_recon_v8_records(4, 5)
         results = pre.score_batch(records)
-        tc = MaskFormerLocalThresholdCreator(quantile=0.95)
+        tc = Reconf8LocalThresholdCreator(quantile=0.95)
         tc.fit_from_pre_results(results)
         assert tc.threshold is not None
         assert tc.threshold > 0.0
@@ -188,17 +180,17 @@ class TestMaskFormerLocalPipeline:
         d = tc.to_dict()
         assert "thresholds" in d
         assert "p95_score" in d["thresholds"]
-        tc2 = MaskFormerLocalThresholdCreator.from_dict(d)
+        tc2 = Reconf8LocalThresholdCreator.from_dict(d)
         assert tc2.thresholds == tc.thresholds
 
     def test_local_applier_output_keys(self):
-        from app.anomaly_detection.inference.maskformer.local import MaskFormerLocalPreResult, MaskFormerLocalThresholdCreator, MaskFormerLocalApplier
-        pre = MaskFormerLocalPreResult(MaskFormerModels.GLC_ANOMALY_MASKFORMER, self.metadata, self.state_dict, quantile=0.95, k_skip=0, fast=True, device="cpu")
-        records = make_synthetic_maskformer_records(4, 5)
+        from app.anomaly_detection.inference.recon_v8.local import Reconf8LocalPreResult, Reconf8LocalThresholdCreator, Reconf8LocalApplier
+        pre = Reconf8LocalPreResult(ReconstructionModels.GLC_RECON_V8, self.metadata, self.state_dict, quantile=0.95, k_skip=0, device="cpu")
+        records = make_synthetic_recon_v8_records(4, 5)
         results = pre.score_batch(records)
-        tc = MaskFormerLocalThresholdCreator(quantile=0.95)
+        tc = Reconf8LocalThresholdCreator(quantile=0.95)
         tc.fit_from_pre_results(results)
-        applier = MaskFormerLocalApplier({"global_threshold": tc.threshold}, quantile=0.95)
+        applier = Reconf8LocalApplier({"global_threshold": tc.threshold}, quantile=0.95)
         applied = applier.apply(results)
         assert len(applied) == 4
         required = {"robot_code", "program_number", "start_time", "is_file_anomaly", "p95_score"}
@@ -210,16 +202,15 @@ class TestMaskFormerLocalPipeline:
             assert len(is_anomaly_keys) == self.model.num_sensors
 
     def test_full_pipeline_end_to_end(self):
-        from app.anomaly_detection.inference.maskformer.local import MaskFormerLocalPreResult, MaskFormerLocalThresholdCreator, MaskFormerLocalApplier
-        pre = MaskFormerLocalPreResult(MaskFormerModels.GLC_ANOMALY_MASKFORMER, self.metadata, self.state_dict, quantile=0.95, k_skip=0, fast=True, device="cpu")
-        records = make_synthetic_maskformer_records(4, 5)
+        from app.anomaly_detection.inference.recon_v8.local import Reconf8LocalPreResult, Reconf8LocalThresholdCreator, Reconf8LocalApplier
+        pre = Reconf8LocalPreResult(ReconstructionModels.GLC_RECON_V8, self.metadata, self.state_dict, quantile=0.95, k_skip=0, device="cpu")
+        records = make_synthetic_recon_v8_records(4, 5)
         pre_scores = pre.score_batch(records)
-        tc = MaskFormerLocalThresholdCreator(quantile=0.95)
+        tc = Reconf8LocalThresholdCreator(quantile=0.95)
         tc.fit_from_pre_results(pre_scores)
-        applier = MaskFormerLocalApplier({"global_threshold": tc.threshold}, quantile=0.95)
+        applier = Reconf8LocalApplier({"global_threshold": tc.threshold}, quantile=0.95)
         applied = applier.apply(pre_scores)
         assert all(isinstance(r["is_file_anomaly"], bool) for r in applied)
-        # Check all per-sensor is_anomaly flags are bool regardless of sensor naming
         for r in applied:
             for k, v in r.items():
                 if k.startswith("is_anomaly_"):

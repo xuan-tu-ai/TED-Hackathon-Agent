@@ -21,10 +21,10 @@ from .v5_vq_file import V5VQFileAnomalyDetectionModel
 from .v6_vq import V6VQAnomalyDetectionModel
 from .v6_rvq import V6RVQAnomalyDetectionModel
 from .glc_flow_v7 import GLCFlowV7
-from .glc_anomaly_maskformer import GLCAnomalyMaskFormer
+from .glc_recon_v8 import GLCReconV8
 
 _STR_TO_MODEL_CLS = {
-    "glc_anomaly_maskformer": GLCAnomalyMaskFormer,
+    "glc_recon_v8": GLCReconV8,
     "glc_flow_v7": GLCFlowV7,
     "v6_rvq": V6RVQAnomalyDetectionModel,
     "v6_vq": V6VQAnomalyDetectionModel,
@@ -46,7 +46,7 @@ class SupportedAnomalyDetectionModels(Enum):
     V6_VQ = V6VQAnomalyDetectionModel
     V6_RVQ = V6RVQAnomalyDetectionModel
     GLC_FLOW_V7 = GLCFlowV7
-    GLC_ANOMALY_MASKFORMER = GLCAnomalyMaskFormer
+    GLC_RECON_V8 = GLCReconV8
 
 
 class ReconstructionModels(Enum):
@@ -61,6 +61,7 @@ class ReconstructionModels(Enum):
     V5_VQ_FILE = V5VQFileAnomalyDetectionModel
     V6_VQ = V6VQAnomalyDetectionModel
     V6_RVQ = V6RVQAnomalyDetectionModel
+    GLC_RECON_V8 = GLCReconV8
 
 
 class FlowMatchingModels(Enum):
@@ -71,16 +72,6 @@ class FlowMatchingModels(Enum):
     threshold, and operate on macro-windows (>64 steps).
     """
     GLC_FLOW_V7 = GLCFlowV7
-
-
-class MaskFormerModels(Enum):
-    """Models using MaskFormer inference.
-
-    These models produce a dual heatmap (reconstruction × association
-    discrepancy), apply a percentile-based threshold, and are designed for
-    macro-window sensor data.
-    """
-    GLC_ANOMALY_MASKFORMER = GLCAnomalyMaskFormer
 
 
 def create_model(

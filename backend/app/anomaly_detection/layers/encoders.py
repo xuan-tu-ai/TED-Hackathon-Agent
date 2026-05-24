@@ -150,3 +150,111 @@ class PositionalEmbedding(nn.Module):
 
     def extra_repr(self) -> str:
         return f"num_sensors={self.num_sensors}, num_patches={self.num_patches}, d_model={self.d_model}"
+
+
+class PatchEncoderCNNGlobal(nn.Module):
+    """CNN-based global stream patch encoder.
+
+    Replaces the Linear projection in PatchEncoderGlobal with a
+    depthwise-separable 1D CNN to capture local temporal patterns
+    (ramps, trends) within each 32-step patch before Transformer.
+
+    Architecture per patch:
+        [1, patch_size]
+        → Conv1d(1→16, k=3, pad=1) → GELU
+        → Conv1d(16→32, k=3, pad=1) → GELU
+        → flatten → Linear(32*patch_size, d_half) → LayerNorm
+
+    Args:
+        patch_size: Number of timesteps per patch (default 32).
+        d_half: Output embedding dimension (default 64, for D=128 total).
+    """
+
+    def __init__(self, patch_size: int = 32, d_half: int = 64) -> None:
+        super().__init__()
+        self.patch_size = patch_size
+        self.d_half = d_half
+
+        self.conv = nn.Sequential(
+            nn.Conv1d(1, 16, kernel_size=3, padding=1),
+            nn.GELU(),
+            nn.Conv1d(16, 32, kernel_size=3, padding=1),
+            nn.GELU(),
+        )
+        self.proj = nn.Linear(32 * patch_size, d_half)
+        self.norm = nn.LayerNorm(d_half)
+
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+        """Encode patch tokens with CNN.
+
+        Args:
+            tokens: [B, C*P, patch_size]  e.g. [B, 84, 32]
+
+        Returns:
+            encoded: [B, C*P, d_half]  e.g. [B, 84, 64]
+        """
+        B, N, L = tokens.shape
+        # Reshape to process each token independently through CNN
+        x = tokens.reshape(B * N, 1, L)          # [B*N, 1, L]
+        x = self.conv(x)                          # [B*N, 32, L]
+        x = x.reshape(B * N, 32 * L)             # [B*N, 32*L]
+        x = self.proj(x)                          # [B*N, d_half]
+        x = self.norm(x)
+        return x.reshape(B, N, self.d_half)       # [B, N, d_half]
+
+    def extra_repr(self) -> str:
+        return f"patch_size={self.patch_size}, d_half={self.d_half}"
+
+
+class PatchEncoderCNNLocal(nn.Module):
+    """CNN-based local stream patch encoder.
+
+    Same CNN architecture as PatchEncoderCNNGlobal but with INDEPENDENT
+    weights. The local stream receives PerPatchRevIN-normalized patches
+    where spikes are amplified — the CNN kernel naturally captures
+    sharp discontinuities better than a Linear projection.
+
+    Architecture per patch:
+        [1, patch_size]
+        → Conv1d(1→16, k=3, pad=1) → GELU
+        → Conv1d(16→32, k=3, pad=1) → GELU
+        → flatten → Linear(32*patch_size, d_half) → LayerNorm
+
+    Args:
+        patch_size: Number of timesteps per patch (default 32).
+        d_half: Output embedding dimension (default 64).
+    """
+
+    def __init__(self, patch_size: int = 32, d_half: int = 64) -> None:
+        super().__init__()
+        self.patch_size = patch_size
+        self.d_half = d_half
+
+        self.conv = nn.Sequential(
+            nn.Conv1d(1, 16, kernel_size=3, padding=1),
+            nn.GELU(),
+            nn.Conv1d(16, 32, kernel_size=3, padding=1),
+            nn.GELU(),
+        )
+        self.proj = nn.Linear(32 * patch_size, d_half)
+        self.norm = nn.LayerNorm(d_half)
+
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+        """Encode patch tokens with CNN.
+
+        Args:
+            tokens: [B, C*P, patch_size]  e.g. [B, 84, 32]
+
+        Returns:
+            encoded: [B, C*P, d_half]  e.g. [B, 84, 64]
+        """
+        B, N, L = tokens.shape
+        x = tokens.reshape(B * N, 1, L)          # [B*N, 1, L]
+        x = self.conv(x)                          # [B*N, 32, L]
+        x = x.reshape(B * N, 32 * L)             # [B*N, 32*L]
+        x = self.proj(x)                          # [B*N, d_half]
+        x = self.norm(x)
+        return x.reshape(B, N, self.d_half)       # [B, N, d_half]
+
+    def extra_repr(self) -> str:
+        return f"patch_size={self.patch_size}, d_half={self.d_half}"

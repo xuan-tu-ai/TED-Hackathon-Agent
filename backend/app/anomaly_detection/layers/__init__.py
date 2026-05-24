@@ -18,28 +18,24 @@ from .normalization import (
     GlobalStatsStandardizer,
 )
 from .patchify import Patchify, FlattenPatches
-from .encoders import PatchEncoderGlobal, PatchEncoderLocal, PositionalEmbedding
+from .encoders import PatchEncoderGlobal, PatchEncoderLocal, PatchEncoderCNNGlobal, PatchEncoderCNNLocal, PositionalEmbedding
 from .embeddings import ContextEmbedding, RelativePositionEncoder
 from .feature_extraction import ShapeEncoder, StatProjector
 from .attention import (
     CLSToken,
     TransformerEncoder,
     DualPooling,
-    AnomalyAttentionBlock,
-    AnomalyAttentionTransformer,
 )
 from .mlp_mixer import MixerBlock, MLPMixerBackbone
 from .time_embedding import SinusoidalTimeEmbedding
 from .cnf import VectorFieldMLP, CNF
 from .scorer import MADThreshold, AnomalyScorer, PatchMasker, PerturbationLoop
 from .bottleneck import (
-    MultitaskVAEHead,
     FactorizedVectorQuantizerEMA,
     ResidualFactorizedVectorQuantizerEMA,
     LegacyFactorizedVectorQuantizerEMA,
-    MultiTaskVQVAEHead,
 )
-from .masking import MaskToken, SensorBlockMasking
+
 from .reconstruction import PerTokenDecoder, CNNDecoder, ReconstructionDecoder
 
 __all__ = [
@@ -60,8 +56,8 @@ __all__ = [
     "CLSToken",
     "TransformerEncoder",
     "DualPooling",
-    "AnomalyAttentionBlock",
-    "AnomalyAttentionTransformer",
+    "PatchEncoderCNNGlobal",
+    "PatchEncoderCNNLocal",
     "MixerBlock",
     "MLPMixerBackbone",
     "SinusoidalTimeEmbedding",
@@ -75,9 +71,7 @@ __all__ = [
     "FactorizedVectorQuantizerEMA",
     "ResidualFactorizedVectorQuantizerEMA",
     "LegacyFactorizedVectorQuantizerEMA",
-    "MultiTaskVQVAEHead",
-    "MaskToken",
-    "SensorBlockMasking",
+
     "PerTokenDecoder",
     "CNNDecoder",
     "ReconstructionDecoder",
