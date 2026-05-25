@@ -15,6 +15,7 @@ patch-based processing.  The inference pipeline:
 3. **Applier**: apply OR-logic verdict using the multi-score thresholds.
 """
 
+import warnings
 from typing import Optional
 
 import torch
@@ -221,8 +222,8 @@ class Reconf8LocalPreResult:
                     "valid_start_idx": 0,
                     "valid_end_idx": 0,
                 }
-                for c in range(C):
-                    res[f"{pq}_score_sensor_{c}"] = 100.0
+                for c, s in enumerate(sensors):
+                    res[f"{pq}_score_{s}"] = 100.0
                 for s in sensors:
                     res[f"heatmap_{s}"] = []
                 results.append(res)
@@ -310,8 +311,8 @@ class Reconf8LocalPreResult:
                 "phase_rampup": (rampup_start, rampup_end),
                 "phase_active": (active_start, active_end),
             }
-            for c in range(C):
-                res[f"{pq}_score_sensor_{c}"] = sensor_scores[c]
+            for c, s in enumerate(sensors):
+                res[f"{pq}_score_{s}"] = sensor_scores[c]
             for c, s in enumerate(sensors):
                 res[f"heatmap_{s}"] = final_map[c].tolist()
 
@@ -401,10 +402,10 @@ class Reconf8LocalThresholdCreator:
         return obj
 
     @staticmethod
-    def make_per_sensor_keys(quantile: float, num_sensors: int) -> list[str]:
-        """Return per-sensor score key names for use as score_keys."""
+    def make_per_sensor_keys(quantile: float, sensors: list[str]) -> list[str]:
+        """Return per-sensor score key names for a given list of sensor names."""
         pq = f"p{quantile * 100:.0f}"
-        return [f"{pq}_score_sensor_{c}" for c in range(num_sensors)]
+        return [f"{pq}_score_{s}" for s in sensors]
 
     @property
     def threshold(self) -> float | None:
@@ -448,9 +449,31 @@ class Reconf8LocalApplier:
             return []
         sensors = [k[len("heatmap_"):] for k in pre_results[0] if k.startswith("heatmap_")]
 
+        # ── Key coverage validation ────────────────────────────────────────
+        if not score_thresholds:
+            warnings.warn(
+                f"[Reconf8LocalApplier] score_thresholds is empty — using only "
+                f"global_threshold={global_thresh}. Per-sensor and phase detection are DISABLED.\n"
+                f"  Fix: pass score_thresholds from Reconf8LocalThresholdCreator.thresholds.",
+                UserWarning, stacklevel=2,
+            )
+        else:
+            available = {k for k in pre_results[0] if k.startswith(f"{pq}_score")}
+            calibrated = set(score_thresholds.keys())
+            missing = available - calibrated
+            if missing:
+                warnings.warn(
+                    f"[Reconf8LocalApplier] {len(missing)} score key(s) present in pre_results "
+                    f"but NOT in score_thresholds — falling back to global_threshold for these:\n"
+                    f"  {sorted(missing)}\n"
+                    f"  Fix: re-run ThresholdCreator with score_keys={sorted(available)}",
+                    UserWarning, stacklevel=2,
+                )
+
         # Base score keys + any per-sensor keys present in score_thresholds
         base_keys = [f"{pq}_score", f"{pq}_score_rampup", f"{pq}_score_active"]
-        sensor_keys = [k for k in score_thresholds if k.startswith(f"{pq}_score_sensor_")]
+        _base_set = set(base_keys)
+        sensor_keys = [k for k in score_thresholds if k.startswith(f"{pq}_score_") and k not in _base_set]
         score_keys = base_keys + sensor_keys
 
         results = []

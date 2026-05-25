@@ -438,22 +438,23 @@ class TestPerSensorScoring:
         self.engine = _mae_engine()
 
     def test_score_batch_has_per_sensor_keys(self):
+        from app.anomaly_detection import constants
         results = self.engine.score_batch(_mae_records(3))
         for res in results:
-            for c in range(C3):
-                key = f"p95_score_sensor_{c}"
+            for s in constants.SENSORS:
+                key = f"p95_score_{s}"
                 assert key in res, f"Missing {key}"
                 assert isinstance(res[key], float)
                 assert np.isfinite(res[key])
 
     def test_per_sensor_scores_differ_when_channel_noisy(self):
-        """Channel 2 with 8× noise should score higher than channel 0."""
+        """Channel 2 (welding_current) with 8× noise should score higher than channel 0 (wire_feed_speed)."""
         results = self.engine.score_batch(_mae_records(5, noisy_channel=2))
         wins = sum(
             1 for res in results
-            if res["p95_score_sensor_2"] > res["p95_score_sensor_0"]
+            if res["p95_score_welding_current"] > res["p95_score_wire_feed_speed"]
         )
-        assert wins >= 3, f"Expected sensor_2 > sensor_0 for most files, got {wins}/5"
+        assert wins >= 3, f"Expected welding_current > wire_feed_speed for most files, got {wins}/5"
 
     def test_early_return_has_per_sensor_and_phase_keys(self):
         from app.anomaly_detection.models.glc_mae_v8 import GLCMaeV8
@@ -477,25 +478,30 @@ class TestPerSensorScoring:
             "windows": np.zeros((1, C3, T3), dtype=np.float32),
             "serials": np.array([0], dtype=np.int64),
         }
+        from app.anomaly_detection import constants
         res = engine.score_batch([rec])[0]
-        for c in range(C3):
-            assert f"p95_score_sensor_{c}" in res
-            assert res[f"p95_score_sensor_{c}"] == 100.0
+        for s in constants.SENSORS:
+            assert f"p95_score_{s}" in res
+            assert res[f"p95_score_{s}"] == 100.0
         assert res["p95_score_rampup"] == 100.0
         assert res["p95_score_active"] == 100.0
 
     def test_make_per_sensor_keys(self):
+        from app.anomaly_detection import constants
         from app.anomaly_detection.inference.recon_v8.local import Reconf8LocalThresholdCreator
-        keys = Reconf8LocalThresholdCreator.make_per_sensor_keys(0.95, 3)
-        assert keys == ["p95_score_sensor_0", "p95_score_sensor_1", "p95_score_sensor_2"]
-        keys5 = Reconf8LocalThresholdCreator.make_per_sensor_keys(0.90, 5)
+        keys = Reconf8LocalThresholdCreator.make_per_sensor_keys(0.95, constants.SENSORS)
+        assert keys == [f"p95_score_{s}" for s in constants.SENSORS]
+        custom = ["alpha", "beta", "gamma", "delta", "epsilon"]
+        keys5 = Reconf8LocalThresholdCreator.make_per_sensor_keys(0.90, custom)
         assert len(keys5) == 5
-        assert all(k.startswith("p90_score_sensor_") for k in keys5)
+        assert all(k.startswith("p90_score_") for k in keys5)
+        assert keys5[0] == "p90_score_alpha"
 
     def test_threshold_creator_per_sensor_fit_and_roundtrip(self):
+        from app.anomaly_detection import constants
         from app.anomaly_detection.inference.recon_v8.local import Reconf8LocalThresholdCreator
         results = self.engine.score_batch(_mae_records(10))
-        sensor_keys = Reconf8LocalThresholdCreator.make_per_sensor_keys(0.95, C3)
+        sensor_keys = Reconf8LocalThresholdCreator.make_per_sensor_keys(0.95, constants.SENSORS)
         score_keys = ["p95_score", "p95_score_rampup", "p95_score_active"] + sensor_keys
         tc = Reconf8LocalThresholdCreator(quantile=0.95, score_keys=score_keys)
         tc.fit_from_pre_results(results)
@@ -516,16 +522,16 @@ class TestPerSensorScoring:
                 "p95_score": 1e10,
                 "p95_score_rampup": 1e10,
                 "p95_score_active": 1e10,
-                "p95_score_sensor_0": 1e10,
-                "p95_score_sensor_1": 1e10,
-                "p95_score_sensor_2": 1e-9,  # always triggers
+                "p95_score_wire_feed_speed":  1e10,
+                "p95_score_wire_temperature": 1e10,
+                "p95_score_welding_current":  1e-9,  # always triggers
             },
         }
         applier = Reconf8LocalApplier(threshold_config, quantile=0.95)
         applied = applier.apply(results)
         for res in applied:
             assert res["is_file_anomaly"] is True
-            assert "p95_score_sensor_2" in res["triggered_by"]
+            assert "p95_score_welding_current" in res["triggered_by"]
 
     def test_backward_compat_no_per_sensor_keys(self):
         """Legacy score_keys (no per-sensor) must still work end-to-end."""
