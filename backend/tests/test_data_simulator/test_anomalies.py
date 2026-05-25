@@ -1,4 +1,12 @@
-"""Tests for all 10 anomaly injection types (Sprint 14 + Sprint 16)."""
+"""Tests for the 5 active anomaly injection types (Sprint 18 simplification).
+
+Sprint 18 reduced the pool from 10 to 5 based on real-world reliability:
+  - spike, thermal_drift, flatline, cable_wear, arc_blow
+
+Deprecated types (phase_shift, wire_stutter, gas_blockage, sticky_tc,
+overshoot_degradation) were archived to _archived/ with their tests preserved
+there.
+"""
 
 import random
 
@@ -8,13 +16,8 @@ from backend.data_simulator.generator import WeldingSampleGenerator
 from backend.data_simulator.anomalies.spike import inject_spike
 from backend.data_simulator.anomalies.thermal_drift import inject_thermal_drift
 from backend.data_simulator.anomalies.flatline import inject_flatline
-from backend.data_simulator.anomalies.phase_shift import inject_phase_shift
-from backend.data_simulator.anomalies.wire_stutter import inject_wire_stutter
 from backend.data_simulator.anomalies.arc_blow import inject_arc_blow
-from backend.data_simulator.anomalies.gas_blockage import inject_gas_blockage
-from backend.data_simulator.anomalies.sticky_tc import inject_sticky_tc
 from backend.data_simulator.anomalies.cable_wear import inject_cable_wear
-from backend.data_simulator.anomalies.overshoot_degradation import inject_overshoot_degradation
 
 
 @pytest.fixture
@@ -121,43 +124,8 @@ class TestFlatlineAnomaly:
         assert end_active.max() > 100, "Feed should recover after flatline"
 
 
-class TestPhaseShiftAnomaly:
-    """T10: Phase shift."""
-
-    def test_delays_current_rise(self, clean_sample, rng):
-        """Current should start rising delay_steps later than normal."""
-        shifted = inject_phase_shift(clean_sample, rng, delay_steps=15)
-
-        def first_above(arr, thresh=10.0):
-            idx = np.where(arr > thresh)[0]
-            return idx[0] if len(idx) > 0 else -1
-
-        orig_first = first_above(clean_sample.welding_current)
-        shifted_first = first_above(shifted.welding_current)
-        delay = shifted_first - orig_first
-        assert delay >= 10, f"Expected ~15 step delay, got {delay}"
-
-    def test_leaves_feed_unchanged(self, clean_sample, rng):
-        shifted = inject_phase_shift(clean_sample, rng)
-        assert np.allclose(clean_sample.wire_feed_speed, shifted.wire_feed_speed)
-
-    def test_preserves_waveform_shape(self, clean_sample, rng):
-        """The current waveform shape should be preserved (just shifted)."""
-        shifted = inject_phase_shift(clean_sample, rng, delay_steps=15)
-        # Compare the rising/active portion of both signals
-        rampup_end = clean_sample.phase_boundaries["rampup_end"]
-        # After the delay, the shape should match the original (shifted)
-        active_orig = clean_sample.welding_current[rampup_end + 30:rampup_end + 60]
-        active_shifted = shifted.welding_current[rampup_end + 30 + 15:rampup_end + 60 + 15]
-        # Correlation should be high
-        min_len = min(len(active_orig), len(active_shifted))
-        if min_len > 5:
-            corr = np.corrcoef(active_orig[:min_len], active_shifted[:min_len])[0, 1]
-            assert corr > 0.8, f"Waveform correlation {corr:.3f} too low"
-
-
 class TestAnomalyFixtures:
-    """Verify all anomalies work together."""
+    """Verify all 5 active anomalies work together (Sprint 18)."""
 
     def test_anomaly_changes_sensors(self):
         """Each anomaly type should detectably change at least one sensor."""
@@ -169,13 +137,8 @@ class TestAnomalyFixtures:
             "spike": inject_spike(sample, r),
             "thermal_drift": inject_thermal_drift(sample, r),
             "flatline": inject_flatline(sample, r),
-            "phase_shift": inject_phase_shift(sample, r),
-            "wire_stutter": inject_wire_stutter(sample, r),
             "arc_blow": inject_arc_blow(sample, r),
-            "gas_blockage": inject_gas_blockage(sample, r),
-            "sticky_tc": inject_sticky_tc(sample, r),
             "cable_wear": inject_cable_wear(sample, r),
-            "overshoot_degradation": inject_overshoot_degradation(sample, r),
         }
 
         for name, result in anomalies.items():
@@ -186,28 +149,6 @@ class TestAnomalyFixtures:
                 or not np.allclose(sample.temperature, result.temperature)
             )
             assert differs, f"Anomaly {name} changed nothing"
-
-
-class TestWireStutter:
-    """T9: Wire Stutter / Feed Motor Jerk."""
-
-    def test_creates_dips_in_feed(self, clean_sample, rng):
-        stutter = inject_wire_stutter(clean_sample, rng)
-        # S0 should have dips — compare active-phase minimum (not idle=0)
-        active_start = clean_sample.phase_boundaries["rampup_end"]
-        active_end = clean_sample.phase_boundaries["active_end"]
-        orig_active_min = clean_sample.wire_feed_speed[active_start:active_end].min()
-        stut_active_min = stutter.wire_feed_speed[active_start:active_end].min()
-        assert stut_active_min < orig_active_min * 0.95, (
-            f"Active min {stut_active_min:.1f} not < {orig_active_min:.1f}"
-        )
-
-    def test_current_follows_feed(self, clean_sample, rng):
-        stutter = inject_wire_stutter(clean_sample, rng)
-        # S1 should still correlate with S0 (it follows via LTI)
-        corr_orig = np.corrcoef(clean_sample.wire_feed_speed, clean_sample.welding_current)[0, 1]
-        corr_stut = np.corrcoef(stutter.wire_feed_speed, stutter.welding_current)[0, 1]
-        assert corr_stut > 0.5, f"S0-S1 correlation {corr_stut:.3f} too low"
 
 
 class TestArcBlow:
@@ -230,51 +171,6 @@ class TestArcBlow:
         blown = inject_arc_blow(clean_sample, rng)
         # Temperature should be slightly lower in the blow region
         assert blown.temperature.mean() <= clean_sample.temperature.mean() + 0.5
-
-
-class TestGasBlockage:
-    """T11: Gas Nozzle Blockage."""
-
-    def test_creates_micro_spikes(self, clean_sample, rng):
-        blocked = inject_gas_blockage(clean_sample, rng)
-        # S1 should have narrow spikes (larger max than normal)
-        orig_max = clean_sample.welding_current.max()
-        blocked_max = blocked.welding_current.max()
-        assert blocked_max > orig_max * 1.2, f"Max {blocked_max:.1f} not > {orig_max:.1f}"
-
-    def test_increases_temperature(self, clean_sample, rng):
-        blocked = inject_gas_blockage(clean_sample, rng)
-        # S2 should have sustained temperature offset
-        assert blocked.temperature.mean() > clean_sample.temperature.mean() + 2.0
-
-    def test_leaves_feed_unchanged(self, clean_sample, rng):
-        blocked = inject_gas_blockage(clean_sample, rng)
-        assert np.allclose(clean_sample.wire_feed_speed, blocked.wire_feed_speed)
-
-
-class TestStickyTC:
-    """T12: Sticky Thermocouple."""
-
-    def test_creates_plateaus(self, clean_sample, rng):
-        sticky = inject_sticky_tc(clean_sample, rng)
-        # S2 should have repeated identical values (plateaus)
-        diffs = np.abs(np.diff(sticky.temperature))
-        # Count near-zero diffs (within plateau)
-        zero_diffs = np.sum(diffs < 0.01)
-        # Should have more zero-diffs than the original smooth exponential
-        orig_diffs = np.abs(np.diff(clean_sample.temperature))
-        orig_zero = np.sum(orig_diffs < 0.01)
-        assert zero_diffs > orig_zero + 10, (
-            f"Plateau steps {zero_diffs} not >> original {orig_zero}"
-        )
-
-    def test_leaves_feed_unchanged(self, clean_sample, rng):
-        sticky = inject_sticky_tc(clean_sample, rng)
-        assert np.allclose(clean_sample.wire_feed_speed, sticky.wire_feed_speed)
-
-    def test_leaves_current_unchanged(self, clean_sample, rng):
-        sticky = inject_sticky_tc(clean_sample, rng)
-        assert np.allclose(clean_sample.welding_current, sticky.welding_current)
 
 
 class TestCableWear:
@@ -303,38 +199,3 @@ class TestCableWear:
         assert max_jump > orig_max_jump * 2, (
             f"Max dropout jump {max_jump:.1f} not > {orig_max_jump:.1f}"
         )
-
-
-class TestOvershootDegradation:
-    """T14: Progressive Overshoot Degradation."""
-
-    def test_no_overshoot_mode(self, clean_sample, rng):
-        degraded = inject_overshoot_degradation(clean_sample, rng, mode="no_overshoot")
-        # Compute overshoot: peak in first 30 steps after rampup vs steady-state
-        rampup_end = clean_sample.phase_boundaries["rampup_end"]
-        window = slice(rampup_end, rampup_end + 30)
-        orig_peak = clean_sample.welding_current[window].max()
-        deg_peak = degraded.welding_current[window].max()
-        # No-overshoot mode should have lower peak than original
-        assert deg_peak < orig_peak, (
-            f"No-overshoot peak {deg_peak:.1f} not < original {orig_peak:.1f}"
-        )
-
-    def test_excessive_overshoot_mode(self, clean_sample, rng):
-        degraded = inject_overshoot_degradation(clean_sample, rng, mode="excessive_overshoot")
-        rampup_end = clean_sample.phase_boundaries["rampup_end"]
-        window = slice(rampup_end, rampup_end + 30)
-        orig_peak = clean_sample.welding_current[window].max()
-        deg_peak = degraded.welding_current[window].max()
-        # Excessive-overshoot mode should have higher peak than original
-        assert deg_peak > orig_peak, (
-            f"Excessive overshoot peak {deg_peak:.1f} not > original {orig_peak:.1f}"
-        )
-
-    def test_leaves_feed_unchanged(self, clean_sample, rng):
-        degraded = inject_overshoot_degradation(clean_sample, rng)
-        assert np.allclose(clean_sample.wire_feed_speed, degraded.wire_feed_speed)
-
-    def test_invalid_mode_raises(self, clean_sample, rng):
-        with pytest.raises(ValueError):
-            inject_overshoot_degradation(clean_sample, rng, mode="invalid")

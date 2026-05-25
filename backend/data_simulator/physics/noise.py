@@ -42,19 +42,45 @@ class NoiseConfig:
         seed: Random seed for reproducibility.
     """
     s0_vibration_amplitude: float = 0.008      # 0.8% of signal
-    s0_vibration_freq: float = 0.05            # ~0.2 cycles per step (aliased 20Hz at 4Hz)
+    s0_vibration_freq: float = 0.025           # ~0.2 Hz physical vibration (adjusted for 8Hz)
     s0_gaussian_std: float = 0.005             # 0.5% of signal
     s1_arc_noise_std: float = 0.05             # 5% of signal amplitude
     s2_rw_step_std: float = 0.1                # °C per step
     s2_glitch_probability: float = 0.0001      # 1 in 10,000 steps
     s2_glitch_magnitude: float = 5.0           # °C
     ar1_phi: float = 0.85                      # AR(1) momentum (0=white, 0.95=strong)
-    local_window_size: int = 20                # rolling window for local std
+    local_window_size: int = 40                # rolling window (40 steps at 8Hz ≈ 20 at 4Hz)
     u_pattern_enabled: bool = False            # U-pattern noise opt-in
     u_pattern_hold_range: tuple[int, int] = (5, 20)  # steps per plateau
     u_pattern_jump_std: float = 0.05           # jump size std
     u_pattern_plateau_std: float = 0.01        # jitter within plateau
     seed: int | None = None
+
+    # ── Sprint 18: Reduced-noise factory for training data convergence ──
+    _training_noise_scale: float = 0.5          # fraction of default noise for training
+
+    def for_training(self) -> NoiseConfig:
+        """Return a copy with ~50% reduced variance for convergent training data.
+
+        Cycle-to-cycle variation is minimized while preserving realistic noise
+        profiles (colored noise with momentum, not zero noise).
+        """
+        return NoiseConfig(
+            s0_vibration_amplitude=self.s0_vibration_amplitude * self._training_noise_scale,
+            s0_vibration_freq=self.s0_vibration_freq,
+            s0_gaussian_std=self.s0_gaussian_std * self._training_noise_scale,
+            s1_arc_noise_std=self.s1_arc_noise_std * self._training_noise_scale,
+            s2_rw_step_std=self.s2_rw_step_std * self._training_noise_scale,
+            s2_glitch_probability=self.s2_glitch_probability,
+            s2_glitch_magnitude=self.s2_glitch_magnitude,
+            ar1_phi=self.ar1_phi,
+            local_window_size=self.local_window_size,
+            u_pattern_enabled=self.u_pattern_enabled,
+            u_pattern_hold_range=self.u_pattern_hold_range,
+            u_pattern_jump_std=self.u_pattern_jump_std * self._training_noise_scale,
+            u_pattern_plateau_std=self.u_pattern_plateau_std,
+            seed=self.seed,
+        )
 
 
 class NoiseGenerator:

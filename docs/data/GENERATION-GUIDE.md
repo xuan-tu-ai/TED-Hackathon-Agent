@@ -29,22 +29,44 @@ Tập Train chỉ chứa dữ liệu Bình thường, bao gồm:
     *   `welding_current` có nhiễu trắng (White noise) mạnh do hồ quang hàn không ổn định.
     *   `temperature` có nhiễu trôi dạt (Random walk) rất mượt, hiếm khi có nhiễu gai.
 *   **Sự kiện vi mô bình thường (Normal Micro-events):** Tại thời điểm bắt đầu hàn (ví dụ step 30), `welding_current` có một dao động giật cục (Arc Strike Fluctuation) kéo dài 3 steps. Mô hình phải học được đây là hiện tượng "Mồi hồ quang" bình thường.
+*   **Hội tụ dữ liệu (Data Convergence - Sprint 18):** Cùng một cặp (robot_id, program_id) sẽ tạo ra tín hiệu gần như giống hệt nhau qua các chu kỳ. Điều này đạt được nhờ:
+    - Sinh mẫu xác định (deterministic seed dựa trên robot_id + program_id)
+    - Giảm phương sai nhiễu ~50% cho tập huấn luyện (`NoiseConfig.for_training()`)
+    - Dữ liệu test vẫn giữ nguyên mức nhiễu gốc để đánh giá tính tổng quát hóa
 
 ## 4. ĐẶC TẢ TẬP KIỂM THỬ (TEST SET - NORMAL + ABNORMAL)
-Tập Test gồm 50% file Normal và 50% file Abnormal. Các kịch bản lỗi (Anomalies) phải bám sát thực tế ngành hàn:
+Tập Test gồm 50% file Normal và 50% file Abnormal. Các kịch bản lỗi (Anomalies) phải bám sát thực tế ngành hàn.
+
+*Sprint 18: Giảm từ 10 loại lỗi xuống còn 5 loại phổ biến nhất trong thực tế.*
 
 *   **Lỗi 1: Dính dây hàn / Ngắn mạch (Cross-sensor Spike):** 
     *   *Mô tả:* Tiêm một Spike cực lớn (kéo dài 2 steps) vào `welding_current` ở giữa chu kỳ hàn. 
     *   *Điểm mấu chốt:* `wire_feed_speed` VẪN BÌNH THƯỜNG. Đây là lỗi dây hàn chạm vật hàn gây đoản mạch.
+    *   *Phát hiện:* Reconstruction error — mức độ dễ.
 *   **Lỗi 2: Tích tụ nhiệt bất thường (Thermal Runaway / Drift):** 
     *   *Mô tả:* Trong nửa sau của chu kỳ, `temperature` không đi ngang mà tiếp tục tăng tuyến tính vuợt mức bình thường.
-    *   *Điểm mấu chốt:* `welding_current` và `wire_feed_speed` hoàn toàn bình thường. Lỗi này do hỏng hệ thống nước làm mát mỏ hàn. (Test khả năng bắt Drift của luồng Global RevIN).
+    *   *Điểm mấu chốt:* `welding_current` và `wire_feed_speed` hoàn toàn bình thường. Lỗi này do hỏng hệ thống nước làm mát mỏ hàn.
+    *   *Phát hiện:* Cần so sánh với baseline lịch sử — mức độ trung bình.
 *   **Lỗi 3: Mất phản hồi cảm biến (Sensor Flatline):** 
     *   *Mô tả:* `wire_feed_speed` đang ở mức 4000, đột nhiên tụt về 0 và đi thẳng tắp trong 20 steps, sau đó phục hồi. Dòng điện và nhiệt độ vẫn tương đối ổn định do quán tính.
     *   *Điểm mấu chốt:* Test khả năng Local RevIN khuếch đại sự cố đứt tín hiệu.
-*   **Lỗi 4: Lệch pha nguồn hàn (Phase Shift Anomaly):** 
-    *   *Mô tả:* `wire_feed_speed` đã tăng, nhưng `welding_current` bị trễ tới 15 steps mới tăng theo (thay vì 1-2 steps như bình thường). 
-    *   *Điểm mấu chốt:* Hình dáng sóng dòng điện không đổi, chỉ bị đẩy lùi về sau. (Test khả năng học Temporal Attention của Transformer để bắt lỗi độ trễ cấp nguồn).
+    *   *Phát hiện:* Reconstruction error — mức độ dễ.
+*   **Lỗi 4: Mòn cáp hàn (Cable Wear / Intermittent Short):** 
+    *   *Mô tả:* `welding_current` giảm đột ngột xuống gần 0 trong 1-3 steps, 8-15 lần trong pha active. `wire_feed_speed` hoàn toàn bình thường.
+    *   *Điểm mấu chốt:* Đây là lỗi bảo trì #1 trong sản xuất hàn robot — cách điện cáp bị mòn gây chạm mass ngắt quãng.
+    *   *Phát hiện:* Reconstruction error — suy thoái kéo dài, mức độ dễ-khó.
+*   **Lỗi 5: Lệch từ hồ quang (Arc Blow / Magnetic Deflection):** 
+    *   *Mô tả:* Biên độ nhiễu `welding_current` tăng 3-5 lần trong một cửa sổ ở pha active. `wire_feed_speed` bình thường. `temperature` giảm nhẹ do hồ quang bị lệch.
+    *   *Điểm mấu chốt:* Cần ngữ cảnh đa cảm biến (cross-sensor) để phát hiện — không thể dựa vào từng cảm biến riêng lẻ.
+    *   *Phát hiện:* Cross-sensor context — mức độ trung bình.
+
+### Các loại lỗi đã loại bỏ (Sprint 18)
+*Các loại lỗi sau đã được lưu trữ trong `_archived/` do tần suất thực tế thấp hoặc bị trùng lặp với các loại lỗi khác:*
+- Phase Shift (lệch pha nguồn) — quá tinh tế, khó phát hiện
+- Wire Stutter (rung động dây hàn) — quá tinh tế cho đánh giá ban đầu
+- Gas Blockage (tắc khí bảo vệ) — bị thay thế bởi arc_blow + thermal_drift
+- Sticky TC (cảm biến nhiệt kẹt) — tần suất thực tế thấp
+- Overshoot Degradation (suy giảm độ vọt lố) — recall=0.17, quá khó
 
 ## 5. ĐỊNH DẠNG ĐẦU RA (OUTPUT FORMAT)
 File csv giống [DATA](../../data/mock_welding_robot_data.csv)

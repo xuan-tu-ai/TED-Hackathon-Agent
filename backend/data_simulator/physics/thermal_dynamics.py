@@ -34,8 +34,8 @@ class ThermalDynamicsConfig:
             at equilibrium.
         robot_baseline_offsets: Dict mapping robot_id -> °C offset.
     """
-    alpha_heat: float = 0.035       # ~30 steps to reach 63% of equilibrium
-    alpha_cool: float = 0.012       # ~80 steps to cool 63% (slower)
+    alpha_heat: float = 0.018       # ~57 steps at 8Hz (was 30 steps at 4Hz)
+    alpha_cool: float = 0.006       # ~166 steps at 8Hz (was 80 steps at 4Hz)
     ambient_temp: float = 25.0
     current_to_temp_gain: float = 0.65  # °C per ampere
     robot_baseline_offsets: dict[int, float] = None

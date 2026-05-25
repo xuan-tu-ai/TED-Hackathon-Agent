@@ -21,8 +21,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from data_simulator.generator import WeldingSample, WeldingSampleNoisy
-from data_simulator.physics.current_dynamics import CurrentDynamics, CurrentDynamicsConfig
+from ..generator import WeldingSample, WeldingSampleNoisy
+from ..physics.current_dynamics import CurrentDynamics, CurrentDynamicsConfig
 
 
 def inject_overshoot_degradation(
@@ -68,7 +68,7 @@ def inject_overshoot_degradation(
     welding_current = modified_dynamics.compute_current(wire_feed)
 
     # Recompute temperature from the modified current
-    from data_simulator.physics.thermal_dynamics import ThermalDynamics
+    from ..physics.thermal_dynamics import ThermalDynamics
     thermal = ThermalDynamics()
     temperature = thermal.compute_temperature(welding_current, robot_id=sample.robot_id)
 

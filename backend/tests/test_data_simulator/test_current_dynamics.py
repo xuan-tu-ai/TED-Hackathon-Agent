@@ -15,7 +15,7 @@ class TestCurrentDynamicsConfig:
         assert cfg.natural_freq == 8.0
         assert cfg.damping_ratio == 0.55
         assert cfg.dc_gain == 1.0
-        assert cfg.delay_steps == 1
+        assert cfg.delay_steps == 2  # Sprint 18b: 8Hz → ~250ms
         assert cfg.target_current_ratio == 0.04
 
     def test_overshoot_pct_formula(self):

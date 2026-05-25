@@ -21,13 +21,8 @@ from .anomalies import (
     inject_spike,
     inject_thermal_drift,
     inject_flatline,
-    inject_phase_shift,
-    inject_wire_stutter,
-    inject_arc_blow,
-    inject_gas_blockage,
-    inject_sticky_tc,
     inject_cable_wear,
-    inject_overshoot_degradation,
+    inject_arc_blow,
 )
 
 
@@ -121,8 +116,13 @@ class CSVWriter:
     ) -> tuple[str, int]:
         """Write the training dataset (100% normal cycles).
 
+        For Sprint 18 convergent training data, pass a ``BatchGenerator``
+        created with ``training_mode=True``. Otherwise normal behavior.
+
         Args:
-            batch_gen: BatchGenerator instance.
+            batch_gen: BatchGenerator instance. Use ``BatchGenerator(seed,
+                training_mode=True)`` for reduced-noise + deterministic
+                generation (Sprint 18).
             num_days: Number of days to generate.
             robots: List of robot IDs.
             start_date: First day of training data. If None, defaults to
@@ -203,22 +203,16 @@ class CSVWriter:
                 os.remove(p)
 
         rng = random.Random(seed)
+        # Sprint 18: reduced to 5 real-world reliability types
         anomaly_types = [
-            "spike", "thermal_drift", "flatline", "phase_shift",
-            "wire_stutter", "arc_blow", "gas_blockage",
-            "sticky_tc", "cable_wear", "overshoot_degradation",
+            "spike", "thermal_drift", "flatline", "cable_wear", "arc_blow",
         ]
         anomaly_fns = {
             "spike": inject_spike,
             "thermal_drift": inject_thermal_drift,
             "flatline": inject_flatline,
-            "phase_shift": inject_phase_shift,
-            "wire_stutter": inject_wire_stutter,
-            "arc_blow": inject_arc_blow,
-            "gas_blockage": inject_gas_blockage,
-            "sticky_tc": inject_sticky_tc,
             "cable_wear": inject_cable_wear,
-            "overshoot_degradation": inject_overshoot_degradation,
+            "arc_blow": inject_arc_blow,
         }
 
         chunk: list[CycleRow] = []
@@ -240,18 +234,6 @@ class CSVWriter:
                 anomaly_type = rng.choice(anomaly_types)
                 inject_fn = anomaly_fns[anomaly_type]
                 noisy_sample = inject_fn(clean_sample, rng)
-                if anomaly_type == "overshoot_degradation":
-                    noisy_sample = batch_gen.sample_gen.add_noise(
-                        WeldingSample(
-                            robot_id=noisy_sample.robot_id,
-                            program_id=noisy_sample.program_id,
-                            profile=noisy_sample.profile,
-                            wire_feed_speed=noisy_sample.wire_feed_speed,
-                            welding_current=noisy_sample.welding_current,
-                            temperature=noisy_sample.temperature,
-                            phase_boundaries=noisy_sample.phase_boundaries,
-                        )
-                    )
             else:
                 anomaly_type = "normal"
                 noisy_sample = batch_gen.sample_gen.add_noise(clean_sample)

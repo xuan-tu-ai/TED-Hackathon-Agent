@@ -16,7 +16,7 @@ import random
 
 import numpy as np
 
-from data_simulator.generator import WeldingSample, WeldingSampleNoisy
+from ..generator import WeldingSample, WeldingSampleNoisy
 
 
 def inject_gas_blockage(

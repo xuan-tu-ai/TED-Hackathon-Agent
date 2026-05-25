@@ -35,7 +35,7 @@ class CurrentDynamicsConfig:
     natural_freq: float = 8.0          # ωₙ = 8 rad/s (~0.78 Hz)
     damping_ratio: float = 0.55        # ζ = 0.55 → ~12% overshoot
     dc_gain: float = 1.0
-    delay_steps: int = 1
+    delay_steps: int = 2  # ~250ms at 8Hz (was 1 at 4Hz)
     target_current_ratio: float = 0.04  # ~40A per 1000 mm/min (legacy data)
     max_feed: float = 300.0             # max expected feed speed (mm/min)
 
@@ -54,8 +54,9 @@ class CurrentDynamics:
         current = dynamics.compute_current(feed_speed, dt=0.25)
     """
 
-    def __init__(self, config: CurrentDynamicsConfig | None = None):
+    def __init__(self, config: CurrentDynamicsConfig | None = None, dt: float = 0.125):
         self.config = config or CurrentDynamicsConfig()
+        self._dt = dt  # Sprint 18b: 8Hz → 0.125s
         self._build_lti_system()
 
     def _build_lti_system(self) -> None:
@@ -85,7 +86,7 @@ class CurrentDynamics:
     def compute_current(
         self,
         feed_speed: npt.NDArray[np.float64],
-        dt: float = 0.25,
+        dt: float | None = None,
     ) -> npt.NDArray[np.float64]:
         """Compute welding_current from wire_feed_speed using the LTI system.
 
@@ -100,6 +101,9 @@ class CurrentDynamics:
         if n == 0:
             return np.array([], dtype=np.float64)
 
+        # Use instance dt as fallback (Sprint 18b: 0.125s for 8Hz)
+        dt_actual = dt if dt is not None else self._dt
+
         # Normalize feed_speed to [0, 1] for the LTI system by dividing
         # by max_feed, then run through LTI dynamics.
         norm_feed = feed_speed / self.config.max_feed
@@ -113,7 +117,7 @@ class CurrentDynamics:
             norm_feed_delayed = norm_feed
 
         # Discretize and simulate via lsim on the continuous TF
-        _, yout, _ = lsim(self._tf_continuous, norm_feed_delayed, T=np.arange(n) * dt)
+        _, yout, _ = lsim(self._tf_continuous, norm_feed_delayed, T=np.arange(n) * dt_actual)
 
         # Scale output to realistic current values
         current = self._scale_to_current(yout.flatten())

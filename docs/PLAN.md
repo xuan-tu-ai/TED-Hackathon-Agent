@@ -8,10 +8,11 @@
 Current test count: **~180+ tests** across anomaly detection (Sprint 1), agent system (Sprint 2), and codebase unification (Sprint 3).
 
 ## Active Sprints
-- [Sprint 16](docs/sprint-plans/sprint-16.md) — *In Progress* — Data Simulator Realism + 6 New Anomalies + Phase-Aware Scoring
-- [Sprint 17](docs/sprint-plans/sprint-17.md) — *Planned* — GLC-Recon V8 refactor: full reconstruction + dual-stream CNN encoders
+- [Sprint 18](docs/sprint-plans/sprint-18.md) — *Completed* — Welding Robot Data Regeneration: convergent normal data + 5 anomaly types
+- [Sprint 17](docs/sprint-plans/sprint-17.md) — *Completed* — GLC-Recon V8 refactor: full reconstruction + dual-stream CNN encoders
 
 ## Completed Sprints
+- [Sprint 16](docs/sprint-plans/sprint-16.md) — *Completed* — Data Simulator Realism (AR-1 noise, local-window variance, U-pattern) + 6 New Anomalies + Phase-Aware Scoring
 - [Sprint 0](docs/sprint-plans/sprint-0.md) — *Completed* — Project structure, directories, `__init__.py` files
 - [Sprint 1](docs/sprint-plans/sprint-1.md) — *Completed* — GLC-Flow V7 Model (24 tasks, 152+ tests)
 - [Sprint 2](docs/sprint-plans/sprint-2.md) — *Completed* — Multi-Agent System Migration (FastAPI + DSPy agents + React dashboard)
@@ -95,8 +96,9 @@ frontend/                         ← React 18 + Vite + Zustand (SSE streaming, 
 | 13 | Local Inference API | ✅ Done | Spark-free `*LocalInference` for maskformer, flow_matching, reconstruction |
 | 14 | Welding Data Simulator | ✅ Done | LTI dynamics, colored noise, 4 anomaly types, 30-day CSV output |
 | 15 | MaskFormer Training Fixes | ✅ Done | JS divergence, CNN decoder, Phase-A warmup, gradient-norm logging, λ ramp, mask_ratio tuning |
-| 16 | Data Simulator Realism + 6 New Anomalies + Phase-Aware Scoring | 🏗️ In Progress | Momentum noise (AR-1), local-window variance, U-pattern; 6 new anomaly types; phase-aware scoring with rampup/active P95 thresholds; 138/138 tests passing |
-| 17 | GLC-Recon V8 Refactor | Planned | Replace MaskFormer with full reconstruction, dual-stream CNN encoders, new trainer |
+| 16 | Data Simulator Realism + 6 New Anomalies + Phase-Aware Scoring | ✅ Done | Momentum noise (AR-1), local-window variance, U-pattern; 6 new anomaly types; phase-aware scoring with rampup/active P95 thresholds; 138/138 tests passing |
+| 17 | GLC-Recon V8 Refactor | ✅ Done | Full reconstruction + dual-stream CNN encoders + ContextEmbedding + CosineAnnealing LR |
+| 18 | Welding Robot Data Regeneration | 🏗️ In Progress | Convergent normal data, 10→5 anomaly types, real welding timing research |
 
 ## Backlog / Future Work
 - **Real OT data integration** — Replace mock simulation with live paint-shop sensor data feed

@@ -1,9 +1,12 @@
 """
 Anomaly 3: Sensor Flatline / Signal Loss.
 
-wire_feed_speed drops to exactly 0 for a duration (default 20 steps)
+wire_feed_speed drops to exactly 0 for a duration (default 40-60 steps)
 in the middle of the active phase, then recovers. Current decays gradually
 (inductive flyback), temperature barely changes (thermal inertia).
+
+Sprint 18b: Flatline duration increased to 40-60 steps so it's clearly
+detectable above the zero-padding threshold in 512-step windows.
 """
 
 from __future__ import annotations
@@ -12,26 +15,31 @@ import random
 
 import numpy as np
 
-from data_simulator.generator import WeldingSample, WeldingSampleNoisy
+from ..generator import WeldingSample, WeldingSampleNoisy
 
 
 def inject_flatline(
     sample: WeldingSample | WeldingSampleNoisy,
     rng: random.Random | None = None,
-    flatline_duration: int = 20,
+    flatline_duration: int | tuple[int, int] = (40, 60),
 ) -> WeldingSampleNoisy:
     """Inject a sensor flatline into wire_feed_speed.
 
     Args:
         sample: Clean or noisy sample.
         rng: Random number generator.
-        flatline_duration: Number of steps where signal is zero.
+        flatline_duration: If int, fixed duration. If tuple (min, max), sampled
+            uniformly in that range. Default (40, 60) for 512-step windows.
 
     Returns:
         WeldingSampleNoisy with flatline.
     """
     if rng is None:
         rng = random.Random()
+
+    # Sample duration if range given
+    if isinstance(flatline_duration, tuple):
+        flatline_duration = rng.randint(*flatline_duration)
 
     # Copy signals
     wire_feed = np.array(sample.wire_feed_speed, copy=True)

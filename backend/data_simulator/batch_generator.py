@@ -15,11 +15,12 @@ from typing import Iterator
 import numpy as np
 
 from .generator import WeldingSampleGenerator, WeldingSampleNoisy
+from .physics.noise import NoiseConfig, NoiseGenerator
 
 
 # Sampling parameters
-STEPS_PER_SECOND = 4       # 4 Hz (250ms per step)
-SECONDS_PER_STEP = 0.25
+STEPS_PER_SECOND = 8       # 8 Hz (125ms per step) — Sprint 18b: 512 steps = 64s
+SECONDS_PER_STEP = 0.125
 
 # Daily operating hours per robot (min, max)
 DAILY_OPERATING_HOURS = (16, 20)
@@ -82,9 +83,19 @@ class BatchGenerator:
         self,
         seed: int = 42,
         sample_generator: WeldingSampleGenerator | None = None,
+        training_mode: bool = False,
     ):
         self._rng = random.Random(seed)
-        self.sample_gen = sample_generator or WeldingSampleGenerator(seed=seed)
+        self._training_mode = training_mode
+        if training_mode:
+            # Sprint 18: Use reduced-noise config for convergent training data
+            train_noise_config = NoiseConfig().for_training()
+            train_noise_gen = NoiseGenerator(config=train_noise_config, seed=seed)
+            self.sample_gen = sample_generator or WeldingSampleGenerator(
+                seed=seed, noise_generator=train_noise_gen
+            )
+        else:
+            self.sample_gen = sample_generator or WeldingSampleGenerator(seed=seed)
         self._cycle_counter: int = 0  # auto-incrementing cycle ID
 
     def reseed(self, seed: int) -> None:
@@ -144,6 +155,7 @@ class BatchGenerator:
         num_days: int,
         is_test: bool = False,
         anomaly_fn=None,
+        deterministic: bool = False,
     ) -> Iterator[list[CycleRow]]:
         """Generate cycles for one robot over multiple days.
 
@@ -157,6 +169,8 @@ class BatchGenerator:
             is_test: Whether this is test data (affects anomaly injection).
             anomaly_fn: Optional function that takes (sample, rng) and returns
                         modified sample with anomaly injected.
+            deterministic: If True and in training mode, same (robot, program)
+                pairs produce the same base envelope every time (Sprint 18).
 
         Yields:
             Lists of CycleRow for each cycle.
@@ -175,9 +189,13 @@ class BatchGenerator:
             day_end = day_start + timedelta(hours=op_hours)
 
             while day_start < day_end:
-                # Generate one cycle
+                # Sprint 18: pick program_id and use deterministic generation
+                # for convergent training data
+                program_id = self._rng.randint(0, 15)
                 sample = self.sample_gen.generate_noisy_sample(
                     robot_id=robot_id,
+                    program_id=program_id,
+                    deterministic=deterministic,
                 )
 
                 self._cycle_counter += 1
@@ -204,6 +222,10 @@ class BatchGenerator:
     ) -> Iterator[CycleRow]:
         """Generate 100% normal training data for the specified period.
 
+        Uses deterministic generation + reduced noise (Sprint 18) for
+        convergent normal data: same (robot, program) pairs produce
+        nearly identical sensor traces across cycles.
+
         Args:
             num_days: Number of days to generate (default: 30).
             robots: List of robot IDs. If None, uses [0, 1, 2, 3].
@@ -222,7 +244,7 @@ class BatchGenerator:
 
         for robot_id in robots:
             for rows in self._generate_cycles_for_robot(
-                robot_id, start_date, num_days
+                robot_id, start_date, num_days, deterministic=True,
             ):
                 for row in rows:
                     yield row

@@ -36,7 +36,7 @@ class TestProgramProfiles:
             for phase_name, (lo, hi) in [
                 ("idle", p.phase_ranges.idle),
                 ("rampup", p.phase_ranges.rampup),
-                ("active", p.phase_ranges.active),
+                # Sprint 18b: active is auto-computed, no range
                 ("winddown", p.phase_ranges.winddown),
                 ("shutdown", p.phase_ranges.shutdown),
             ]:
@@ -103,11 +103,15 @@ class TestSampleProfile:
         assert p1.total_steps == p2.total_steps
 
     def test_multiple_samples_vary(self):
-        """Sampling from the same profile should produce different durations."""
+        """Sampling from the same profile should produce different phase durations.
+        Sprint 18b: total_steps is fixed at 512, but phase durations still vary."""
         profiles = [sample_profile(PROGRAM_PROFILES[0]) for _ in range(20)]
-        # At least some should differ
-        total_steps_set = {p.total_steps for p in profiles}
-        assert len(total_steps_set) > 1, "All samples identical"
+        # Total should always be 512
+        for p in profiles:
+            assert p.total_steps == 512, f"Total {p.total_steps} != 512"
+        # Phase durations should still vary (active fills remaining)
+        idle_set = {p.idle_steps for p in profiles}
+        assert len(idle_set) > 1, "All idle durations identical"
 
 
 class TestBuildPhaseEnvelope:

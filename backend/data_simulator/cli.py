@@ -143,7 +143,11 @@ def main(argv: list[str] | None = None) -> int:
         robots=args.robots,
     )
 
-    batch_gen = BatchGenerator(seed=config.seed)
+    # Sprint 18: Use training_mode=True for convergent normal data
+    # (reduced noise + deterministic per (robot, program) generation)
+    train_batch_gen = BatchGenerator(seed=config.seed, training_mode=True)
+    test_batch_gen = BatchGenerator(seed=config.seed)
+
     writer = CSVWriter(
         output_dir=args.output_dir,
         chunk_size=args.chunk_size,
@@ -163,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
 
         t0 = time.time()
         train_path, train_count = writer.write_train(
-            batch_gen,
+            train_batch_gen,
             num_days=args.num_days,
             robots=args.robots,
         )
@@ -181,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
 
         t0 = time.time()
         test_path, label_path, test_count = writer.write_test(
-            batch_gen,
+            test_batch_gen,
             num_cycles=args.test_cycles,
             anomaly_ratio=args.anomaly_ratio,
             robots=args.robots,

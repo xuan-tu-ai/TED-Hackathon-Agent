@@ -13,7 +13,6 @@ from backend.data_simulator.anomalies import (
     inject_spike,
     inject_thermal_drift,
     inject_flatline,
-    inject_phase_shift,
 )
 import random
 
@@ -140,23 +139,6 @@ class TestAnomalyDetectability:
         flattened_min = flattened.wire_feed_speed[active_start:active_end].min()
         assert normal_min > 100, f"Normal feed min should be high: {normal_min}"
         assert flattened_min == 0, f"Flattened feed should hit 0: {flattened_min}"
-
-    def test_phase_shift_detectable(self, normal_samples):
-        """Phase shift delays current rise."""
-        gen = WeldingSampleGenerator(seed=42)
-        r = random.Random(42)
-        sample = gen.generate_sample()
-
-        def first_above_5(arr):
-            idx = np.where(arr > 5)[0]
-            return idx[0] if len(idx) > 0 else -1
-
-        orig_first = first_above_5(sample.welding_current)
-        shifted = inject_phase_shift(sample, r)
-        shift_first = first_above_5(shifted.welding_current)
-        delay = shift_first - orig_first
-        assert delay >= 10, f"Phase delay too small: {delay}"
-
 
 class TestPhaseIntegrity:
     """Verify phase sequence integrity."""

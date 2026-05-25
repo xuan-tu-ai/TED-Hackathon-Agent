@@ -13,8 +13,8 @@ class TestThermalDynamicsConfig:
 
     def test_default_values(self):
         cfg = ThermalDynamicsConfig()
-        assert cfg.alpha_heat == 0.035
-        assert cfg.alpha_cool == 0.012
+        assert cfg.alpha_heat == 0.018  # Sprint 18b: halved for 8Hz
+        assert cfg.alpha_cool == 0.006  # Sprint 18b: halved for 8Hz
         assert cfg.ambient_temp == 25.0
         assert cfg.current_to_temp_gain == 0.65
         assert cfg.robot_baseline_offsets[3] == 5.0

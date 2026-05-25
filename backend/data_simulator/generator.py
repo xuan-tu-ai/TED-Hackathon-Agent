@@ -64,6 +64,10 @@ class WeldingSampleGenerator:
         generator = WeldingSampleGenerator(seed=42)
         sample = generator.generate_sample()
         # sample.wire_feed_speed, sample.welding_current, sample.temperature
+
+    Sprint 18: Added deterministic mode — same (robot_id, program_id) always
+    produces the same base signal envelope. Use ``generate_sample(robot_id, program_id,
+    deterministic=True)`` to enable.
     """
 
     def __init__(
@@ -73,6 +77,7 @@ class WeldingSampleGenerator:
         thermal_dynamics: ThermalDynamics | None = None,
         noise_generator: NoiseGenerator | None = None,
     ):
+        self._base_seed = seed or 42
         self._rng = random.Random(seed)
         self._np_rng = np.random.default_rng(seed)
         self.current_dynamics = current_dynamics or CurrentDynamics()
@@ -81,20 +86,40 @@ class WeldingSampleGenerator:
 
     def reseed(self, seed: int) -> None:
         """Reset all random generators."""
+        self._base_seed = seed or 42
         self._rng = random.Random(seed)
         self._np_rng = np.random.default_rng(seed)
         self.noise_generator.reseed(seed)
+
+    @staticmethod
+    def _make_deterministic_seed(
+        base_seed: int,
+        robot_id: int,
+        program_id: int,
+    ) -> int:
+        """Derive a deterministic sub-seed from (robot_id, program_id).
+
+        Same (base_seed, robot_id, program_id) always returns the same
+        sub-seed, ensuring deterministic profile sampling for training
+        convergence.
+        """
+        return (base_seed * 1000) + (robot_id * 31) + (program_id * 997)
 
     def generate_sample(
         self,
         robot_id: int | None = None,
         program_id: int | None = None,
+        deterministic: bool = False,
     ) -> WeldingSample:
         """Generate one complete normal welding cycle sample.
 
         Args:
             robot_id: Robot ID (0-3). If None, random.
             program_id: Program/profile ID (0-15). If None, random.
+            deterministic: If True, same (robot_id, program_id) always yields
+                the same base envelope (phase durations, target speeds).
+                Only effective when both ``robot_id`` and ``program_id`` are
+                provided. Default False.
 
         Returns:
             WeldingSample with clean (no noise) sensor arrays.
@@ -103,7 +128,16 @@ class WeldingSampleGenerator:
             robot_id = self._rng.randint(0, 3)
         if program_id is not None:
             profile_config = PROGRAM_PROFILES[program_id]
-            profile = sample_profile(profile_config, self._rng)
+            # Sprint 18: deterministic mode — derive a stable sub-seed
+            # so same (robot, program) always gets same profile params.
+            if deterministic:
+                sub_seed = self._make_deterministic_seed(
+                    self._base_seed, robot_id, program_id
+                )
+                det_rng = random.Random(sub_seed)
+                profile = sample_profile(profile_config, det_rng)
+            else:
+                profile = sample_profile(profile_config, self._rng)
         else:
             profile = sample_random_profile(self._rng)
 
@@ -116,6 +150,7 @@ class WeldingSampleGenerator:
         wire_feed = build_phase_envelope(profile)
 
         # Generate welding_current from wire_feed_speed via LTI dynamics
+        # Sprint 18b: default dt=0.125 for 8Hz (CurrentDynamics now uses instance dt)
         welding_current = self.current_dynamics.compute_current(wire_feed)
 
         # Generate temperature from welding_current via thermal dynamics
@@ -146,7 +181,7 @@ class WeldingSampleGenerator:
         noisy_current = self.noise_generator.add_arc_strike_fluctuation(
             sample.welding_current.copy(),
             strike_start=rampup_start + 2,  # slight delay after rampup begins
-            duration=3,
+            duration=2,  # ~250ms arc strike at 8Hz (was 3 steps at 4Hz)
         )
 
         # Add sensor-specific noise
@@ -168,7 +203,18 @@ class WeldingSampleGenerator:
         self,
         robot_id: int | None = None,
         program_id: int | None = None,
+        deterministic: bool = False,
     ) -> WeldingSampleNoisy:
-        """Generate a complete noisy sample (convenience method)."""
-        clean = self.generate_sample(robot_id, program_id)
+        """Generate a complete noisy sample (convenience method).
+
+        Args:
+            robot_id: Robot ID (0-3). If None, random.
+            program_id: Program/profile ID (0-15). If None, random.
+            deterministic: If True and both ``robot_id`` and ``program_id`` are
+                provided, produces the same base envelope every time.
+
+        Returns:
+            WeldingSampleNoisy with noise added.
+        """
+        clean = self.generate_sample(robot_id, program_id, deterministic=deterministic)
         return self.add_noise(clean)
