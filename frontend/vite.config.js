@@ -7,11 +7,11 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8000',
+        target: 'https://app-ted-hackathon-be-dev-001.azurewebsites.net',
         changeOrigin: true,
       },
       '/ws': {
-        target: 'http://127.0.0.1:8000',
+        target: 'ws://app-ted-hackathon-be-dev-001.azurewebsites.net',
         ws: true,
       },
     },
