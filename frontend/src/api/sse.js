@@ -29,7 +29,7 @@ export function createSSEConnection(onEvent, onConnectionChange, onError) {
         isIntentionallyDisconnected = false;
         setConnectionStatus('connecting');
 
-        eventSource = new EventSource(`${API_BASE}/stream`);
+        eventSource = new EventSource('https://app-ted-hackathon-be-dev-001.azurewebsites.net/sse/connection');
 
         eventSource.onopen = () => {
             reconnectAttempts = 0;
