@@ -6,10 +6,10 @@ import tempfile
 
 import numpy as np
 import pytest
-from backend.data_simulator.batch_generator import BatchGenerator
-from backend.data_simulator.writer import CSVWriter
-from backend.data_simulator.generator import WeldingSampleGenerator
-from backend.data_simulator.anomalies import (
+from data_simulator.batch_generator import BatchGenerator
+from data_simulator.writer import CSVWriter
+from data_simulator.generator import WeldingSampleGenerator
+from data_simulator.anomalies import (
     inject_spike,
     inject_thermal_drift,
     inject_flatline,

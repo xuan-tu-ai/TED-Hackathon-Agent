@@ -12,12 +12,12 @@ import random
 
 import numpy as np
 import pytest
-from backend.data_simulator.generator import WeldingSampleGenerator
-from backend.data_simulator.anomalies.spike import inject_spike
-from backend.data_simulator.anomalies.thermal_drift import inject_thermal_drift
-from backend.data_simulator.anomalies.flatline import inject_flatline
-from backend.data_simulator.anomalies.arc_blow import inject_arc_blow
-from backend.data_simulator.anomalies.cable_wear import inject_cable_wear
+from data_simulator.generator import WeldingSampleGenerator
+from data_simulator.anomalies.spike import inject_spike
+from data_simulator.anomalies.thermal_drift import inject_thermal_drift
+from data_simulator.anomalies.flatline import inject_flatline
+from data_simulator.anomalies.arc_blow import inject_arc_blow
+from data_simulator.anomalies.cable_wear import inject_cable_wear
 
 
 @pytest.fixture
