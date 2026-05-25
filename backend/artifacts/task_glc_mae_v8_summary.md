@@ -12,7 +12,7 @@ adapted for multivariate time-series sensor data.
 | File | Action | Description |
 |---|---|---|
 | `layers/masking.py` | Created | `MaskToken` (learnable [MASK] param), `random_masking()` (shuffle/restore) |
-| `layers/reconstruction.py` | Modified | Added `LightDecoder` (2-layer MLP, no Tanh) |
+| `layers/reconstruction.py` | Modified | Added `LightDecoder` (kept); added `use_tanh` param to `CNNDecoder` |
 | `layers/__init__.py` | Modified | Export `MaskToken`, `random_masking`, `LightDecoder` |
 | `models/glc_mae_v8.py` | Created | `GLCMaeV8` + `GLCMaeV8Config` |
 | `models/factory.py` | Modified | Added `GLC_MAE_V8` to `SupportedAnomalyDetectionModels`, `ReconstructionModels`, `_STR_TO_MODEL_CLS` |
@@ -37,21 +37,21 @@ raw [B, 3, 240]
 → random_masking(45%) → visible_tokens [B, 23, D] + ids_shuffle + mask
 → TransformerEncoder (only 23 visible tokens) → latent [B, 23, D]
 → _unshuffle: scatter latent + (mask_token + pos_emb) at masked positions → [B, 42, D]
-→ LightDecoder (Linear→GELU→Linear, no Tanh) → recon [B, 42, patch_size]
+→ CNNDecoder(use_tanh=False) → recon [B, 42, patch_size]
 Loss: MSE on 19 masked positions only
 ```
 
 **Inference forward (full, no masking):**
 ```
 raw [B, 3, 240]
-→ dual-stream CNN tokenize → tokens [B, 42, D] → TransformerEncoder → LightDecoder
+→ dual-stream CNN tokenize → tokens [B, 42, D] → TransformerEncoder → CNNDecoder(use_tanh=False)
 → per-token MSE → heatmap [B, 3, 14]
 ```
 
 ### Key design decisions
 
 - **No train/inference gap**: encoder never sees [MASK] during training or inference.
-- **LightDecoder no Tanh**: GlobalRevIN targets are unbounded; Tanh caused MSE errors in GLCReconV8.
+- **CNNDecoder(use_tanh=False)**: For anomaly detection the reconstruction error IS the anomaly score → stronger decoder lowers MSE(normal) → wider gap with MSE(anomaly) → better AUROC. Masking prevents encoder shortcut independently of decoder strength. GlobalRevIN targets are unbounded so Tanh is off.
 - **compute_loss always uses masked forward**: val_loss computed with same masking as train → comparable scale.
 - **compute_heatmap/compute_anomaly_score use full inference forward**: deterministic scores for threshold calibration.
 - **ContextEmbedding preserved**: robot_idx + program_idx still supported via codebooks.

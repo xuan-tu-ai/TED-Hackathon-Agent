@@ -10,7 +10,7 @@ from app.anomaly_detection.models.factory import (
     create_model,
 )
 from app.anomaly_detection.layers.masking import MaskToken, random_masking
-from app.anomaly_detection.layers.reconstruction import LightDecoder
+from app.anomaly_detection.layers.reconstruction import CNNDecoder
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -74,15 +74,18 @@ def test_random_masking_shapes():
     assert abs(mask.mean().item() - mask_ratio) < 0.05
 
 
-def test_light_decoder_no_tanh():
-    dec = LightDecoder(d_model=64, patch_size=PATCH_SIZE)
+def test_cnn_decoder_no_tanh():
+    dec = CNNDecoder(
+        num_sensors=C, num_patches=NUM_PATCHES, d_model=64,
+        patch_size=PATCH_SIZE, use_tanh=False,
+    )
     x = torch.randn(B, NUM_TOKENS, 64)
     out = dec(x)
     assert out.shape == (B, NUM_TOKENS, PATCH_SIZE)
-    # Output should NOT be bounded to [-1, 1]
+    # use_tanh=False: output must not be bounded to [-1, 1]
     x_extreme = torch.ones(B, NUM_TOKENS, 64) * 100.0
     out_extreme = dec(x_extreme)
-    assert out_extreme.abs().max().item() > 1.0, "LightDecoder should NOT have Tanh"
+    assert out_extreme.abs().max().item() > 1.0, "CNNDecoder(use_tanh=False) must not apply Tanh"
 
 
 # ── Model forward tests ───────────────────────────────────────────────────────

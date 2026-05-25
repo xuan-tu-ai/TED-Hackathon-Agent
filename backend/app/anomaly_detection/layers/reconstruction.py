@@ -78,12 +78,14 @@ class CNNDecoder(nn.Module):
         num_patches: int,
         d_model: int = 128,
         patch_size: int = 32,
+        use_tanh: bool = True,
     ) -> None:
         super().__init__()
         self.num_sensors = num_sensors
         self.num_patches = num_patches
         self.d_model = d_model
         self.patch_size = patch_size
+        self.use_tanh = use_tanh
 
         # Stage 1: per-token decode
         self.token_decode = nn.Sequential(
@@ -120,8 +122,10 @@ class CNNDecoder(nn.Module):
         refined = self.temporal_refine(signal)                # [B, C, P*PS]
 
         patches_out = refined.reshape(B, C, P, PS)
-        # Tanh bounds output to [-1, 1] matching PerPatchRevIN target range
-        return torch.tanh(patches_out.reshape(B, N, PS))
+        out = patches_out.reshape(B, N, PS)
+        # use_tanh=True for PerPatchRevIN targets (bounded [-1,1]);
+        # use_tanh=False for GlobalRevIN targets (unbounded)
+        return torch.tanh(out) if self.use_tanh else out
 
 
 class LightDecoder(nn.Module):

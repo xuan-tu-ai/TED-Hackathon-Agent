@@ -6,10 +6,15 @@ Replaces GLCReconV8's full-reconstruction paradigm with the MAE paradigm
 Key differences from GLCReconV8:
 - Training: encoder sees only ~55% visible tokens (mask_ratio=0.45).
   No shortcut f(x)=x because the encoder cannot copy masked tokens.
-- LightDecoder (2-layer MLP, no Tanh) replaces heavy CNNDecoder.
+- CNNDecoder with use_tanh=False (GlobalRevIN targets are unbounded).
 - Loss computed only on masked positions → cleaner gradient signal.
 - Inference: NO masking. Encoder processes all tokens → single forward pass.
 - No train/inference distribution gap: encoder never sees [MASK] tokens.
+
+CNNDecoder (not LightDecoder) is intentional: for anomaly detection the
+reconstruction error IS the anomaly score, so a better decoder lowers
+MSE(normal) → widens the gap with MSE(anomaly) → better AUROC.
+Masking already prevents the encoder shortcut independently of decoder size.
 """
 
 from dataclasses import dataclass, field, fields
@@ -26,7 +31,7 @@ from app.anomaly_detection.layers.encoders import (
     PositionalEmbedding,
 )
 from app.anomaly_detection.layers.attention import TransformerEncoder
-from app.anomaly_detection.layers.reconstruction import LightDecoder
+from app.anomaly_detection.layers.reconstruction import CNNDecoder
 from app.anomaly_detection.layers.embeddings import ContextEmbedding
 from app.anomaly_detection.layers.masking import random_masking
 from app.anomaly_detection.layers.scorer import MADThreshold
@@ -108,12 +113,12 @@ class GLCMaeV8(BaseAnomalyDetectionModel):
             → random_masking(45%) → visible_tokens [B, n_vis, D]
             → TransformerEncoder (encoder sees only visible)
             → unshuffle: latent back to [B, N, D] with MaskToken+pos at masked positions
-            → LightDecoder → recon [B, N, L]
+            → CNNDecoder(use_tanh=False) → recon [B, N, L]
             → Loss: MSE on masked positions only
 
         Inference (full):
             → TransformerEncoder (all N tokens, no masking)
-            → LightDecoder → recon [B, N, L]
+            → CNNDecoder(use_tanh=False) → recon [B, N, L]
             → Score: per-token MSE → heatmap [B, C, P]
     """
 
@@ -207,8 +212,14 @@ class GLCMaeV8(BaseAnomalyDetectionModel):
             dropout=dropout,
         )
 
-        # ── Light Decoder ──────────────────────────────────────────────────
-        self.decoder = LightDecoder(d_model=d_model, patch_size=patch_size)
+        # ── CNN Decoder (no Tanh — GlobalRevIN targets are unbounded) ─────
+        self.decoder = CNNDecoder(
+            num_sensors=num_sensors,
+            num_patches=num_patches,
+            d_model=d_model,
+            patch_size=patch_size,
+            use_tanh=False,
+        )
 
     # ── Properties ────────────────────────────────────────────────────────
 
