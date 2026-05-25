@@ -1,0 +1,8 @@
+{
+  "global_threshold": 10000000000.0,
+  "score_thresholds": {
+    "p95_score_wire_feed_speed": 1.7,
+    "p95_score_wire_temperature": 0.4,
+    "p95_score_welding_current": 3.0
+  }
+}

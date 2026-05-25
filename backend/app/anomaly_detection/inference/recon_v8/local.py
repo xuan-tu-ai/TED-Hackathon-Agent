@@ -20,6 +20,7 @@ from typing import Optional
 
 import torch
 import numpy as np
+from scipy.signal import windows as scipy_windows
 
 import app.anomaly_detection.constants as constants
 from app.anomaly_detection.models import ReconstructionModels, create_model
@@ -240,6 +241,7 @@ class Reconf8LocalPreResult:
 
             score_accum = np.zeros((C, total_steps), dtype=np.float32)
             weight_accum = np.zeros(total_steps, dtype=np.float32)
+            weight_func = scipy_windows.gaussian(W, std=W / 4)
 
             batch_size = 16
             with torch.no_grad():
@@ -266,8 +268,10 @@ class Reconf8LocalPreResult:
                         ts_scores = _heatmap_to_timestep_scores(
                             heatmaps_np[bi], W, patch_size, patch_stride
                         )
-                        score_accum[:, t_off: t_off + W] += ts_scores
-                        weight_accum[t_off: t_off + W] += 1.0
+                        # Gaussian-weighted stitching (same as @file:reconstruction)
+                        for c in range(C):
+                            score_accum[c, t_off: t_off + W] += ts_scores[c] * weight_func
+                        weight_accum[t_off: t_off + W] += weight_func
 
             final_map = score_accum / (weight_accum[None, :] + 1e-6)
 
