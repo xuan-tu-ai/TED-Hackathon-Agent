@@ -1,9 +1,10 @@
 """
 Anomaly 9: Cable Wear / Intermittent Short.
 
-S1 randomly drops to near-zero for 1-3 steps, 8-15 times during the active
-phase. Each dropout has a sharp drop and sharp recovery (no exponential decay
-— it's an electrical short, not a mechanical deceleration). S0 is normal.
+S1 randomly drops to near-zero for 3-8 steps (375ms-1s per dropout), 8-15
+times during the active phase. Each dropout has a sharp drop and sharp recovery
+(no exponential decay — it's an electrical short, not a mechanical deceleration).
+S0 is normal.
 
 Physical cause: Welding cable insulation wears through → intermittent ground
 short. The #1 maintenance issue in production welding cells.
@@ -22,7 +23,7 @@ def inject_cable_wear(
     sample: WeldingSample | WeldingSampleNoisy,
     rng: random.Random | None = None,
     dropout_count_range: tuple[int, int] = (8, 15),
-    dropout_length_range: tuple[int, int] = (1, 3),
+    dropout_length_range: tuple[int, int] = (3, 8),
 ) -> WeldingSampleNoisy:
     """Inject cable wear / intermittent short into welding_current.
 
@@ -30,7 +31,7 @@ def inject_cable_wear(
         sample: Clean or noisy sample to inject into.
         rng: Random number generator.
         dropout_count_range: (min, max) number of dropout events.
-        dropout_length_range: (min, max) steps per dropout.
+        dropout_length_range: (min, max) steps per dropout (default 3-8).
 
     Returns:
         WeldingSampleNoisy with cable wear anomaly.

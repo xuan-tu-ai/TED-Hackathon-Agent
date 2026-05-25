@@ -172,3 +172,46 @@ class TestCSVWriter:
         writer = CSVWriter(output_dir=nested_dir)
         path, _ = writer.write_train(gen, num_days=1, robots=[0])
         assert os.path.exists(path)
+
+
+class TestThresholdCalibration:
+    """Sprint 20 T4: Threshold calibration dataset."""
+
+    @pytest.fixture
+    def tmpdir(self):
+        with tempfile.TemporaryDirectory() as d:
+            yield d
+
+    def test_threshold_calibration_has_both_normal_and_anomaly(self, tmpdir):
+        """Threshold calibration CSV should contain both normal and anomaly cycles."""
+        gen = BatchGenerator(seed=42)
+        writer = CSVWriter(output_dir=tmpdir)
+        csv_path, label_path, _ = writer.write_threshold_calibration(
+            gen, num_cycles=100, anomaly_ratio=0.5, seed=42
+        )
+
+        assert os.path.getsize(csv_path) > 0
+        assert os.path.getsize(label_path) > 0
+
+        with open(label_path) as f:
+            reader = csv.DictReader(f)
+            labels = list(reader)
+
+        assert len(labels) == 100
+
+        anomaly_types = {l["anomaly_type"] for l in labels}
+        assert "normal" in anomaly_types, "Should have normal cycles"
+        # At least some anomaly types present
+        has_anomaly = any(l["is_anomaly"] == "1" for l in labels)
+        assert has_anomaly, "Should have anomalous cycles"
+
+    def test_threshold_calibration_filenames(self, tmpdir):
+        """Verify correct filenames for threshold calibration."""
+        gen = BatchGenerator(seed=42)
+        writer = CSVWriter(output_dir=tmpdir)
+        csv_path, label_path, _ = writer.write_threshold_calibration(
+            gen, num_cycles=20, anomaly_ratio=0.5, seed=42
+        )
+
+        assert "threshold_calibration_welding_robot.csv" in csv_path
+        assert "threshold_calibration_labels.csv" in label_path

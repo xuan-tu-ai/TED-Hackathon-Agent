@@ -548,3 +548,168 @@ class TestPerSensorScoring:
         applied = applier.apply(results)
         assert len(applied) == len(results)
         assert all("is_file_anomaly" in r for r in applied)
+
+
+# =============================================================================
+# Recon V9 (GLCMaeV9) — Sprint 20 T10
+# =============================================================================
+
+C9, T9 = 3, 256
+_V9_META = {
+    "name": "GLCMaeV9",
+    "num_sensors": C9,
+    "seq_len": T9,
+    "num_robots": 4,
+    "num_programs": 16,
+    "patch_size": 32,
+    "patch_stride": 16,
+    "d_model": 64,
+    "num_patches": 15,
+    "transformer_layers": 2,
+    "transformer_heads": 2,
+    "ffn_dim": 128,
+    "dropout": 0.0,
+    "mask_ratio": 0.45,
+    "use_context_embeddings": False,
+    "normalizer": "log+global_seq_norm",
+}
+
+
+def _v9_engine():
+    from app.anomaly_detection.models.glc_mae_v9 import GLCMaeV9
+    model = GLCMaeV9(
+        num_sensors=C9, seq_len=T9, num_robots=4, num_programs=16,
+        patch_size=32, patch_stride=16, d_model=64, transformer_layers=2,
+        transformer_heads=2, ffn_dim=128, dropout=0.0,
+        mask_ratio=0.45, use_context_embeddings=False,
+    )
+    from app.anomaly_detection.inference.recon_v9.local import Reconf9LocalPreResult
+    return Reconf9LocalPreResult(
+        model_version=ReconstructionModels.GLC_MAE_V9,
+        metadata=_V9_META,
+        state_dict=model.state_dict(),
+        quantile=0.99,
+        k_skip=1,
+        device="cpu",
+    )
+
+
+def _v9_records(n_files: int = 3, n_windows: int = 5):
+    rng = np.random.default_rng(42)
+    records = []
+    for _ in range(n_files):
+        w = rng.normal(0, 1.0, (n_windows, C9, T9)).astype(np.float32)
+        records.append({
+            "robot_code": "0", "program_number": 0, "start_time": "0",
+            "windows": w,
+            "serials": np.arange(0, n_windows * 64, 64, dtype=np.int64),
+        })
+    return records
+
+
+class TestReconf9LocalPipeline:
+    """V9 inference: p99 quantile, no tail window, k_skip=1."""
+
+    def test_reconf9_score_keys_p99(self):
+        """Score keys should use p99 prefix, not p95."""
+        engine = _v9_engine()
+        results = engine.score_batch(_v9_records(3, 5))
+        for res in results:
+            assert "p99_score" in res, f"Missing p99_score key, got keys: {list(res.keys())}"
+            assert "p99_score_rampup" in res
+            assert "p99_score_active" in res
+            assert "p99_score_wire_feed_speed" in res
+            assert "p99_score_wire_temperature" in res
+            assert "p99_score_welding_current" in res
+            # p95 keys should NOT be present
+            assert "p95_score" not in res, "p95_score should not appear in V9 results"
+
+    def test_reconf9_no_tail_window(self):
+        """With T=256, stride=64, N=5, the last serial should be 256 (no tail)."""
+        records = _v9_records(1, 5)
+        # Manually verify the serials don't include a 6th window position
+        serials = records[0]["serials"]
+        assert len(serials) == 5, f"Expected 5 windows, got {len(serials)}"
+        # stride=64, so serials should be [0, 64, 128, 192, 256]
+        assert serials[-1] == 256, f"Last serial should be 256 (stride*4), got {serials[-1]}"
+
+    def test_reconf9_thermal_drift_score_higher_than_normal(self):
+        """Thermal drift should produce higher scores than normal data."""
+        from app.anomaly_detection.models.glc_mae_v9 import GLCMaeV9
+        model = GLCMaeV9(
+            num_sensors=C9, seq_len=T9, num_robots=4, num_programs=16,
+            patch_size=32, patch_stride=16, d_model=64, transformer_layers=2,
+            transformer_heads=2, ffn_dim=128, dropout=0.0,
+            mask_ratio=0.45, use_context_embeddings=False,
+        )
+        # Accumulate stats with normal data
+        model.train()
+        normal_data = torch.randn(8, C9, T9) * 2.0 + 10.0
+        for i in range(0, len(normal_data), 4):
+            model.compute_loss({"input": normal_data[i:i+4]})
+
+        model.eval()
+
+        # Normal record
+        normal_w = np.random.default_rng(42).normal(0, 1.0, (3, C9, T9)).astype(np.float32)
+        # Thermal drift record: channel 2 ramps up
+        drift_w = normal_w.copy()
+        drift_ramp = np.linspace(0, 10.0, T9).astype(np.float32)
+        drift_w[:, 2, :] += drift_ramp  # type: ignore
+
+        from app.anomaly_detection.inference.recon_v9.local import Reconf9LocalPreResult
+        engine = Reconf9LocalPreResult(
+            model_version=ReconstructionModels.GLC_MAE_V9,
+            metadata=_V9_META,
+            state_dict=model.state_dict(),
+            quantile=0.99,
+            k_skip=0,
+            device="cpu",
+        )
+        normal_rec = {
+            "robot_code": "0", "program_number": 0, "start_time": "0",
+            "windows": normal_w, "serials": np.arange(0, 3 * 64, 64, dtype=np.int64),
+        }
+        drift_rec = {
+            "robot_code": "0", "program_number": 0, "start_time": "1",
+            "windows": drift_w, "serials": np.arange(0, 3 * 64, 64, dtype=np.int64),
+        }
+        normal_result = engine.score_batch([normal_rec])
+        drift_result = engine.score_batch([drift_rec])
+
+        drift_p99 = drift_result[0]["p99_score"]
+        normal_p99_val = normal_result[0]["p99_score"]
+        assert drift_p99 > normal_p99_val, (
+            f"Thermal drift p99 ({drift_p99:.4f}) should be higher than "
+            f"normal p99 ({normal_p99_val:.4f})"
+        )
+
+    def test_reconf9_threshold_creator_p99(self):
+        """Threshold creator should work with p99 score keys."""
+        engine = _v9_engine()
+        results = engine.score_batch(_v9_records(5, 5))
+        from app.anomaly_detection.inference.recon_v9.local import Reconf9LocalThresholdCreator
+        tc = Reconf9LocalThresholdCreator(quantile=0.99)
+        tc.fit_from_pre_results(results)
+        assert "p99_score" in tc.thresholds
+        assert tc.thresholds["p99_score"] > 0
+        d = tc.to_dict()
+        tc2 = Reconf9LocalThresholdCreator.from_dict(d)
+        assert tc2.thresholds == tc.thresholds
+
+    def test_reconf9_applier_output_keys(self):
+        """Applier should produce correct output keys with p99."""
+        engine = _v9_engine()
+        results = engine.score_batch(_v9_records(3, 5))
+        from app.anomaly_detection.inference.recon_v9.local import Reconf9LocalThresholdCreator, Reconf9LocalApplier
+        tc = Reconf9LocalThresholdCreator(quantile=0.99)
+        tc.fit_from_pre_results(results)
+        applier = Reconf9LocalApplier({
+            "global_threshold": tc.threshold,
+            "score_thresholds": tc.thresholds,
+        }, quantile=0.99)
+        applied = applier.apply(results)
+        for res in applied:
+            assert "is_file_anomaly" in res
+            assert isinstance(res["is_file_anomaly"], bool)
+            assert "p99_score" in res

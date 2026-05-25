@@ -122,3 +122,53 @@ class TestComputePatchStats:
         max_vals = stats[:, :, :, 0]  # [B, C, N]
         min_vals = stats[:, :, :, 1]  # [B, C, N]
         assert (max_vals >= min_vals).all()
+
+
+class TestGlobalSeqNorm:
+    """Tests for GlobalSeqNorm (Sprint 20 T6)."""
+
+    def test_global_seq_norm_shape(self):
+        from app.anomaly_detection.layers.normalization import GlobalSeqNorm
+        seqnorm = GlobalSeqNorm(num_sensors=3)
+        x = torch.randn(4, 3, 512)
+        out = seqnorm(x)
+        assert out.shape == (4, 3, 512), f"Expected [4, 3, 512], got {out.shape}"
+
+    def test_global_seq_norm_accumulates_in_train_mode(self):
+        from app.anomaly_detection.layers.normalization import GlobalSeqNorm
+        seqnorm = GlobalSeqNorm(num_sensors=3)
+        seqnorm.train()
+        # Running stats start at 0/1
+        assert seqnorm.bn.running_mean is not None
+        assert seqnorm.bn.running_var is not None
+
+        # Feed a batch with positive mean
+        x = torch.ones(4, 3, 512) * 10.0
+        seqnorm(x)
+        # After one batch, running_mean should be closer to 10
+        assert seqnorm.bn.running_mean[0].item() > 0.5, (
+            f"Running mean should update towards 10, got {seqnorm.bn.running_mean[0].item()}"
+        )
+
+    def test_global_seq_norm_uses_running_stats_in_eval(self):
+        from app.anomaly_detection.layers.normalization import GlobalSeqNorm
+        seqnorm = GlobalSeqNorm(num_sensors=3)
+        seqnorm.train()
+
+        # Accumulate statistics with a known mean
+        x = torch.ones(4, 3, 512) * 10.0
+        for _ in range(50):
+            seqnorm(x)
+
+        seqnorm.eval()
+        # In eval mode, running_mean should be ~10, so output should be near 0
+        assert abs(seqnorm.bn.running_mean[0].item() - 10.0) < 1.0, (
+            f"Running mean should converge to ~10, got {seqnorm.bn.running_mean[0].item()}"
+        )
+        x_test = torch.ones(4, 3, 512) * 10.0
+        with torch.no_grad():
+            out = seqnorm(x_test)
+        # After 50 iterations, output mean should be near 0
+        assert abs(out.mean().item()) < 1.0, (
+            f"Eval mode should normalize near 0, got mean={out.mean().item()}"
+        )

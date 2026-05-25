@@ -8,6 +8,9 @@
 Current test count: **~180+ tests** across anomaly detection (Sprint 1), agent system (Sprint 2), and codebase unification (Sprint 3).
 
 ## Active Sprints
+- [Sprint 20](docs/sprint-plans/sprint-20.md) — *Planned* — GLCMaeV9: LogScaler+GlobalSeqNorm thay RevIN, 4-dataset strategy, bỏ tail window, p99 scoring
+
+## Recent Completed Sprints
 - [Sprint 18](docs/sprint-plans/sprint-18.md) — *Completed* — Welding Robot Data Regeneration: convergent normal data + 5 anomaly types
 - [Sprint 19](docs/sprint-plans/sprint-19.md) — *Completed* — Dashboard: reduce robots to 4 + real-time error-count timeline panel with L1/L2 reference lines
 - [Sprint 17](docs/sprint-plans/sprint-17.md) — *Completed* — GLC-Recon V8 refactor: full reconstruction + dual-stream CNN encoders
@@ -99,7 +102,8 @@ frontend/                         ← React 18 + Vite + Zustand (SSE streaming, 
 | 15 | MaskFormer Training Fixes | ✅ Done | JS divergence, CNN decoder, Phase-A warmup, gradient-norm logging, λ ramp, mask_ratio tuning |
 | 16 | Data Simulator Realism + 6 New Anomalies + Phase-Aware Scoring | ✅ Done | Momentum noise (AR-1), local-window variance, U-pattern; 6 new anomaly types; phase-aware scoring with rampup/active P95 thresholds; 138/138 tests passing |
 | 17 | GLC-Recon V8 Refactor | ✅ Done | Full reconstruction + dual-stream CNN encoders + ContextEmbedding + CosineAnnealing LR |
-| 18 | Welding Robot Data Regeneration | 🏗️ In Progress | Convergent normal data, 10→5 anomaly types, real welding timing research |
+| 18 | Welding Robot Data Regeneration | ✅ Done | Convergent normal data, 10→5 anomaly types, real welding timing research |
+| 19 | Dashboard Error Timeline | ✅ Done | Reduce robots to 4 + real-time error-count timeline panel with L1/L2 reference lines |
 
 ## Backlog / Future Work
 - **Real OT data integration** — Replace mock simulation with live paint-shop sensor data feed

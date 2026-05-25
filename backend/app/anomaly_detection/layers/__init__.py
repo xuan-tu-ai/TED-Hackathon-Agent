@@ -16,9 +16,10 @@ from .normalization import (
     RevIN,
     LogScaler,
     GlobalStatsStandardizer,
+    GlobalSeqNorm,
 )
 from .patchify import Patchify, FlattenPatches
-from .encoders import PatchEncoderGlobal, PatchEncoderLocal, PatchEncoderCNNGlobal, PatchEncoderCNNLocal, PositionalEmbedding
+from .encoders import PatchEncoderGlobal, PatchEncoderLocal, PatchEncoderCNNGlobal, PatchEncoderCNNLocal, PatchEncoderCNN, PositionalEmbedding
 from .embeddings import ContextEmbedding, RelativePositionEncoder
 from .feature_extraction import ShapeEncoder, StatProjector
 from .attention import (
@@ -45,6 +46,7 @@ __all__ = [
     "RevIN",
     "LogScaler",
     "GlobalStatsStandardizer",
+    "GlobalSeqNorm",
     "Patchify",
     "FlattenPatches",
     "PatchEncoderGlobal",
@@ -59,6 +61,7 @@ __all__ = [
     "DualPooling",
     "PatchEncoderCNNGlobal",
     "PatchEncoderCNNLocal",
+    "PatchEncoderCNN",
     "MixerBlock",
     "MLPMixerBackbone",
     "SinusoidalTimeEmbedding",

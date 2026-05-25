@@ -233,7 +233,133 @@ class CSVWriter:
             if is_anomaly:
                 anomaly_type = rng.choice(anomaly_types)
                 inject_fn = anomaly_fns[anomaly_type]
-                noisy_sample = inject_fn(clean_sample, rng)
+                noisy_base = batch_gen.sample_gen.add_noise(clean_sample)
+                noisy_sample = inject_fn(noisy_base, rng)
+            else:
+                anomaly_type = "normal"
+                noisy_sample = batch_gen.sample_gen.add_noise(clean_sample)
+
+            if start_date is None:
+                start_date = datetime(2025, 7, 1)
+            start_dt = start_date.replace(hour=6, minute=0, second=0)
+            start_time_str = start_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+            n = len(noisy_sample.wire_feed_speed)
+
+            for step_idx in range(n):
+                ts = start_dt + timedelta(seconds=step_idx * SECONDS_PER_STEP)
+                phase = _phase_label(step_idx, noisy_sample.phase_boundaries)
+
+                chunk.append(CycleRow(
+                    cycle_id=cycle_id,
+                    robot_code=noisy_sample.robot_id,
+                    start_time=start_time_str,
+                    program_number=noisy_sample.program_id,
+                    serial_number=step_idx + 1,
+                    phase=phase,
+                    wire_feed_speed_mm_min=round(float(noisy_sample.wire_feed_speed[step_idx]), 1),
+                    wire_temperature_c=round(float(noisy_sample.temperature[step_idx]), 1),
+                    welding_current_a=round(float(noisy_sample.welding_current[step_idx]), 1),
+                    anomaly_type=anomaly_type,
+                    timestamp=ts.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "+00:00",
+                ))
+
+                row_count += 1
+                if len(chunk) >= self.chunk_size:
+                    _write_rows_to_csv(chunk, csv_path)
+                    chunk = []
+
+            labels.append({
+                "cycle_id": cycle_id,
+                "robot_code": noisy_sample.robot_id,
+                "start_time": start_time_str,
+                "program_number": noisy_sample.program_id,
+                "is_anomaly": 1 if is_anomaly else 0,
+                "anomaly_type": anomaly_type,
+            })
+
+            cycles_written += 1
+            if cycles_written % 100 == 0:
+                _write_labels_to_csv(labels, labels_path)
+                labels = []
+
+        if chunk:
+            _write_rows_to_csv(chunk, csv_path)
+        if labels:
+            _write_labels_to_csv(labels, labels_path)
+
+        return csv_path, labels_path, row_count
+
+    def write_threshold_calibration(
+        self,
+        batch_gen: BatchGenerator,
+        num_cycles: int = 1000,
+        anomaly_ratio: float = 0.5,
+        robots: list[int] | None = None,
+        seed: int = 42,
+        start_date: datetime | None = None,
+    ) -> tuple[str, str, int]:
+        """Write a calibration dataset with both normal and anomalous cycles.
+
+        This dataset is used for manual threshold selection by plotting score
+        distributions per anomaly type.  Outputs:
+            threshold_calibration_welding_robot.csv — sensor data
+            threshold_calibration_labels.csv — anomaly labels per cycle
+
+        Args:
+            batch_gen: BatchGenerator instance.
+            num_cycles: Total number of cycles to generate.
+            anomaly_ratio: Fraction of cycles that are anomalous.
+            robots: List of robot IDs.
+            seed: Random seed for anomaly selection.
+            start_date: Date to use for all cycles.
+
+        Returns:
+            (csv_filepath, labels_filepath, row_count) tuple.
+        """
+        if robots is None:
+            robots = [0, 1, 2, 3]
+
+        os.makedirs(self.output_dir, exist_ok=True)
+        csv_path = os.path.join(self.output_dir, "threshold_calibration_welding_robot.csv")
+        labels_path = os.path.join(self.output_dir, "threshold_calibration_labels.csv")
+
+        # Remove existing files
+        for p in [csv_path, labels_path]:
+            if os.path.exists(p):
+                os.remove(p)
+
+        rng = random.Random(seed)
+        anomaly_types = [
+            "spike", "thermal_drift", "flatline", "cable_wear", "arc_blow",
+        ]
+        anomaly_fns = {
+            "spike": inject_spike,
+            "thermal_drift": inject_thermal_drift,
+            "flatline": inject_flatline,
+            "cable_wear": inject_cable_wear,
+            "arc_blow": inject_arc_blow,
+        }
+
+        chunk: list[CycleRow] = []
+        labels: list[dict] = []
+        row_count = 0
+        cycles_written = 0
+
+        while cycles_written < num_cycles:
+            robot_id = rng.choice(robots)
+            clean_sample = batch_gen.sample_gen.generate_sample(robot_id=robot_id)
+
+            is_anomaly = rng.random() < anomaly_ratio and cycles_written < num_cycles
+
+            batch_gen._cycle_counter += 1
+            cycle_id = batch_gen._cycle_counter
+
+            if is_anomaly:
+                anomaly_type = rng.choice(anomaly_types)
+                inject_fn = anomaly_fns[anomaly_type]
+                noisy_base = batch_gen.sample_gen.add_noise(clean_sample)
+                noisy_sample = inject_fn(noisy_base, rng)
             else:
                 anomaly_type = "normal"
                 noisy_sample = batch_gen.sample_gen.add_noise(clean_sample)

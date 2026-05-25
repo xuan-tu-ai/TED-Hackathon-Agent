@@ -48,10 +48,20 @@ class TestSpikeAnomaly:
         # The temp bump is small (~1.5°C), so the mean might be slightly higher
         assert spiked.temperature.mean() >= clean_sample.temperature.mean()
 
-    def test_spike_duration(self, clean_sample, rng):
-        """Spike should be exactly spike_duration steps long."""
-        spiked = inject_spike(clean_sample, rng, spike_duration=2)
+    def test_spike_duration_default(self, clean_sample, rng):
+        """Default spike should be at least 5 steps long (Sprint 20)."""
+        spiked = inject_spike(clean_sample, rng)
         # Find the spike: values > 2x normal max
+        normal_max = clean_sample.welding_current.max()
+        spike_mask = spiked.welding_current > normal_max * 2
+        assert spike_mask.sum() >= 5, (
+            f"Default spike duration should be >= 5 steps, "
+            f"got {spike_mask.sum()}"
+        )
+
+    def test_spike_duration_explicit(self, clean_sample, rng):
+        """Spike should be exactly spike_duration steps long when set."""
+        spiked = inject_spike(clean_sample, rng, spike_duration=2)
         normal_max = clean_sample.welding_current.max()
         spike_mask = spiked.welding_current > normal_max * 2
         assert spike_mask.sum() == 2, f"Expected 2 spike steps, got {spike_mask.sum()}"
@@ -188,6 +198,28 @@ class TestCableWear:
     def test_leaves_feed_unchanged(self, clean_sample, rng):
         worn = inject_cable_wear(clean_sample, rng)
         assert np.allclose(clean_sample.wire_feed_speed, worn.wire_feed_speed)
+
+    def test_default_dropout_length_at_least_3(self, clean_sample, rng):
+        """Default dropout length should be >= 3 steps (Sprint 20)."""
+        worn = inject_cable_wear(clean_sample, rng)
+        active_start = clean_sample.phase_boundaries["rampup_end"]
+        active_end = clean_sample.phase_boundaries["active_end"]
+        active_current = worn.welding_current[active_start:active_end]
+        normal_mean = clean_sample.welding_current[active_start:active_end].mean()
+
+        # Find consecutive dropout runs (current < 20% of normal mean)
+        is_dropout = active_current < normal_mean * 0.2
+        # Count consecutive True sequences
+        changes = np.diff(np.concatenate(([False], is_dropout, [False])).astype(int))
+        run_starts = np.where(changes == 1)[0]
+        run_ends = np.where(changes == -1)[0]
+        if len(run_starts) > 0:
+            run_lengths = run_ends - run_starts
+            # At least some runs should be >= 3 steps
+            long_runs = np.sum(run_lengths >= 3)
+            assert long_runs >= 1, (
+                f"No dropout runs >= 3 steps found. Run lengths: {run_lengths}"
+            )
 
     def test_dropouts_are_sharp(self, clean_sample, rng):
         """Dropouts should have sharp edges (electrical, not mechanical)."""

@@ -170,3 +170,53 @@ class TestPhaseIntegrity:
             bounds = s.phase_boundaries
             # Last shutdown step should be the last step
             assert bounds["winddown_end"] <= len(s.wire_feed_speed)
+
+
+class TestWriteTestNoise:
+    """Verify anomaly files have sensor noise (Sprint 20 T1)."""
+
+    @pytest.fixture
+    def tmpdir(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            yield d
+
+    def test_write_test_anomaly_has_sensor_noise(self, tmpdir):
+        """After fix: anomaly files should have sensor noise (std WFS > 5.0)."""
+        gen = BatchGenerator(seed=42)
+        writer = CSVWriter(output_dir=tmpdir)
+        csv_path, _, _ = writer.write_test(
+            gen, num_cycles=50, anomaly_ratio=1.0, seed=42
+        )
+
+        # Read CSV and group by cycle_id
+        import csv as csv_mod
+        with open(csv_path) as f:
+            reader = csv_mod.DictReader(f)
+            rows = list(reader)
+
+        # Group by cycle_id
+        from collections import defaultdict
+        cycles = defaultdict(list)
+        for row in rows:
+            cycles[row["cycle_id"]].append(row)
+
+        # Check at least some spike cycles have noisy WFS
+        spike_cycles = [c for cid, c in cycles.items()
+                        if any(r["anomaly_type"] == "spike" for r in c)]
+        assert len(spike_cycles) > 0, "Should have spike cycles"
+
+        # For spike cycles, compute std of wire_feed_speed (should have noise)
+        noisy_stds = []
+        for cycle_rows in spike_cycles:
+            wfs_vals = [float(r["wire_feed_speed_mm_min"]) for r in cycle_rows]
+            import numpy as np
+            noisy_stds.append(float(np.std(wfs_vals)))
+
+        mean_std = sum(noisy_stds) / len(noisy_stds)
+        # Sensor noise + spike should produce std > 5.0
+        assert mean_std > 5.0, (
+            f"Spike cycles should have sensor noise (std={mean_std:.2f} > 5.0). "
+            f"If add_noise() is missing before inject_fn(), WFS will be nearly "
+            f"deterministic and std will be too low."
+        )

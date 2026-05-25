@@ -258,3 +258,55 @@ class PatchEncoderCNNLocal(nn.Module):
 
     def extra_repr(self) -> str:
         return f"patch_size={self.patch_size}, d_half={self.d_half}"
+
+
+class PatchEncoderCNN(nn.Module):
+    """Single-stream CNN patch encoder — outputs [B, N, d_model] directly.
+
+    Used by GLCMaeV9 where both streams share the same pre-normalized input,
+    so a single encoder replaces the dual (global+local) encoders of V8.
+
+    Architecture per patch:
+        [1, patch_size]
+        → Conv1d(1→16, k=3, pad=1) → GELU
+        → Conv1d(16→32, k=3, pad=1) → GELU
+        → flatten → Linear(32*patch_size, d_model) → LayerNorm
+
+    Args:
+        patch_size: Number of timesteps per patch (default 32).
+        d_model: Output embedding dimension (default 128).
+    """
+
+    def __init__(self, patch_size: int = 32, d_model: int = 128) -> None:
+        super().__init__()
+        self.patch_size = patch_size
+        self.d_model = d_model
+
+        self.conv = nn.Sequential(
+            nn.Conv1d(1, 16, kernel_size=3, padding=1),
+            nn.GELU(),
+            nn.Conv1d(16, 32, kernel_size=3, padding=1),
+            nn.GELU(),
+        )
+        self.proj = nn.Linear(32 * patch_size, d_model)
+        self.norm = nn.LayerNorm(d_model)
+
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+        """Encode patch tokens with CNN.
+
+        Args:
+            tokens: [B, C*P, patch_size]  e.g. [B, 45, 32]
+
+        Returns:
+            encoded: [B, C*P, d_model]  e.g. [B, 45, 128]
+        """
+        B, N, L = tokens.shape
+        x = tokens.reshape(B * N, 1, L)          # [B*N, 1, L]
+        x = self.conv(x)                          # [B*N, 32, L]
+        x = x.reshape(B * N, 32 * L)             # [B*N, 32*L]
+        x = self.proj(x)                          # [B*N, d_model]
+        x = self.norm(x)
+        return x.reshape(B, N, self.d_model)      # [B, N, d_model]
+
+    def extra_repr(self) -> str:
+        return f"patch_size={self.patch_size}, d_model={self.d_model}"

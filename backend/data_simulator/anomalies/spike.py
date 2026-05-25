@@ -1,7 +1,7 @@
 """
 Anomaly 1: Cross-sensor Spike / Short Circuit.
 
-Injects a 2-step spike into welding_current (3-5x normal amplitude)
+Injects a 5-step spike into welding_current (3-5x normal amplitude)
 during the active phase. wire_feed_speed remains unchanged.
 Temperature shows a tiny delayed response (~1-2°C bump from thermal inertia).
 """
@@ -20,18 +20,19 @@ def inject_spike(
     sample: WeldingSample | WeldingSampleNoisy,
     rng: random.Random | None = None,
     magnitude_multiplier: float = 4.0,
-    spike_duration: int = 2,
+    spike_duration: int = 5,
 ) -> WeldingSampleNoisy:
     """Inject a short-circuit spike into welding_current.
 
     The spike occurs at a random position within the active phase, at least
-    10 steps from the start and end boundaries.
+    10 steps from the start and end boundaries. Default duration is 5 steps
+    (625ms @ 8Hz) for reliable detection at p99 aggregation.
 
     Args:
         sample: Clean or noisy sample to inject into.
         rng: Random number generator.
         magnitude_multiplier: How many times normal amplitude to spike.
-        spike_duration: Number of steps for the spike.
+        spike_duration: Number of steps for the spike (default 5).
 
     Returns:
         WeldingSampleNoisy with the spike injected.

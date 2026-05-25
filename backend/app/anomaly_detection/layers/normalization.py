@@ -247,3 +247,39 @@ class GlobalStatsStandardizer(nn.Module):
             Z-scored tensor of the same shape.
         """
         return self.standarizer(x)
+
+
+class GlobalSeqNorm(nn.Module):
+    """Global sequence normalisation for raw sensor signals [B, C, T].
+
+    Wraps ``nn.BatchNorm1d`` with ``affine=False`` to accumulate running
+    mean and variance across the training set **per sensor channel**.
+    Unlike :class:`GlobalStatsStandardizer` (designed for statistical
+    features [B, C, K]), this class is explicitly named for use at the
+    sequence level [B, C, T].
+
+    Running statistics are saved in ``model.state_dict()`` automatically
+    (``glob_seq_norm.bn.running_mean``, ``glob_seq_norm.bn.running_var``).
+    No explicit "fit" call is needed — stats accumulate during training.
+
+    Args:
+        num_sensors: Number of sensor channels C.
+    """
+
+    def __init__(self, num_sensors: int):
+        super().__init__()
+        self.num_sensors = num_sensors
+        self.bn = nn.BatchNorm1d(
+            num_features=num_sensors, affine=False, track_running_stats=True,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Normalize input [B, C, T] using running statistics per channel.
+
+        Args:
+            x: Input ``[B, C, T]``.
+
+        Returns:
+            Normalized tensor ``[B, C, T]``.
+        """
+        return self.bn(x)
