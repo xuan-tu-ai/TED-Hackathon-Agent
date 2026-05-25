@@ -1,4 +1,5 @@
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
 
 const TASK_ICONS = {
     pending: '⬜',
@@ -7,6 +8,18 @@ const TASK_ICONS = {
     waiting_hitl: '🔔',
     failed: '❌',
 };
+
+function MarkdownInline({ children }) {
+    return (
+        <ReactMarkdown
+            components={{
+                p: ({ children }) => <>{children}</>,
+            }}
+        >
+            {children}
+        </ReactMarkdown>
+    );
+}
 
 function TaskItem({ task, onTaskClick }) {
     const icon = TASK_ICONS[task.status] || '⬜';
@@ -23,7 +36,7 @@ function TaskItem({ task, onTaskClick }) {
                 {icon}
             </span>
             <span className={`plan-task-name ${isCompleted ? 'plan-task-name--completed' : ''}`}>
-                {task.name}
+                <MarkdownInline>{task.name}</MarkdownInline>
             </span>
             {isWaitingHitl && (
                 <span className="plan-task-hitl-badge">HITL</span>

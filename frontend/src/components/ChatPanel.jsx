@@ -25,6 +25,8 @@ function AgentHeader({ incidentId, robotId, type, status }) {
 
 export default function ChatPanel({ activeIncident, agentSteps, hitlItems, onResolveHitl }) {
     const chatBottomRef = React.useRef(null);
+    const [traceVisible, setTraceVisible] = React.useState(true);
+    const hasReport = agentSteps?.some(s => s.toolName === 'complete');
 
     React.useEffect(() => {
         if (chatBottomRef.current) {
@@ -57,17 +59,28 @@ export default function ChatPanel({ activeIncident, agentSteps, hitlItems, onRes
                     const isComplete = step.toolName === 'complete';
                     return (
                         <div className="chat-step" key={step.stepId || idx}>
-                            <ThinkingBubble
-                                reasoning={step.reasoning}
-                                isRunning={isRunning}
-                            />
-                            {isComplete ? (
-                                <SummaryReport report={step.observation} />
-                            ) : (
-                                <ToolCallChip
-                                    toolName={step.toolName || (step.action ? step.action.split('(')[0] : 'unknown')}
-                                    toolInput={step.toolInput || (step.action && step.action.includes('(') ? step.action.split('(')[1].replace(')', '') : '')}
-                                    observation={step.observation}
+                            {/* Thinking trace — collapsible when report is present */}
+                            {(!isComplete || traceVisible) && (
+                                <>
+                                    <ThinkingBubble
+                                        reasoning={step.reasoning}
+                                        isRunning={isRunning}
+                                    />
+                                    {!isComplete && (
+                                        <ToolCallChip
+                                            toolName={step.toolName || (step.action ? step.action.split('(')[0] : 'unknown')}
+                                            toolInput={step.toolInput || (step.action && step.action.includes('(') ? step.action.split('(')[1].replace(')', '') : '')}
+                                            observation={step.observation}
+                                        />
+                                    )}
+                                </>
+                            )}
+                            {isComplete && (
+                                <SummaryReport
+                                    report={step.observation}
+                                    showToggle={hasReport}
+                                    traceVisible={traceVisible}
+                                    onToggleTrace={() => setTraceVisible(v => !v)}
                                 />
                             )}
                         </div>

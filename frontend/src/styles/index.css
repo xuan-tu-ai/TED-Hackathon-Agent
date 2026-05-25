@@ -906,6 +906,9 @@ body {
 
 /* PlanTracker Component */
 .plan-tracker {
+    position: sticky;
+    top: 0;
+    z-index: 10;
     border-bottom: 1px solid var(--border-color);
     padding: 0.75rem 1rem;
     background-color: var(--bg-secondary);
@@ -1378,4 +1381,184 @@ body {
 .recharts-legend-item-text {
     font-size: 12px;
     color: var(--text-secondary) !important;
+}
+
+/* ── HITL Modal Buttons (T23) ─────────────────────────── */
+.btn-hitl {
+    flex: 1;
+    padding: 0.6rem 1rem;
+    border: none;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.btn-hitl:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.btn-hitl:active {
+    transform: translateY(0);
+}
+
+.btn-approve {
+    background-color: var(--accent-green);
+    color: #fff;
+}
+
+.btn-approve:hover {
+    background-color: #16a34a;
+}
+
+.btn-reject {
+    background-color: var(--accent-red);
+    color: #fff;
+}
+
+.btn-reject:hover {
+    background-color: #dc2626;
+}
+
+.btn-view-incident {
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color) !important;
+}
+
+.btn-view-incident:hover {
+    background-color: var(--border-color);
+}
+
+/* ── SummaryReport: table styles (T21) ────────────────── */
+.summary-report-table-wrapper {
+    overflow-x: auto;
+    margin: 0.75rem 0;
+}
+
+.summary-report-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8125rem;
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.summary-report-th {
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-weight: 700;
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    border-bottom: 2px solid var(--border-color);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.summary-report-td {
+    padding: 0.4rem 0.75rem;
+    border-bottom: 1px solid var(--bg-tertiary);
+    color: var(--text-secondary);
+}
+
+.summary-report-table tr:last-child td {
+    border-bottom: none;
+}
+
+.summary-report-table tr:hover td {
+    background-color: rgba(59, 130, 246, 0.05);
+}
+
+.summary-report-code {
+    background: var(--bg-secondary);
+    padding: 0.125rem 0.375rem;
+    border-radius: 3px;
+    font-size: 0.8125rem;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    color: var(--text-code, #f0c674);
+}
+
+.summary-report-pre {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    overflow-x: auto;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    margin: 0.5rem 0;
+}
+
+.summary-report-pre code {
+    background: none;
+    padding: 0;
+    color: var(--text-secondary);
+}
+
+/* ── SummaryReport: toggle trace button (T24) ─────────── */
+.summary-report-toggle-trace {
+    display: block;
+    width: 100%;
+    padding: 0.5rem 1rem;
+    margin-bottom: 0.75rem;
+    background-color: var(--bg-tertiary);
+    border: 1px dashed var(--border-color);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-align: center;
+}
+
+.summary-report-toggle-trace:hover {
+    background-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+/* ── SummaryReport footer + MS Teams button (T25) ─────── */
+.summary-report-footer {
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    justify-content: flex-end;
+}
+
+.btn-ms-teams {
+    padding: 0.5rem 1.25rem;
+    background-color: #6264a7;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.btn-ms-teams:hover {
+    background-color: #5052a0;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(98, 100, 167, 0.4);
+}
+
+.btn-ms-teams--clicked {
+    background-color: var(--accent-green) !important;
+    cursor: default;
+}
+
+.btn-ms-teams:disabled {
+    cursor: default;
 }

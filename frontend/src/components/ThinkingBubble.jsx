@@ -1,4 +1,6 @@
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 export default function ThinkingBubble({ reasoning, isRunning }) {
     return (
@@ -7,7 +9,11 @@ export default function ThinkingBubble({ reasoning, isRunning }) {
                 <span>{'\u{1F4AD}'} Thinking</span>
                 {isRunning && <span className="bubble-thinking-pulse" />}
             </div>
-            <div className="bubble-thinking-body">{reasoning}</div>
+            <div className="bubble-thinking-body">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {reasoning || ''}
+                </ReactMarkdown>
+            </div>
         </div>
     );
 }

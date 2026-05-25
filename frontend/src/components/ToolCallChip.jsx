@@ -1,4 +1,6 @@
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const TOOL_ICONS = {
     load_skill: '\u{1F4DA}',
@@ -38,7 +40,11 @@ export default function ToolCallChip({ toolName, toolInput, observation }) {
             {observation !== null && (
                 <details className="chip-tool-details" open={observation.length < 300}>
                     <summary className="chip-tool-summary">Result</summary>
-                    <div className="chip-tool-result">{observation}</div>
+                    <div className="chip-tool-result">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {observation}
+                        </ReactMarkdown>
+                    </div>
                 </details>
             )}
             {isRunning && (

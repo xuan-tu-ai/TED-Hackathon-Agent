@@ -1,143 +1,103 @@
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 /**
- * Lightweight markdown-like renderer for the final diagnostic report.
- * Converts a limited subset of markdown to React elements without any
- * external dependency.
- *
- * Supported syntax:
- *  - ## / ### headings
- *  - **bold**
- *  - Single-line code with backticks
- *  - Unordered lists (- / *)
- *  - Ordered lists (1. 2. ...)
- *  - Inline code
+ * Final diagnostic report rendered with react-markdown + remark-gfm.
+ * Supports full GFM including tables, lists, code blocks, and inline formatting.
  */
-function renderLine(line) {
-    // Escape HTML entities first
-    let html = line
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-
-    // Inline code
-    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-
-    // Bold
-    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-
-    return html;
+function ReportContent({ content }) {
+    return (
+        <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+                h2: ({ children, ...props }) => (
+                    <h2 className="summary-report-heading summary-report-heading--h2" {...props}>{children}</h2>
+                ),
+                h3: ({ children, ...props }) => (
+                    <h3 className="summary-report-heading summary-report-heading--h3" {...props}>{children}</h3>
+                ),
+                p: ({ children, ...props }) => (
+                    <p className="summary-report-paragraph" {...props}>{children}</p>
+                ),
+                ul: ({ children, ...props }) => (
+                    <ul className="summary-report-list" {...props}>{children}</ul>
+                ),
+                ol: ({ children, ...props }) => (
+                    <ol className="summary-report-list" {...props}>{children}</ol>
+                ),
+                li: ({ children, ...props }) => (
+                    <li className="summary-report-list-item" {...props}>{children}</li>
+                ),
+                table: ({ children, ...props }) => (
+                    <div className="summary-report-table-wrapper">
+                        <table className="summary-report-table" {...props}>{children}</table>
+                    </div>
+                ),
+                th: ({ children, ...props }) => (
+                    <th className="summary-report-th" {...props}>{children}</th>
+                ),
+                td: ({ children, ...props }) => (
+                    <td className="summary-report-td" {...props}>{children}</td>
+                ),
+                code: ({ children, ...props }) => {
+                    const isInline = !props.className;
+                    if (isInline) {
+                        return <code className="summary-report-code" {...props}>{children}</code>;
+                    }
+                    return (
+                        <pre className="summary-report-pre">
+                            <code {...props}>{children}</code>
+                        </pre>
+                    );
+                },
+                strong: ({ children, ...props }) => <strong {...props}>{children}</strong>,
+                em: ({ children, ...props }) => <em {...props}>{children}</em>,
+            }}
+        >
+            {content}
+        </ReactMarkdown>
+    );
 }
 
-function parseMarkdown(text) {
-    if (!text) return [];
-    const lines = text.split('\n');
-    const blocks = [];
-    let i = 0;
-
-    while (i < lines.length) {
-        const line = lines[i];
-        const trimmed = line.trim();
-
-        // Empty line
-        if (!trimmed) {
-            i++;
-            continue;
-        }
-
-        // Heading ## or ###
-        const headingMatch = trimmed.match(/^(#{2,3})\s+(.+)/);
-        if (headingMatch) {
-            const level = headingMatch[1].length;
-            blocks.push({
-                type: 'heading',
-                level,
-                html: renderLine(headingMatch[2]),
-            });
-            i++;
-            continue;
-        }
-
-        // Unordered list
-        if (trimmed.match(/^[-*]\s+/)) {
-            const items = [];
-            while (i < lines.length && lines[i].trim().match(/^[-*]\s+/)) {
-                items.push(renderLine(lines[i].trim().replace(/^[-*]\s+/, '')));
-                i++;
-            }
-            blocks.push({ type: 'list', ordered: false, items });
-            continue;
-        }
-
-        // Ordered list
-        if (trimmed.match(/^\d+\.\s+/)) {
-            const items = [];
-            while (i < lines.length && lines[i].trim().match(/^\d+\.\s+/)) {
-                items.push(renderLine(lines[i].trim().replace(/^\d+\.\s+/, '')));
-                i++;
-            }
-            blocks.push({ type: 'list', ordered: true, items });
-            continue;
-        }
-
-        // Regular paragraph
-        const paraLines = [];
-        while (i < lines.length && lines[i].trim()) {
-            paraLines.push(renderLine(lines[i]));
-            i++;
-        }
-        blocks.push({ type: 'paragraph', html: paraLines.join('<br/>') });
-    }
-
-    return blocks;
+function MsTeamsButton() {
+    const [clicked, setClicked] = React.useState(false);
+    const handleClick = () => {
+        setClicked(true);
+        setTimeout(() => setClicked(false), 2000);
+    };
+    return (
+        <button
+            className={`btn-ms-teams ${clicked ? 'btn-ms-teams--clicked' : ''}`}
+            onClick={handleClick}
+            disabled={clicked}
+            title="Send this diagnostic report to Microsoft Teams (placeholder)"
+        >
+            {clicked ? '✓ Sent!' : '📤 Send to MS Teams'}
+        </button>
+    );
 }
 
-export default function SummaryReport({ report }) {
+export default function SummaryReport({ report, showToggle, onToggleTrace, traceVisible }) {
     if (!report) return null;
 
     // Strip "FINAL DIAGNOSTIC SUMMARY:" prefix if present
     const cleaned = report.replace(/^FINAL DIAGNOSTIC SUMMARY:\s*\n?/, '');
 
-    const blocks = parseMarkdown(cleaned);
-
     return (
         <div className="summary-report">
-            {blocks.map((block, idx) => {
-                switch (block.type) {
-                    case 'heading':
-                        const Tag = block.level === 2 ? 'h2' : 'h3';
-                        return (
-                            <Tag
-                                key={idx}
-                                className={`summary-report-heading summary-report-heading--h${block.level}`}
-                                dangerouslySetInnerHTML={{ __html: block.html }}
-                            />
-                        );
-                    case 'list':
-                        const ListTag = block.ordered ? 'ol' : 'ul';
-                        return (
-                            <ListTag key={idx} className="summary-report-list">
-                                {block.items.map((item, j) => (
-                                    <li
-                                        key={j}
-                                        className="summary-report-list-item"
-                                        dangerouslySetInnerHTML={{ __html: item }}
-                                    />
-                                ))}
-                            </ListTag>
-                        );
-                    case 'paragraph':
-                        return (
-                            <p
-                                key={idx}
-                                className="summary-report-paragraph"
-                                dangerouslySetInnerHTML={{ __html: block.html }}
-                            />
-                        );
-                    default:
-                        return null;
-                }
-            })}
+            {showToggle && (
+                <button
+                    className="summary-report-toggle-trace"
+                    onClick={onToggleTrace}
+                >
+                    {traceVisible ? '🔽 Hide thinking trace' : '🔼 Show thinking trace'}
+                </button>
+            )}
+            <ReportContent content={cleaned} />
+            <div className="summary-report-footer">
+                <MsTeamsButton />
+            </div>
         </div>
     );
 }

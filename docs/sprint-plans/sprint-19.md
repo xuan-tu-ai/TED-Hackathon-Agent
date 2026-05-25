@@ -38,6 +38,16 @@ Status legend: `[ ]` pending / `[~]` in progress / `[x]` done
 - [x] **T17: CSS polish & responsive layout** — Done. Dark-theme styles, robot selector buttons, mode toggle pill switch, `ResponsiveContainer`, empty/loading/error states.
 - [x] **T18: End-to-end verification** — Done. Frontend builds clean (752 modules), backend syntax verified, DB regenerated with 4 robots.
 
+### Phase 5: Frontend UX Polish — Markdown, Roadmap, HITL, Reports
+
+- [x] **T19: Markdown render in Diagnostic Roadmap** — Done. `PlanTracker.jsx` uses `ReactMarkdown` to render task names.
+- [x] **T20: Markdown render in thinking/result blocks** — Done. `ThinkingBubble.jsx` and `ToolCallChip.jsx` both render with `ReactMarkdown` + `remarkGfm`.
+- [x] **T21: Fix table rendering in final report** — Done. `SummaryReport.jsx` rewritten to use `ReactMarkdown` + `remarkGfm` — full GFM including tables. Custom parser removed.
+- [x] **T22: Make Diagnostic Roadmap sticky** — Done. `.plan-tracker` has `position: sticky; top: 0; z-index: 10`.
+- [x] **T23: Style HITL modal buttons** — Done. `.btn-hitl`, `.btn-approve` (green), `.btn-reject` (red), `.btn-view-incident` (tertiary) styled with hover effects.
+- [x] **T24: Hide/show thinking trace toggle** — Done. `ChatPanel` has `traceVisible` state + toggle. `SummaryReport` shows "Show/Hide thinking trace" button when report is present.
+- [x] **T25: Add "Send to MS Teams" button** — Done. Purple `#6264a7` button at bottom of SummaryReport, shows "✓ Sent!" feedback on click (placeholder).
+
 ## Decisions
 
 - **Robot naming:** R-00, R-01, R-02, R-03 (zero-indexed, zero-padded 2-digit format matching existing convention).
