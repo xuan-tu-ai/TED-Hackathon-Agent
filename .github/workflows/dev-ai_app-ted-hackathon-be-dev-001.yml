@@ -8,6 +8,9 @@ on:
   push:
     branches:
       - dev/ai
+    paths:
+      - 'backend/**' # Chỉ kích hoạt khi code trong thư mục backend thay đổi
+      - '.github/workflows/*be*.yml'
   workflow_dispatch:
 
 jobs:
