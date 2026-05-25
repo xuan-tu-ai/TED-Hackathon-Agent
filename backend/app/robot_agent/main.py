@@ -14,6 +14,10 @@ LM_PROVIDER, LM_MODEL, LM_API_KEY : str
 """
 
 from __future__ import annotations
+__import__("pysqlite3")
+import sys
+sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
+
 
 import logging
 import os
