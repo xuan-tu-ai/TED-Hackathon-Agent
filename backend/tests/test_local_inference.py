@@ -372,3 +372,173 @@ class TestReconstructionLocalPipeline:
         applier = ReconLocalApplier(tc.thresholds, quantile=0.95)
         applied = applier.apply([row])
         assert isinstance(applied[0]["is_file_anomaly"], bool)
+
+
+# =============================================================================
+# Per-Sensor Scoring — GLCMaeV8 (Hypothesis 2 fix)
+# =============================================================================
+
+C3, T3 = 3, 240
+_MAE_META = {
+    "name": "GLCMaeV8",
+    "num_sensors": C3,
+    "seq_len": T3,
+    "num_robots": 4,
+    "num_programs": 16,
+    "patch_size": 32,
+    "patch_stride": 16,
+    "d_model": 64,
+    "d_half": 32,
+    "num_patches": 14,
+    "transformer_layers": 2,
+    "transformer_heads": 2,
+    "ffn_dim": 128,
+    "dropout": 0.0,
+    "mask_ratio": 0.45,
+    "use_context_embeddings": False,
+}
+
+
+def _mae_engine():
+    from app.anomaly_detection.models.glc_mae_v8 import GLCMaeV8
+    model = GLCMaeV8(
+        num_sensors=C3, seq_len=T3, num_robots=4, num_programs=16,
+        patch_size=32, patch_stride=16, d_model=64, transformer_layers=2,
+        transformer_heads=2, ffn_dim=128, dropout=0.0,
+        mask_ratio=0.45, use_context_embeddings=False,
+    )
+    from app.anomaly_detection.inference.recon_v8.local import Reconf8LocalPreResult
+    return Reconf8LocalPreResult(
+        model_version=ReconstructionModels.GLC_MAE_V8,
+        metadata=_MAE_META,
+        state_dict=model.state_dict(),
+        quantile=0.95,
+        k_skip=0,
+        device="cpu",
+    )
+
+
+def _mae_records(n_files, noisy_channel=-1):
+    rng = np.random.default_rng(42)
+    records = []
+    for _ in range(n_files):
+        w = rng.normal(0, 1.0, (3, C3, T3)).astype(np.float32)
+        if noisy_channel >= 0:
+            w[:, noisy_channel, :] *= 8.0
+        records.append({
+            "robot_code": "0", "program_number": 0, "start_time": "0",
+            "windows": w,
+            "serials": np.array([0, 16, 32], dtype=np.int64),
+        })
+    return records
+
+
+class TestPerSensorScoring:
+    def setup_method(self):
+        self.engine = _mae_engine()
+
+    def test_score_batch_has_per_sensor_keys(self):
+        results = self.engine.score_batch(_mae_records(3))
+        for res in results:
+            for c in range(C3):
+                key = f"p95_score_sensor_{c}"
+                assert key in res, f"Missing {key}"
+                assert isinstance(res[key], float)
+                assert np.isfinite(res[key])
+
+    def test_per_sensor_scores_differ_when_channel_noisy(self):
+        """Channel 2 with 8× noise should score higher than channel 0."""
+        results = self.engine.score_batch(_mae_records(5, noisy_channel=2))
+        wins = sum(
+            1 for res in results
+            if res["p95_score_sensor_2"] > res["p95_score_sensor_0"]
+        )
+        assert wins >= 3, f"Expected sensor_2 > sensor_0 for most files, got {wins}/5"
+
+    def test_early_return_has_per_sensor_and_phase_keys(self):
+        from app.anomaly_detection.models.glc_mae_v8 import GLCMaeV8
+        from app.anomaly_detection.inference.recon_v8.local import Reconf8LocalPreResult
+        model = GLCMaeV8(
+            num_sensors=C3, seq_len=T3, num_robots=4, num_programs=16,
+            patch_size=32, patch_stride=16, d_model=64, transformer_layers=2,
+            transformer_heads=2, ffn_dim=128, dropout=0.0,
+            mask_ratio=0.45, use_context_embeddings=False,
+        )
+        engine = Reconf8LocalPreResult(
+            model_version=ReconstructionModels.GLC_MAE_V8,
+            metadata=_MAE_META,
+            state_dict=model.state_dict(),
+            quantile=0.95,
+            k_skip=5,   # forces early return for N=1
+            device="cpu",
+        )
+        rec = {
+            "robot_code": "0", "program_number": 0, "start_time": "0",
+            "windows": np.zeros((1, C3, T3), dtype=np.float32),
+            "serials": np.array([0], dtype=np.int64),
+        }
+        res = engine.score_batch([rec])[0]
+        for c in range(C3):
+            assert f"p95_score_sensor_{c}" in res
+            assert res[f"p95_score_sensor_{c}"] == 100.0
+        assert res["p95_score_rampup"] == 100.0
+        assert res["p95_score_active"] == 100.0
+
+    def test_make_per_sensor_keys(self):
+        from app.anomaly_detection.inference.recon_v8.local import Reconf8LocalThresholdCreator
+        keys = Reconf8LocalThresholdCreator.make_per_sensor_keys(0.95, 3)
+        assert keys == ["p95_score_sensor_0", "p95_score_sensor_1", "p95_score_sensor_2"]
+        keys5 = Reconf8LocalThresholdCreator.make_per_sensor_keys(0.90, 5)
+        assert len(keys5) == 5
+        assert all(k.startswith("p90_score_sensor_") for k in keys5)
+
+    def test_threshold_creator_per_sensor_fit_and_roundtrip(self):
+        from app.anomaly_detection.inference.recon_v8.local import Reconf8LocalThresholdCreator
+        results = self.engine.score_batch(_mae_records(10))
+        sensor_keys = Reconf8LocalThresholdCreator.make_per_sensor_keys(0.95, C3)
+        score_keys = ["p95_score", "p95_score_rampup", "p95_score_active"] + sensor_keys
+        tc = Reconf8LocalThresholdCreator(quantile=0.95, score_keys=score_keys)
+        tc.fit_from_pre_results(results)
+        for k in sensor_keys:
+            assert k in tc.thresholds, f"Missing threshold for {k}"
+            assert tc.thresholds[k] > 0
+        # Round-trip
+        tc2 = Reconf8LocalThresholdCreator.from_dict(tc.to_dict())
+        for k in sensor_keys:
+            assert tc2.thresholds[k] == tc.thresholds[k]
+
+    def test_applier_or_logic_sensor_triggered(self):
+        from app.anomaly_detection.inference.recon_v8.local import Reconf8LocalApplier
+        results = self.engine.score_batch(_mae_records(5))
+        threshold_config = {
+            "global_threshold": 1e10,
+            "score_thresholds": {
+                "p95_score": 1e10,
+                "p95_score_rampup": 1e10,
+                "p95_score_active": 1e10,
+                "p95_score_sensor_0": 1e10,
+                "p95_score_sensor_1": 1e10,
+                "p95_score_sensor_2": 1e-9,  # always triggers
+            },
+        }
+        applier = Reconf8LocalApplier(threshold_config, quantile=0.95)
+        applied = applier.apply(results)
+        for res in applied:
+            assert res["is_file_anomaly"] is True
+            assert "p95_score_sensor_2" in res["triggered_by"]
+
+    def test_backward_compat_no_per_sensor_keys(self):
+        """Legacy score_keys (no per-sensor) must still work end-to-end."""
+        from app.anomaly_detection.inference.recon_v8.local import (
+            Reconf8LocalThresholdCreator, Reconf8LocalApplier,
+        )
+        results = self.engine.score_batch(_mae_records(5))
+        tc = Reconf8LocalThresholdCreator(quantile=0.95, score_keys=["p95_score"])
+        tc.fit_from_pre_results(results)
+        applier = Reconf8LocalApplier({
+            "global_threshold": 1e10,
+            "score_thresholds": tc.thresholds,
+        }, quantile=0.95)
+        applied = applier.apply(results)
+        assert len(applied) == len(results)
+        assert all("is_file_anomaly" in r for r in applied)

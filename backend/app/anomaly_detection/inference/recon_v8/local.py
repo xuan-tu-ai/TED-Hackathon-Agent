@@ -216,9 +216,13 @@ class Reconf8LocalPreResult:
                     "program_number": int(rec["program_number"]),
                     "start_time": str(rec["start_time"]),
                     f"{pq}_score": 100.0,
+                    f"{pq}_score_rampup": 100.0,
+                    f"{pq}_score_active": 100.0,
                     "valid_start_idx": 0,
                     "valid_end_idx": 0,
                 }
+                for c in range(C):
+                    res[f"{pq}_score_sensor_{c}"] = 100.0
                 for s in sensors:
                     res[f"heatmap_{s}"] = []
                 results.append(res)
@@ -288,6 +292,12 @@ class Reconf8LocalPreResult:
                     final_map[:, active_start:active_end], q
                 ))
 
+            # Per-sensor p95 scores — independent threshold per sensor
+            sensor_scores: list[float] = []
+            for c in range(C):
+                row = final_map[c, valid_start:valid_end]
+                sensor_scores.append(float(np.percentile(row, q)) if row.size > 0 else 0.0)
+
             res = {
                 "robot_code": str(rec["robot_code"]),
                 "program_number": int(rec["program_number"]),
@@ -300,6 +310,8 @@ class Reconf8LocalPreResult:
                 "phase_rampup": (rampup_start, rampup_end),
                 "phase_active": (active_start, active_end),
             }
+            for c in range(C):
+                res[f"{pq}_score_sensor_{c}"] = sensor_scores[c]
             for c, s in enumerate(sensors):
                 res[f"heatmap_{s}"] = final_map[c].tolist()
 
@@ -388,6 +400,12 @@ class Reconf8LocalThresholdCreator:
         obj._mads = d.get("mads", {})
         return obj
 
+    @staticmethod
+    def make_per_sensor_keys(quantile: float, num_sensors: int) -> list[str]:
+        """Return per-sensor score key names for use as score_keys."""
+        pq = f"p{quantile * 100:.0f}"
+        return [f"{pq}_score_sensor_{c}" for c in range(num_sensors)]
+
     @property
     def threshold(self) -> float | None:
         """Backward-compatible single-threshold accessor (first score key)."""
@@ -430,8 +448,10 @@ class Reconf8LocalApplier:
             return []
         sensors = [k[len("heatmap_"):] for k in pre_results[0] if k.startswith("heatmap_")]
 
-        # Known score keys that may exist in pre_results
-        score_keys = [f"{pq}_score", f"{pq}_score_rampup", f"{pq}_score_active"]
+        # Base score keys + any per-sensor keys present in score_thresholds
+        base_keys = [f"{pq}_score", f"{pq}_score_rampup", f"{pq}_score_active"]
+        sensor_keys = [k for k in score_thresholds if k.startswith(f"{pq}_score_sensor_")]
+        score_keys = base_keys + sensor_keys
 
         results = []
         for row in pre_results:
@@ -460,7 +480,7 @@ class Reconf8LocalApplier:
                 "triggered_by": triggered_by,
                 f"{pq}_score": float(global_score),
             }
-            # Pass through phase-specific scores if present
+            # Pass through all score key values present in the row
             for sk in score_keys:
                 if sk in row:
                     res[sk] = float(row[sk])
