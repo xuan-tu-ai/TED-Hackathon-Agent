@@ -30,7 +30,7 @@ os.environ["DATABASE_URL"] = config.database_url
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import hitl_router, hitl_sim_router, incidents_router, simulation_router
+from .api import hitl_router, hitl_sim_router, incidents_router, robots_router, simulation_router
 from .db import init_db
 
 
@@ -51,6 +51,7 @@ app.add_middleware(
 app.include_router(hitl_router)
 app.include_router(hitl_sim_router)
 app.include_router(incidents_router)
+app.include_router(robots_router)
 app.include_router(simulation_router)
 
 
@@ -66,7 +67,7 @@ def on_startup() -> None:
 
     On first run (when the ``perception_results`` table is empty) the
     function calls :func:`.seed.seed_all` to populate 30 days of
-    synthetic sensor data across all 47 robots.
+    synthetic sensor data across all 4 robots (R-00 to R-03).
     """
     init_db()
 

@@ -9,6 +9,7 @@ Current test count: **~180+ tests** across anomaly detection (Sprint 1), agent s
 
 ## Active Sprints
 - [Sprint 18](docs/sprint-plans/sprint-18.md) — *Completed* — Welding Robot Data Regeneration: convergent normal data + 5 anomaly types
+- [Sprint 19](docs/sprint-plans/sprint-19.md) — *Completed* — Dashboard: reduce robots to 4 + real-time error-count timeline panel with L1/L2 reference lines
 - [Sprint 17](docs/sprint-plans/sprint-17.md) — *Completed* — GLC-Recon V8 refactor: full reconstruction + dual-stream CNN encoders
 
 ## Completed Sprints

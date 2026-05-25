@@ -6,6 +6,7 @@ import AlertFeed from './components/AlertFeed.jsx';
 import IncidentSidebar from './components/IncidentSidebar.jsx';
 import ChatPanel from './components/ChatPanel.jsx';
 import HITLModal from './components/HITLModal.jsx';
+import ErrorTimeline from './components/ErrorTimeline.jsx';
 
 const API_BASE = '/api/sim';
 
@@ -94,7 +95,8 @@ function App() {
         globalHitlQueue,
         speed,
         setSpeed,
-        reset
+        reset,
+        addErrorCount
     } = useSimulationStore();
 
     const incidentsList = Object.values(incidents);
@@ -296,6 +298,9 @@ function App() {
             case 'alert_storm_detected':
                 addAlert({ robotId: 'SYSTEM', message: `⚠️ ALERT STORM: ${event.alert_count} robots triggered!`, type: 'agent' });
                 break;
+            case 'error_count':
+                addErrorCount(event.robot_id, event.tick_index, event.sim_time, event.count);
+                break;
             case 'sim_finished':
                 addAlert({ robotId: 'SYSTEM', message: 'Simulation Finished', type: 'info' });
                 break;
@@ -361,6 +366,9 @@ function App() {
                         <div className="alert-feed-container">
                             <AlertFeed alerts={alerts} />
                         </div>
+                    </div>
+                    <div className="dashboard-timeline">
+                        <ErrorTimeline onApiFetch={requestJson} />
                     </div>
                     <div className="dashboard-bottom">
                         <IncidentSidebar

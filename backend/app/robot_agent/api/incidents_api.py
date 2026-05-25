@@ -111,7 +111,7 @@ def trigger_demo_incident(background_tasks: BackgroundTasks):
     
     inc = DiagnosticIncident(
         incident_id=incident_id,
-        robot_code=f"R-{random.randint(1, 47):02d}",
+        robot_code=f"R-{random.randint(0, 3):02d}",
         abnormal_family=family,
         abnormal_subtype="demo_issue",
         sensor=sensor,

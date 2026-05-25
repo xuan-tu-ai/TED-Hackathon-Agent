@@ -1231,4 +1231,151 @@ body {
     color: var(--text-code, #f0c674);
 }
 
+/* ── Dashboard Timeline Row ────────────────────────────── */
+.dashboard-timeline {
+    margin-bottom: 0;
+}
 
+/* ── ErrorTimeline Component ───────────────────────────── */
+.error-timeline {
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.error-timeline-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding: 0.6rem 1rem;
+    background-color: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.error-timeline-title {
+    font-weight: 600;
+    font-size: 0.875rem;
+    white-space: nowrap;
+}
+
+.error-timeline-controls {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+/* Robot selector buttons */
+.robot-selector {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.robot-select-btn {
+    padding: 0.3rem 0.65rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.robot-select-btn:hover {
+    border-color: var(--accent-blue);
+    color: var(--text-primary);
+}
+
+.robot-select-btn.active {
+    background-color: var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: #fff;
+}
+
+/* Easy/Hard mode toggle */
+.mode-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.mode-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    transition: color 0.15s ease;
+}
+
+.mode-label.active {
+    color: var(--text-primary);
+}
+
+.mode-switch {
+    position: relative;
+    width: 40px;
+    height: 20px;
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    padding: 0;
+}
+
+.mode-switch.hard {
+    background-color: var(--accent-blue);
+    border-color: var(--accent-blue);
+}
+
+.mode-switch-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    background-color: #fff;
+    border-radius: 50%;
+    transition: transform 0.2s ease;
+}
+
+.mode-switch.hard .mode-switch-knob {
+    transform: translateX(20px);
+}
+
+/* Chart area */
+.error-timeline-chart {
+    padding: 0.5rem 0.5rem 0 0.5rem;
+    position: relative;
+    min-height: 100px;
+}
+
+.error-timeline-loading,
+.error-timeline-error,
+.error-timeline-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 200px;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.error-timeline-error {
+    color: var(--accent-red);
+}
+
+/* Recharts overrides */
+.recharts-cartesian-axis-tick-value {
+    font-size: 11px;
+}
+
+.recharts-legend-item-text {
+    font-size: 12px;
+    color: var(--text-secondary) !important;
+}

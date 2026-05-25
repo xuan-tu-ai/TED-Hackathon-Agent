@@ -1,10 +1,10 @@
-"""Deterministic PerceptionResult seed — single R-07 spike for reproducible testing.
+"""Deterministic PerceptionResult seed — single R-00 spike for reproducible testing.
 
 Design principles:
 
-* 47 robots × *days* × 24 h = predictable row count (default 33 840 for 30 days)
+* 4 robots × *days* × 24 h = predictable row count (default 2 880 for 30 days)
 * All normal entries are identical: ``shape=0.05`` for every sensor
-* Exactly one anomaly: R-07 at day 5 hour 0, ``paint_pressure`` ``shape=0.88``
+* Exactly one anomaly: R-00 at day 5 hour 0, ``paint_pressure`` ``shape=0.88``
 * Zero randomness in normal data → L2 slope is exactly 0 for non-spike robots
 * L2 escalates only at ticks 120–139 (20 h window around the day-5 spike)
 * ``DEBOUNCE_WINDOW_TICKS=24`` in the runner limits to exactly one alert firing
@@ -60,7 +60,7 @@ def _severity(score: float) -> str:
 
 
 def seed_perception_results(session: Session, days: int = 30) -> int:
-    robots = [f"R-{idx:02d}" for idx in range(1, 48)]
+    robots = [f"R-{idx:02d}" for idx in range(0, 4)]
     now = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
     start = now - timedelta(days=days)
 
@@ -72,7 +72,7 @@ def seed_perception_results(session: Session, days: int = 30) -> int:
             observed = start + timedelta(days=day_idx, hours=hour)
 
             for robot in robots:
-                if robot == "R-07" and day_idx == 5 and hour == 0:
+                if robot == "R-00" and day_idx == 5 and hour == 0:
                     per_sensor = _normal_scores()
                     per_sensor["paint_pressure"] = {"shape": 0.88, "win": 0.78, "error_steps": list(range(100, 150))}
                     score = _score(per_sensor)

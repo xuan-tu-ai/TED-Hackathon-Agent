@@ -1,7 +1,7 @@
 """REST endpoints for the paint-shop simulation engine.
 
 Provides start, pause, resume, stop, status, and SSE-stream lifecycle
-management for the discrete-event simulation of 47 paint-shop robots.
+management for the discrete-event simulation of 4 paint-shop robots (R-00 to R-03).
 """
 
 from __future__ import annotations

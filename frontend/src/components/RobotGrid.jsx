@@ -1,6 +1,6 @@
 import React from 'react';
 
-const ROBOT_COUNT = 47;
+const ROBOT_COUNT = 4;
 
 function RobotCell({ robot }) {
     const getClassName = () => {
@@ -24,7 +24,7 @@ function RobotCell({ robot }) {
 export default function RobotGrid({ robots }) {
     if (!robots || robots.length === 0) {
         const initRobots = Array.from({ length: ROBOT_COUNT }, (_, i) => {
-            const id = `R-${(i + 1).toString().padStart(2, '0')}`;
+            const id = `R-${i.toString().padStart(2, '0')}`;
             return { id, state: 'normal' };
         });
         return (

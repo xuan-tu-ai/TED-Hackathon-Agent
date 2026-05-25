@@ -17,6 +17,8 @@ dependencies = [
     "psutil>=7.2.2",
     "psycopg[binary]>=3.3.4",
     "alembic>=1.18.4",
+    "botocore>=1.43.10",
+    "gunicorn>=25.3.0",
 ]
 
 [build-system]

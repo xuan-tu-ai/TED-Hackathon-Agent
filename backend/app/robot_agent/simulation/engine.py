@@ -3,7 +3,7 @@
 The :class:`SimulationEngine` queries the database to build a timeline of
 hourly ticks from distinct ``observed_at`` hours, fetches ``PerceptionResult``
 events per tick, and evaluates L1 burst / L2 slope trigger conditions for
-each of the 47 paint-shop robots.
+each of the 4 paint-shop robots (R-00 to R-03).
 
 It serves as the data-access layer consumed by :class:`SimulationRunner` and
 is stateless beyond its cached timeline.
@@ -24,7 +24,7 @@ from ..poller.l1_burst import detect_l1_burst
 from ..poller.l2_slope import detect_l2_slope
 
 
-ALL_ROBOTS = [f"R-{idx:02d}" for idx in range(1, 48)]
+ALL_ROBOTS = [f"R-{idx:02d}" for idx in range(0, 4)]
 
 
 class SimulationEngine:

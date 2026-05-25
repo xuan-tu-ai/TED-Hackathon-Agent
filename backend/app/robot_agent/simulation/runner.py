@@ -27,7 +27,7 @@ from ..agent.session_trace import SessionTraceWriter
 from ..agent.triage_agent import triage_incident, TriageDecision
 from ..agent.systemic_agent import SystemicIncident
 from ..seed import create_session_factory
-from ..db.models import Incident
+from ..db.models import Incident, PerceptionResult
 
 from .engine import SimulationEngine
 from .state import SimulationState
@@ -377,6 +377,30 @@ class SimulationRunner:
                 "sim_time": tick_time.isoformat(),
                 "events_count": events_count,
             })
+
+            # Broadcast per-robot file-anomaly count for this tick
+            from sqlalchemy import func
+            for robot_id in self.engine.get_robots():
+                if self._stop_event.is_set():
+                    break
+                session = self.engine.session_factory()
+                try:
+                    error_count = session.query(func.count(PerceptionResult.id)).filter(
+                        PerceptionResult.robot_code == robot_id,
+                        PerceptionResult.observed_at == tick_time,
+                        PerceptionResult.is_file_anomaly == True,
+                    ).scalar() or 0
+                finally:
+                    session.close()
+
+                if error_count > 0:
+                    self._broadcast({
+                        "type": "error_count",
+                        "robot_id": robot_id,
+                        "sim_time": tick_time.isoformat(),
+                        "tick_index": tick_index,
+                        "count": error_count,
+                    })
 
             for robot_id in self.engine.get_robots():
                 if self._stop_event.is_set():

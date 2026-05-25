@@ -347,9 +347,11 @@ source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
     { name = "alembic" },
+    { name = "botocore" },
     { name = "chromadb" },
     { name = "dspy-ai" },
     { name = "fastapi" },
+    { name = "gunicorn" },
     { name = "httpx" },
     { name = "psutil" },
     { name = "psycopg", extra = ["binary"] },
@@ -380,9 +382,11 @@ dev = [
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.19.0" },
     { name = "alembic", specifier = ">=1.18.4" },
+    { name = "botocore", specifier = ">=1.43.10" },
     { name = "chromadb", specifier = ">=0.4.0" },
     { name = "dspy-ai", specifier = ">=2.1.0" },
     { name = "fastapi", specifier = ">=0.115.0" },
+    { name = "gunicorn", specifier = ">=25.3.0" },
     { name = "httpx", specifier = ">=0.25.0" },
     { name = "psutil", specifier = ">=7.2.2" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },

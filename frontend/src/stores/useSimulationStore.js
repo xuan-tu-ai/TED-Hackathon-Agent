@@ -1,10 +1,10 @@
 import { create } from 'zustand';
 
-const ROBOT_COUNT = 47;
+const ROBOT_COUNT = 4;
 
 const createInitialRobots = () =>
     Array.from({ length: ROBOT_COUNT }, (_, i) => {
-        const id = `R-${(i + 1).toString().padStart(2, '0')}`;
+        const id = `R-${i.toString().padStart(2, '0')}`;
         return { id, state: 'normal' };
     });
 
@@ -17,6 +17,7 @@ export const useSimulationStore = create((set, get) => ({
     alerts: [],
     hitlItems: [],
     globalHitlQueue: [],
+    errorCounts: {}, // { robotId: [{ tick, time, count }] },
 
     updateRobot: (robotId, newState) =>
         set(state => ({
@@ -165,6 +166,25 @@ export const useSimulationStore = create((set, get) => ({
             };
         }),
 
+    addErrorCount: (robotId, tick, time, count) =>
+        set(state => {
+            const existing = state.errorCounts[robotId] || [];
+            return {
+                errorCounts: {
+                    ...state.errorCounts,
+                    [robotId]: [...existing, { tick, time, count }]
+                }
+            };
+        }),
+
+    clearErrorCounts: (robotId) =>
+        set(state => ({
+            errorCounts: {
+                ...state.errorCounts,
+                [robotId]: []
+            }
+        })),
+
     selectIncident: (incidentId) => set({ activeIncidentId: incidentId }),
 
     addAlert: (alert) =>
@@ -189,6 +209,7 @@ export const useSimulationStore = create((set, get) => ({
             speed: 1,
             alerts: [],
             hitlItems: [],
-            globalHitlQueue: []
+            globalHitlQueue: [],
+            errorCounts: {}
         })
 }));

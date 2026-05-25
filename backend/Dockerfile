@@ -47,10 +47,11 @@ COPY --from=builder /app/agent_knowledge /app/agent_knowledge
 COPY --from=builder /app/alembic.ini /app/alembic.ini
 COPY --from=builder /app/alembic /app/alembic
 COPY --from=builder /app/app /app/app
+COPY entrypoint.sh /app/entrypoint.sh
 
 # Ensure the data directory for sqlite/chroma/sessions exists
-RUN mkdir -p /app/data
+RUN mkdir -p /app/data && chmod +x /app/entrypoint.sh
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.robot_agent.main:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["/app/entrypoint.sh"]
