@@ -28,6 +28,17 @@ logger = logging.getLogger("startup")
 
 load_dotenv()
 
+import shutil
+from pathlib import Path
+
+src = Path(__file__).parent.parent.parent / "agent_knowledge"
+dst = Path(os.environ['AGENT_KNOWLEDGE_DIR'])
+
+os.makedirs(dst, exist_ok=True)
+
+shutil.copytree(src, dst, dirs_exist_ok=True)
+logger.info(f"Copied agent knowledge files from {src} to {dst}")
+
 from .agent.config import config
 os.environ["DATABASE_URL"] = config.database_url
 
@@ -73,17 +84,6 @@ def on_startup() -> None:
     function calls :func:`.seed.seed_all` to populate 30 days of
     synthetic sensor data across all 4 robots (R-00 to R-03).
     """
-    
-    import shutil
-    from pathlib import Path
-    
-    src = Path(__file__).parent.parent.parent / "agent_knowledge"
-    dst = Path(os.environ['AGENT_KNOWLEDGE_DIR'])
-    
-    os.makedirs(dst, exist_ok=True)
-    
-    shutil.copytree(src, dst, dirs_exist_ok=True)
-    logger.info(f"Copied agent knowledge files from {src} to {dst}")
     
     init_db()
 
