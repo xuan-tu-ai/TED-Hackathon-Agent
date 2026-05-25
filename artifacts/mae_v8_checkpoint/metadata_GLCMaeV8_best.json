@@ -1,0 +1,18 @@
+{
+  "name": "GLCMaeV8",
+  "num_sensors": 3,
+  "seq_len": 240,
+  "num_robots": 8,
+  "num_programs": 128,
+  "patch_size": 32,
+  "patch_stride": 16,
+  "d_model": 128,
+  "d_half": 64,
+  "num_patches": 14,
+  "transformer_layers": 4,
+  "transformer_heads": 4,
+  "ffn_dim": 256,
+  "dropout": 0.1,
+  "mask_ratio": 0.3,
+  "use_context_embeddings": true
+}
