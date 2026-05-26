@@ -26,6 +26,12 @@ from ..agent.diagnostic_agent import DiagnosticAgent, DiagnosticIncident
 from ..agent.session_trace import SessionTraceWriter
 from ..agent.triage_agent import triage_incident, TriageDecision
 from ..agent.systemic_agent import SystemicIncident
+from ..inference.v9_scores import (
+    dominant_sensor,
+    parse_v9_scores,
+    score_to_severity,
+    sensor_to_family,
+)
 from ..seed import create_session_factory
 from ..db.models import Incident, PerceptionResult
 
@@ -91,21 +97,33 @@ class SimulationRunner:
         l2 = triggers.get("l2", {})
         alert_type = triggers.get("alert_type", "L2_ESCALATION")
 
-        if alert_type == "L1_BURST":
-            abnormal_family = "DROPOUT"
-            sensor = l1.get("recent_events", [None])[0].abnormal_type if l1.get("recent_events") else "unknown"
-            # L1 Score: density / threshold (capped at 1.0)
-            base_score = l1.get("density_per_hour", 30) / 30.0
-            score = min(0.98, max(0.85, base_score))
-            severity = "HIGH"
+        # Extract the most recent PerceptionResult from L1 events to get V9 scores
+        recent_events = l1.get("recent_events", []) or []
+        latest_event = recent_events[0] if recent_events else None
+        v9_scores = {}
+        if latest_event is not None:
+            raw = getattr(latest_event, "per_sensor_scores", None)
+            if raw is not None:
+                v9_scores = parse_v9_scores(raw)
+
+        # Derive dominant sensor and family from V9 scores
+        sensor, sensor_score = dominant_sensor(v9_scores)
+        abnormal_family = sensor_to_family(sensor, v9_scores)
+
+        # Determine score and severity from V9 scores (fall back to legacy for safety)
+        if v9_scores:
+            score = float(v9_scores.get("p99_score", sensor_score))
+            severity = score_to_severity(score)
         else:
-            abnormal_family = "SURGE"
-            sensor = "paint_pressure"
-            # L2 Score: slope based (normalized)
-            # min_slope_threshold is 0.002, common max is ~0.02
-            slope = l2.get("slope", 0.002)
-            score = min(0.88, max(0.65, (slope / 0.015) + 0.5))
-            severity = "MEDIUM" if score < 0.8 else "HIGH"
+            # Fallback: legacy density/slope calculation
+            if alert_type == "L1_BURST":
+                base_score = l1.get("density_per_hour", 30) / 30.0
+                score = min(0.98, max(0.85, base_score))
+                severity = "HIGH"
+            else:
+                slope = l2.get("slope", 0.002)
+                score = min(0.88, max(0.65, (slope / 0.015) + 0.5))
+                severity = "MEDIUM" if score < 0.8 else "HIGH"
 
         inc = DiagnosticIncident(
             incident_id=incident_id,
@@ -115,6 +133,7 @@ class SimulationRunner:
             sensor=sensor,
             anomaly_score=round(score, 2),
             severity_hint=severity,
+            per_sensor_scores=v9_scores,
         )
         return inc
 
@@ -152,6 +171,7 @@ class SimulationRunner:
                     "severity_hint": inc.severity_hint,
                     "score": inc.anomaly_score,
                     "alert_type": triggers.get("alert_type"),
+                    "per_sensor_scores": inc.per_sensor_scores,
                     "l1": l1_serializable,
                     "l2": l2_serializable,
                 },

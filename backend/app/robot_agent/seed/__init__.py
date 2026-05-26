@@ -1,7 +1,7 @@
 """Database seeding sub-package — synthetic data for demo, test, and development.
 
 The seed package provides scripts to populate the database with realistic
-synthetic ``PerceptionResult`` and ``PMCard`` data for 4 paint-shop robots (R-00 to R-03).
+synthetic ``PerceptionResult`` and ``PMCard`` data for 4 welding robots (R-00 to R-03).
 It supports both deterministic (``perception_results.py`` — single spike at
 day 5 for R-00) and probabilistic data distributions.
 

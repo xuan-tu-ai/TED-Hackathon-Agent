@@ -353,6 +353,7 @@ dependencies = [
     { name = "botocore" },
     { name = "chromadb" },
     { name = "databricks-sql-connector", extra = ["pyarrow"] },
+    { name = "databricks-sqlalchemy" },
     { name = "dspy-ai" },
     { name = "fastapi" },
     { name = "gunicorn" },
@@ -390,6 +391,7 @@ requires-dist = [
     { name = "botocore", specifier = ">=1.43.10" },
     { name = "chromadb", specifier = ">=0.4.0" },
     { name = "databricks-sql-connector", extras = ["pyarrow"] },
+    { name = "databricks-sqlalchemy", specifier = ">=2.0.9" },
     { name = "dspy-ai", specifier = ">=2.1.0" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "gunicorn", specifier = ">=25.3.0" },
@@ -1150,6 +1152,20 @@ wheels = [
 [package.optional-dependencies]
 pyarrow = [
     { name = "pyarrow" },
+]
+
+[[package]]
+name = "databricks-sqlalchemy"
+version = "2.0.9"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "databricks-sql-connector" },
+    { name = "pyarrow" },
+    { name = "sqlalchemy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8b/56/09d2b75e3cfa77e88f96dd832c6f4a2bacbd3134fc9af2b0b0a118c3272c/databricks_sqlalchemy-2.0.9.tar.gz", hash = "sha256:9975830df92541485c0560998ee90f1ac0f76d9d3de4940582e951c09b49b9ed", size = 26739, upload-time = "2026-02-20T11:27:13.051Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bf/bd/4bb509f482bd8f884b6d1eeeae56a6dc12ff587f745f80dead7761fb3df8/databricks_sqlalchemy-2.0.9-py3-none-any.whl", hash = "sha256:b2569084942591b91eff749ca3f5cdb101845245d36a665d70fc8ad12005dab9", size = 27585, upload-time = "2026-02-20T11:27:11.288Z" },
 ]
 
 [[package]]

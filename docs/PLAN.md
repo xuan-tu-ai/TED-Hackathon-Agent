@@ -8,12 +8,14 @@
 Current test count: **~180+ tests** across anomaly detection (Sprint 1), agent system (Sprint 2), and codebase unification (Sprint 3).
 
 ## Active Sprints
-- [Sprint 20](docs/sprint-plans/sprint-20.md) — *Planned* — GLCMaeV9: LogScaler+GlobalSeqNorm thay RevIN, 4-dataset strategy, bỏ tail window, p99 scoring
+- [Sprint 22](docs/sprint-plans/sprint-22.md) — *In Progress* — Fix V9 `per_sensor_scores` schema in seed SQL; connect real perception result signal data into agent context (remove paint-shop hard-codes, derive sensor/family from V9 scores)
 
 ## Recent Completed Sprints
+- [Sprint 21](docs/sprint-plans/sprint-21.md) — *Completed* — Migrate agent knowledge paint-shop→welding (3 sensors, 5 anomaly types); connect backend to Databricks for PerceptionResult/PMCard/MaintenanceEvent; 2 Databricks SQL seed scripts
+- [Sprint 22](docs/sprint-plans/sprint-22.md) — *In Progress* — Fix V9 `per_sensor_scores` schema in seed SQL; connect real perception result signal data into agent context (remove paint-shop hard-codes, derive sensor/family from V9 scores)
+- [Sprint 20](docs/sprint-plans/sprint-20.md) — *Completed* — GLCMaeV9: LogScaler+GlobalSeqNorm thay RevIN, 4-dataset strategy, bỏ tail window, p99 scoring
 - [Sprint 18](docs/sprint-plans/sprint-18.md) — *Completed* — Welding Robot Data Regeneration: convergent normal data + 5 anomaly types
 - [Sprint 19](docs/sprint-plans/sprint-19.md) — *Completed* — Dashboard: reduce robots to 4 + real-time error-count timeline panel with L1/L2 reference lines
-- [Sprint 17](docs/sprint-plans/sprint-17.md) — *Completed* — GLC-Recon V8 refactor: full reconstruction + dual-stream CNN encoders
 
 ## Completed Sprints
 - [Sprint 16](docs/sprint-plans/sprint-16.md) — *Completed* — Data Simulator Realism (AR-1 noise, local-window variance, U-pattern) + 6 New Anomalies + Phase-Aware Scoring
@@ -51,6 +53,7 @@ Current test count: **~180+ tests** across anomaly detection (Sprint 1), agent s
 - [x] **M15:** MaskFormer Training Fixes — JS divergence, CNN decoder, Phase-A warmup, λ ramp, mask_ratio tuning (Sprint 15)
 - [ ] **M16:** Real OT Data Integration
 - [ ] **M17:** Production Deployment & Hardening
+- [ ] **M18:** Databricks Integration — OT tables (PerceptionResult, PMCard, MaintenanceEvent) in Delta Lake; agent knowledge migrated to welding robot context (Sprint 21)
 
 ## Architecture Snapshot
 
@@ -104,6 +107,8 @@ frontend/                         ← React 18 + Vite + Zustand (SSE streaming, 
 | 17 | GLC-Recon V8 Refactor | ✅ Done | Full reconstruction + dual-stream CNN encoders + ContextEmbedding + CosineAnnealing LR |
 | 18 | Welding Robot Data Regeneration | ✅ Done | Convergent normal data, 10→5 anomaly types, real welding timing research |
 | 19 | Dashboard Error Timeline | ✅ Done | Reduce robots to 4 + real-time error-count timeline panel with L1/L2 reference lines |
+| 20 | GLCMaeV9 Anomaly Pipeline | ✅ Done | LogScaler+GlobalSeqNorm replace RevIN; 4-dataset strategy (train/val/threshold_calibration/test); drop tail window; p99 aggregation; inference notebook with threshold calibration flow |
+| 21 | Databricks Integration + Agent Knowledge Migration | ✅ Done | Agent knowledge migrated paint-shop→welding (WeldBot AI, 3 sensors, 5 anomaly types); Databricks session layer; PerceptionResult/PMCard/MaintenanceEvent on Delta Lake; 2 SQL seed scripts; 9 tests |
 
 ## Backlog / Future Work
 - **Real OT data integration** — Replace mock simulation with live paint-shop sensor data feed

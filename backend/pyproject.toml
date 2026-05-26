@@ -21,6 +21,7 @@ dependencies = [
     "botocore>=1.43.10",
     "gunicorn>=25.3.0",
     "databricks-sql-connector[pyarrow]",
+    "databricks-sqlalchemy>=2.0.9",
 ]
 
 [build-system]

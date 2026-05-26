@@ -3,7 +3,11 @@
 The :class:`SimulationEngine` queries the database to build a timeline of
 hourly ticks from distinct ``observed_at`` hours, fetches ``PerceptionResult``
 events per tick, and evaluates L1 burst / L2 slope trigger conditions for
-each of the 4 paint-shop robots (R-00 to R-03).
+each of the 4 welding robots (R-00 to R-03).
+
+PerceptionResult data is read from Databricks Delta Lake via the
+Databricks SQLAlchemy connector. Agent-state tables (Incident, Alert, …)
+remain on SQLite.
 
 It serves as the data-access layer consumed by :class:`SimulationRunner` and
 is stateless beyond its cached timeline.
@@ -17,7 +21,8 @@ from typing import Any, Generator
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..seed import create_session_factory
+from ..agent.config import config
+from ..db.databricks_session import create_databricks_session_factory
 from ..db.models import PerceptionResult
 
 from ..poller.l1_burst import detect_l1_burst
@@ -28,9 +33,14 @@ ALL_ROBOTS = [f"R-{idx:02d}" for idx in range(0, 4)]
 
 
 class SimulationEngine:
-    def __init__(self, db_url: str, speed_factor: int = 3600):
+    def __init__(self, db_url: str | None = None, speed_factor: int = 3600):
+        if not config.databricks_configured:
+            raise RuntimeError(
+                "SimulationEngine requires Databricks to be configured for PerceptionResult queries. "
+                "Set all 5 DATABRICKS_* environment variables (host, http_path, token, catalog, schema)."
+            )
         self.db_url = db_url
-        self.session_factory = create_session_factory(db_url)
+        self.session_factory = create_databricks_session_factory()
         self.speed_factor = speed_factor
         self._timeline: list[datetime] | None = None
         self._first_alert_tick: int | None = None
@@ -43,17 +53,14 @@ class SimulationEngine:
         try:
             hourly_timestamps = (
                 session.query(
-                    func.strftime(
-                        "%Y-%m-%d %H:00:00",
-                        PerceptionResult.observed_at
-                    ).label("hour")
+                    func.date_trunc("hour", PerceptionResult.observed_at).label("hour")
                 )
                 .distinct()
-                .order_by(func.strftime("%Y-%m-%d %H:00:00", PerceptionResult.observed_at))
+                .order_by(func.date_trunc("hour", PerceptionResult.observed_at))
                 .all()
             )
             self._timeline = [
-                datetime.fromisoformat(row.hour).replace(tzinfo=UTC)
+                row.hour.replace(tzinfo=UTC) if row.hour.tzinfo is None else row.hour.astimezone(UTC)
                 for row in hourly_timestamps
             ][-720:]  # Only last 30 days for simulation
             return self._timeline

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The agent knowledge base provides the structured information that drives the **PaintBot AI Diagnostic Agent** — a multi-agent system that diagnoses signal anomalies from 47 paint-shop robots.
+The agent knowledge base provides the structured information that drives the **WeldBot AI Diagnostic Agent** — a multi-agent system that diagnoses signal anomalies from 4 welding robots (R-00 to R-03) across 3 sensors (`wire_feed_speed`, `wire_temperature`, `welding_current`).
 
 This directory is consumed at runtime by the `DiagnosticAgent` and its supporting agents. It is the single source of truth for:
 
@@ -24,18 +24,18 @@ agent_knowledge/
 │   └── severity-policy.md           # Incident+action severity levels, escalation paths, override rules
 └── skills/                          # Diagnostic skill definitions (SKILL.md per skill)
     ├── _SKILL_TEMPLATE.md           # Template for creating new skills
-    ├── create_plan/                 # Planning skill — loaded FIRST in any incident session
+    ├── create-plan/                 # Planning skill — loaded FIRST in any incident session
     │   ├── SKILL.md
     │   └── _template.md             # Diagnostic plan template (agent populates at session start)
-    ├── routing/                     # Signal-family routing logic (IF-ELSE on abnormal_family)
-    │   └── SKILL.md
-    ├── diagnose_surge/              # SURGE family: spike, overshoot, impulse, transient
-    ├── diagnose_dropout/            # DROPOUT family: flatline, signal_loss, cutoff
-    ├── diagnose_instability/        # INSTABILITY family: jitter, oscillation, noise
-    ├── diagnose_deviation/          # DEVIATION family: drift, bias, offset
-    ├── diagnose_transition/         # TRANSITION family: lag, delay, hysteresis
-    ├── verify_defect/               # Post-diagnosis: confirm signal anomaly → product defect
-    └── correlate_history/           # Historical PM-card correlation for pattern matching
+    ├── diagnose/                    # Main diagnostic skill — routes to anomaly-family references
+    │   └── references/
+    │       ├── surge.md             # SURGE family: spike (welding_current, wire_feed_speed)
+    │       ├── dropout.md           # DROPOUT family: cable_wear, flatline
+    │       ├── instability.md       # INSTABILITY family: highfreq (welding_current arc instability)
+    │       ├── deviation.md         # DEVIATION family: thermal_drift (wire_temperature)
+    │       └── transition.md        # TRANSITION family: program changeover artifacts
+    ├── verify-defect/               # Post-diagnosis: confirm signal anomaly → weld defect
+    └── correlate-history/           # Historical PM-card correlation for pattern matching
 ```
 
 ---

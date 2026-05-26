@@ -11,7 +11,7 @@ export default defineConfig({
         changeOrigin: true,
       },
       '/ws': {
-        target: 'ws://app-ted-hackathon-be-dev-001.azurewebsites.net',
+        target: 'wss://app-ted-hackathon-be-dev-001.azurewebsites.net',
         ws: true,
       },
     },

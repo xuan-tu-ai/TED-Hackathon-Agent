@@ -1,11 +1,11 @@
 ---
 name: severity-policy
-description: Severity classification policy for PaintBot diagnostic incidents and actions
-owner: paintbot-platform-team
+description: Severity classification policy for WeldBot diagnostic incidents and actions
+owner: weldbot-platform-team
 last_updated: 2026-04-22
 ---
 
-# Severity Policy — PaintBot AI Diagnostic System
+# Severity Policy — WeldBot AI Diagnostic System
 
 ## Overview
 
@@ -18,10 +18,10 @@ Severity determines: response time, HITL requirements, escalation path, and reso
 
 | Level | Label | Definition | Examples | Response SLA |
 |-------|-------|------------|----------|--------------|
-| 1 | **MINOR** | Cosmetic / aesthetic deviation; no impact on quality or throughput | Orange peel texture on non-visible panel, micro-scratch on bottom rail | Next maintenance window |
-| 2 | **MAJOR** | Visible quality defect; potential customer escape | Color mismatch > 2 ΔE on door panel, primer visible through topcoat | Within 8 hours |
+| 1 | **MINOR** | Cosmetic / aesthetic deviation; no impact on quality or throughput | Minor arc instability, brief temperature spike within tolerance | Next maintenance window |
+| 2 | **MAJOR** | Visible quality defect; potential customer escape | Wire feed dropout > 3 cycles, welding current spike > 30% nominal | Within 8 hours |
 | 3 | **HIGH** | Functional anomaly with safety margin; robot continues but risk of escalation | Unplanned dropout rate 3–5%, recurring surge events, instability oscillation | Within 4 hours |
-| 4 | **CRITICAL** | Safety, quality, or production integrity at immediate risk | Dropout > 5%, L2 slope exceedance, interlock triggered, emergency stop | **Immediate — 1 hour** |
+| 4 | **CRITICAL** | Safety, quality, or production integrity at immediate risk | Sustained flatline on any sensor, thermal runaway (temperature > 2× setpoint) | **Immediate — 1 hour** |
 
 ---
 
@@ -66,8 +66,8 @@ Severity determines: response time, HITL requirements, escalation path, and reso
 | Action | Severity | Notes |
 |--------|----------|-------|
 | `update_robot_config` | HIGH | Parameter changes affect all future cycles |
-| `adjust_paint_pressure` | HIGH | |
-| `change_oscillation_speed` | HIGH | |
+| `adjust_wire_feed_rate` | HIGH | |
+| `stop_welding_cycle` | HIGH | |
 | `trigger_clean_cycle` | HIGH | |
 | `dispatch_maintenance` | CRITICAL | |
 | `request_emergency_stop` | CRITICAL | Supervisor-only; robot operator can always override |
@@ -83,7 +83,7 @@ BLOCKED_ACTIONS = {
     "disable_emergency_stop",
     "update_firmware",
     "modify_safety_threshold",
-    "disablePainterMode",
+    "disableWeldingMode",
     "force_robot_home"
 }
 ```
@@ -145,5 +145,5 @@ Downward override must be logged in the incident record.
 This policy is reviewed quarterly or after any CRITICAL incident.
 Changes must be approved by: Platform Engineering Lead + Safety Officer + Production Manager.
 
-Owner: `paintbot-platform-team`
+Owner: `weldbot-platform-team`
 Last updated: `2026-04-22`

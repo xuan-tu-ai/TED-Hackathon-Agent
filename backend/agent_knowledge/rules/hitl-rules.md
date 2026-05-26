@@ -1,10 +1,10 @@
 ---
 name: hitl-rules
-description: Human-in-the-Loop safety rules for PaintBot diagnostic agent actions
+description: Human-in-the-Loop safety rules for WeldBot diagnostic agent actions
 severity: CRITICAL
 ---
 
-# HITL Rules — Human-in-the-Loop (PaintBot AI)
+# HITL Rules — Human-in-the-Loop (WeldBot AI)
 
 ## Purpose
 

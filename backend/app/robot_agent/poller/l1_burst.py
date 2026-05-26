@@ -15,6 +15,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from sqlalchemy.orm import Session
+
 from ..seed import create_session_factory
 from ..db.models import PerceptionResult
 

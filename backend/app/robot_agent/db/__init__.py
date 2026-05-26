@@ -6,6 +6,7 @@ utilities from the ``models`` module.
 
 from __future__ import annotations
 
+from .databricks_session import get_databricks_db
 from .models import (
     Alert,
     AgentMemory,
@@ -36,6 +37,7 @@ __all__ = [
     "Report",
     "create_db_engine",
     "create_session_factory",
+    "get_databricks_db",
     "get_default_db_url",
     "init_db",
     "is_postgres",

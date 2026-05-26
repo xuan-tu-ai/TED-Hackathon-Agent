@@ -89,6 +89,13 @@ class AppConfig:
         self.db_path: Path = self.data_dir / "demo.db"
         self.sql_dir: Path = self.data_dir / "sql"
 
+        # ── Databricks configuration (OT data tables) ─────────
+        self.databricks_host: str | None = os.getenv("DATABRICKS_HOST")
+        self.databricks_http_path: str | None = os.getenv("DATABRICKS_HTTP_PATH")
+        self.databricks_token: str | None = os.getenv("DATABRICKS_TOKEN")
+        self.databricks_catalog: str | None = os.getenv("DATABRICKS_CATALOG")
+        self.databricks_schema: str | None = os.getenv("DATABRICKS_SCHEMA")
+
         # ── LLM configuration (no computed path defaults) ─────
         self.lm_provider: str = (
             os.getenv("LM_PROVIDER") or os.getenv("DSPY_LLM_PROVIDER", "openai")
@@ -124,6 +131,17 @@ class AppConfig:
     def is_lm_configured(self) -> bool:
         """``True`` when a valid API key is present."""
         return bool(self.lm_api_key and self.lm_api_key != "your_openai_key_here")
+
+    @property
+    def databricks_configured(self) -> bool:
+        """``True`` when all 5 Databricks environment variables are non-empty."""
+        return all([
+            bool(self.databricks_host),
+            bool(self.databricks_http_path),
+            bool(self.databricks_token),
+            bool(self.databricks_catalog),
+            bool(self.databricks_schema),
+        ])
 
     # ── Factory methods (moved from llm_config.py) ────────────
 

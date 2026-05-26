@@ -45,5 +45,5 @@ def test_session_factory_creation():
 
 
 def test_seed_run_exists():
-    run_path = Path("backend/app/robot_agent/seed/run.py")
+    run_path = Path(__file__).resolve().parents[1] / "app/robot_agent/seed/run.py"
     assert run_path.exists()

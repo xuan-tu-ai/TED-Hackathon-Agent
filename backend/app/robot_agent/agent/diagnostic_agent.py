@@ -75,6 +75,7 @@ class DiagnosticIncident:
     sensor: str
     anomaly_score: float
     severity_hint: str
+    per_sensor_scores: dict[str, Any] = field(default_factory=dict)
     context: dict[str, Any] = field(default_factory=dict)
 
 @dataclass
@@ -694,12 +695,34 @@ class DiagnosticAgent:
         """
         self.start_session(incident)
 
+        # Build per-sensor scores context from V9 data
+        ps_scores = incident.per_sensor_scores or {}
+        v9_lines = []
+        if ps_scores:
+            sensors_in_order = ["wire_feed_speed", "wire_temperature", "welding_current"]
+            dom_key = f"p99_score_{incident.sensor}"
+            for s in sensors_in_order:
+                key = f"p99_score_{s}"
+                val = ps_scores.get(key, None)
+                if val is not None:
+                    marker = "  ← DOMINANT" if key == dom_key else ""
+                    v9_lines.append(f"    {s}: {val}{marker}")
+            rampup = ps_scores.get("p99_score_rampup")
+            active = ps_scores.get("p99_score_active")
+            if rampup is not None and active is not None:
+                v9_lines.append(f"  Phase: rampup={rampup}, active={active}")
+
+        per_sensor_context = ""
+        if v9_lines:
+            per_sensor_context = "\nPer-sensor p99 scores:\n" + "\n".join(v9_lines)
+
         incident_context = (
             f"Robot: {incident.robot_code}, "
             f"Family: {incident.abnormal_family}, "
             f"Subtype: {incident.abnormal_subtype}, "
             f"Sensor: {incident.sensor}, "
             f"Score: {incident.anomaly_score}"
+            f"{per_sensor_context}"
         )
 
         loaded_skills_content = ""
