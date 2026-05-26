@@ -2,7 +2,7 @@ import pytest
 import torch
 import math
 
-from app.anomaly_detection.layers.time_embedding import (
+from src.anomaly_detection.layers.time_embedding import (
     SinusoidalTimeEmbedding,
     get_time_embedding,
 )
@@ -52,7 +52,6 @@ class TestSinusoidalTimeEmbedding:
         t_1 = torch.tensor([1.0])
         out_0 = emb(t_0)
         out_1 = emb(t_1)
-        # sin(0)=0, cos(0)=1; sin(1*freq), cos(1*freq) differ
         assert not torch.allclose(out_0, out_1)
 
     def test_functional_same_as_module(self):

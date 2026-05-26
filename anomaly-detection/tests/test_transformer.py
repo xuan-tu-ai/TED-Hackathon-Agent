@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from app.anomaly_detection.layers.transformer import (
+from src.anomaly_detection.layers.transformer import (
     CLSToken,
     TransformerEncoder,
     DualPooling,
@@ -59,7 +59,7 @@ class TestTransformerEncoder:
 
     def test_tokens_varied(self):
         enc = TransformerEncoder(num_layers=4, num_heads=4, d_model=128)
-        x = torch.randn(2, 50, 128)  # different token count
+        x = torch.randn(2, 50, 128)
         out = enc(x)
         assert out.shape == (2, 50, 128)
 
@@ -67,7 +67,7 @@ class TestTransformerEncoder:
         enc = TransformerEncoder(num_layers=4, num_heads=4, d_model=128)
         x = torch.randn(4, 85, 128)
         out = enc(x)
-        assert not torch.allclose(out, x)  # transformer should transform
+        assert not torch.allclose(out, x)
 
 
 class TestDualPooling:

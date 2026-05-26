@@ -1,8 +1,8 @@
 import pytest
 import torch
 
-from app.anomaly_detection.layers.scorer import MADThreshold, AnomalyScorer, PatchMasker, PerturbationLoop
-from app.anomaly_detection.layers.cnf import CNF
+from src.anomaly_detection.layers.scorer import MADThreshold, AnomalyScorer, PatchMasker, PerturbationLoop
+from src.anomaly_detection.layers.cnf import CNF
 
 
 class TestMADThreshold:
@@ -20,7 +20,7 @@ class TestMADThreshold:
         threshold.fit(scores)
         preds = threshold.predict(scores)
         assert preds.dtype == torch.bool
-        assert (preds.float().sum() < len(scores))  # not all should be flagged
+        assert (preds.float().sum() < len(scores))
 
     def test_robust_to_outliers(self):
         """MAD should be robust — outliers shouldn't move threshold much."""
@@ -72,7 +72,7 @@ class TestPatchMasker:
         start = 5 * 16
         end = start + 32
         assert masked[:, 2, start:end].abs().sum() < 1e-6
-        assert masked[:, :2, :].sum() == raw[:, :2, :].sum()  # other sensors unchanged
+        assert masked[:, :2, :].sum() == raw[:, :2, :].sum()
         assert masked[:, 3:, :].sum() == raw[:, 3:, :].sum()
 
     def test_all_masks_count(self):
@@ -110,7 +110,7 @@ class TestPerturbationLoop:
         masker = PatchMasker(num_sensors=6, num_patches=14)
         loop = PerturbationLoop(encoder, cnf, scorer, masker)
 
-        raw = torch.randn(1, 6, 240)  # batch=1 to simplify
+        raw = torch.randn(1, 6, 240)
         with torch.no_grad():
             heatmap = loop.localize(raw)
         assert heatmap.shape == (6, 14)
@@ -131,7 +131,7 @@ class TestPerturbationLoop:
         masker = PatchMasker(num_sensors=6, num_patches=14)
         loop = PerturbationLoop(encoder, cnf, scorer, masker)
 
-        batch = torch.randn(2, 6, 240)  # batch=2
+        batch = torch.randn(2, 6, 240)
         with torch.no_grad():
             heatmaps = loop.localize_batch(batch)
         assert len(heatmaps) == 2
