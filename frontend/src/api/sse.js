@@ -29,7 +29,7 @@ export function createSSEConnection(onEvent, onConnectionChange, onError) {
         isIntentionallyDisconnected = false;
         setConnectionStatus('connecting');
 
-        eventSource = new EventSource('${API_BASE}/stream');
+        eventSource = new EventSource(`${API_BASE}/stream`);
 
         eventSource.onopen = () => {
             reconnectAttempts = 0;
@@ -40,6 +40,7 @@ export function createSSEConnection(onEvent, onConnectionChange, onError) {
             try {
                 const data = JSON.parse(event.data);
                 onEvent(data);
+                console.error(event.data);
             } catch (err) {
                 console.error('SSE parse error:', err);
                 if (onError) {
