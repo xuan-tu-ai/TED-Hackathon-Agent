@@ -110,7 +110,8 @@ class SimulationEngine:
 
         l2_info = detect_l2_slope(
             session, robot_id,
-            days=30,
+            hours=48,
+            bucket_hours=6,
             reference_time=reference_time,
         )
 

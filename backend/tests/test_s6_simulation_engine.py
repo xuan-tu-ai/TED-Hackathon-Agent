@@ -224,8 +224,8 @@ class TestL1L2ReferenceTime:
         session = db_session
         now = datetime.now(UTC)
 
-        result_without_ref = detect_l2_slope(session, "R-07", days=30)
-        result_with_ref = detect_l2_slope(session, "R-07", days=30, reference_time=now)
+        result_without_ref = detect_l2_slope(session, "R-07", hours=48)
+        result_with_ref = detect_l2_slope(session, "R-07", hours=48, reference_time=now)
 
         assert "reference_time" in result_without_ref
         assert "reference_time" in result_with_ref
@@ -249,7 +249,7 @@ class TestL1L2ReferenceTime:
 
         session = db_session
 
-        result = detect_l2_slope(session, "R-07", days=30)
+        result = detect_l2_slope(session, "R-07", hours=48)
         assert "trend" in result
         assert "slope" in result
         assert "r2" in result

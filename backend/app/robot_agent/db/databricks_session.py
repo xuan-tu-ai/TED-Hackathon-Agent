@@ -31,8 +31,8 @@ def _fq(schema: str, table: str) -> str:
     catalog = os.getenv("DATABRICKS_CATALOG", "dbw_ted_hackathon_dev_001")
     return f"{catalog}.{schema}.{table}"
 
-DB_TABLE_PERCEPTION_RESULTS = _fq("silver_layer", "perception_results")
-DB_TABLE_MAINTENANCE_EVENTS = _fq("silver_layer", "maintenance_events")
+DB_TABLE_PERCEPTION_RESULTS = _fq("gold_layer", "perception_results")
+DB_TABLE_MAINTENANCE_EVENTS = _fq("bronze_layer", "maintenance_events")
 DB_TABLE_PM_CARDS           = _fq("bronze_layer", "pm_cards")
 
 logger = logging.getLogger(__name__)
