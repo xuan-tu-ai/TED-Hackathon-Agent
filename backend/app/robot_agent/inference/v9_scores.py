@@ -6,19 +6,15 @@ strings) with the following schema:
 .. code-block:: json
 
     {
-      "p99_score": 0.88,
       "p99_score_wire_feed_speed": 0.88,
       "p99_score_wire_temperature": 0.05,
-      "p99_score_welding_current": 0.04,
-      "p99_score_rampup": 0.72,
-      "p99_score_active": 0.88,
-      "valid_start_idx": 1,
-      "valid_end_idx": 4
+      "p99_score_welding_current": 0.04
     }
 
-Heatmap fields (``heatmap_wire_*``) are produced by inference but are too
-large for seed SQL rows — they are treated as optional and silently ignored
-if absent.
+Only the three per-sensor p99 scores are stored.  Global aggregate keys
+(``p99_score``, ``p99_score_rampup``, ``p99_score_active``) and heatmap
+fields (``heatmap_wire_*``) are produced by the inference notebook but are
+not persisted — they are silently ignored if present.
 """
 
 from __future__ import annotations

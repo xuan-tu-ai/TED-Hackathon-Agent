@@ -8,11 +8,11 @@
 Current test count: **~180+ tests** across anomaly detection (Sprint 1), agent system (Sprint 2), and codebase unification (Sprint 3).
 
 ## Active Sprints
-- [Sprint 22](docs/sprint-plans/sprint-22.md) — *In Progress* — Fix V9 `per_sensor_scores` schema in seed SQL; connect real perception result signal data into agent context (remove paint-shop hard-codes, derive sensor/family from V9 scores)
+- None (all sprints 0-22 are completed)
 
 ## Recent Completed Sprints
 - [Sprint 21](docs/sprint-plans/sprint-21.md) — *Completed* — Migrate agent knowledge paint-shop→welding (3 sensors, 5 anomaly types); connect backend to Databricks for PerceptionResult/PMCard/MaintenanceEvent; 2 Databricks SQL seed scripts
-- [Sprint 22](docs/sprint-plans/sprint-22.md) — *In Progress* — Fix V9 `per_sensor_scores` schema in seed SQL; connect real perception result signal data into agent context (remove paint-shop hard-codes, derive sensor/family from V9 scores)
+- [Sprint 22](docs/sprint-plans/sprint-22.md) — *Completed* — Fix V9 `per_sensor_scores` schema in seed SQL; connect real perception result signal data into agent context (remove paint-shop hard-codes, derive sensor/family from V9 scores)
 - [Sprint 20](docs/sprint-plans/sprint-20.md) — *Completed* — GLCMaeV9: LogScaler+GlobalSeqNorm thay RevIN, 4-dataset strategy, bỏ tail window, p99 scoring
 - [Sprint 18](docs/sprint-plans/sprint-18.md) — *Completed* — Welding Robot Data Regeneration: convergent normal data + 5 anomaly types
 - [Sprint 19](docs/sprint-plans/sprint-19.md) — *Completed* — Dashboard: reduce robots to 4 + real-time error-count timeline panel with L1/L2 reference lines
@@ -46,14 +46,14 @@ Current test count: **~180+ tests** across anomaly detection (Sprint 1), agent s
 - [x] **M8:** GLC-Anomaly-MaskFormer V7 — Dual-criterion (Masked Reconstruction + Association Discrepancy) detector (Sprint 7)
 - [x] **M9:** Agent-Side Fixes — PlanTracker sync, Skill Library cleanup, Task/Step sync (Sprint 10)
 - [x] **M10:** Codebase Documentation — Google Style docstrings + module READMEs for the entire codebase (Sprint 8)
-- [ ] **M11:** Multi-DB Compatibility — SQLite + PostgreSQL (local + Azure) via single `DATABASE_URL` (Sprint 11)
-- [ ] **M12:** GLC-AnomalyMaskFormer Correctness Fixes — GPU vectorization, numerical stability, RevIN API, 2D PE, Minimax convergence (Sprint 12)
-- [ ] **M13:** Local Inference API — Spark-free `*LocalInference` for all 3 variants (Sprint 13)
+- [x] **M11:** Multi-DB Compatibility — SQLite + PostgreSQL (local + Azure) via single `DATABASE_URL` (Sprint 11)
+- [x] **M12:** GLC-AnomalyMaskFormer Correctness Fixes — GPU vectorization, numerical stability, RevIN API, 2D PE, Minimax convergence (Sprint 12)
+- [x] **M13:** Local Inference API — Spark-free `*LocalInference` for all 3 variants (Sprint 13)
 - [x] **M14:** Physics-based Welding Robot Data Simulator — LTI dynamics, colored noise, 4 anomaly types, 30-day dataset (Sprint 14)
 - [x] **M15:** MaskFormer Training Fixes — JS divergence, CNN decoder, Phase-A warmup, λ ramp, mask_ratio tuning (Sprint 15)
 - [ ] **M16:** Real OT Data Integration
 - [ ] **M17:** Production Deployment & Hardening
-- [ ] **M18:** Databricks Integration — OT tables (PerceptionResult, PMCard, MaintenanceEvent) in Delta Lake; agent knowledge migrated to welding robot context (Sprint 21)
+- [x] **M18:** Databricks Integration — OT tables (PerceptionResult, PMCard, MaintenanceEvent) in Delta Lake; agent knowledge migrated to welding robot context (Sprint 21)
 
 ## Architecture Snapshot
 
@@ -109,6 +109,7 @@ frontend/                         ← React 18 + Vite + Zustand (SSE streaming, 
 | 19 | Dashboard Error Timeline | ✅ Done | Reduce robots to 4 + real-time error-count timeline panel with L1/L2 reference lines |
 | 20 | GLCMaeV9 Anomaly Pipeline | ✅ Done | LogScaler+GlobalSeqNorm replace RevIN; 4-dataset strategy (train/val/threshold_calibration/test); drop tail window; p99 aggregation; inference notebook with threshold calibration flow |
 | 21 | Databricks Integration + Agent Knowledge Migration | ✅ Done | Agent knowledge migrated paint-shop→welding (WeldBot AI, 3 sensors, 5 anomaly types); Databricks session layer; PerceptionResult/PMCard/MaintenanceEvent on Delta Lake; 2 SQL seed scripts; 9 tests |
+| 22 | V9 Scores + Agent Context | ✅ Done | Fix V9 `per_sensor_scores` schema; parse dominant sensor + derive family; include per-sensor scores in incident packet_json and agent context |
 
 ## Backlog / Future Work
 - **Real OT data integration** — Replace mock simulation with live paint-shop sensor data feed

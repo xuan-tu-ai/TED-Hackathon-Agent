@@ -24,18 +24,13 @@ The seed SQL and any writer must produce this JSON structure (stored as `STRING`
 
 ```json
 {
-  "p99_score": 0.88,
   "p99_score_wire_feed_speed": 0.88,
   "p99_score_wire_temperature": 0.05,
-  "p99_score_welding_current": 0.04,
-  "p99_score_rampup": 0.72,
-  "p99_score_active": 0.88,
-  "valid_start_idx": 1,
-  "valid_end_idx": 4
+  "p99_score_welding_current": 0.04
 }
 ```
 
-Heatmaps (`heatmap_wire_*`) are produced by the inference pipeline but are too large (256 floats/sensor) for seed SQL rows. They are **omitted from seed data** and **optional** in the agent context. The agent only needs the p99 score fields to perform diagnosis.
+Only the three per-sensor p99 scores are stored. Global aggregate keys (`p99_score`, `p99_score_rampup`, `p99_score_active`) and index fields (`valid_start_idx`, `valid_end_idx`) are produced by older inference pipeline variants but are **not used** — omit them from seed data and agent context.
 
 ---
 

@@ -707,10 +707,6 @@ class DiagnosticAgent:
                 if val is not None:
                     marker = "  ← DOMINANT" if key == dom_key else ""
                     v9_lines.append(f"    {s}: {val}{marker}")
-            rampup = ps_scores.get("p99_score_rampup")
-            active = ps_scores.get("p99_score_active")
-            if rampup is not None and active is not None:
-                v9_lines.append(f"  Phase: rampup={rampup}, active={active}")
 
         per_sensor_context = ""
         if v9_lines:

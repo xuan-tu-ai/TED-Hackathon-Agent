@@ -25,56 +25,36 @@ from app.robot_agent.inference.v9_scores import (
 @pytest.fixture
 def normal_scores() -> dict:
     return {
-        "p99_score": 0.05,
         "p99_score_wire_feed_speed": 0.04,
         "p99_score_wire_temperature": 0.03,
         "p99_score_welding_current": 0.03,
-        "p99_score_rampup": 0.03,
-        "p99_score_active": 0.04,
-        "valid_start_idx": 1,
-        "valid_end_idx": 4,
     }
 
 
 @pytest.fixture
 def anomaly_scores() -> dict:
     return {
-        "p99_score": 0.88,
         "p99_score_wire_feed_speed": 0.88,
         "p99_score_wire_temperature": 0.05,
         "p99_score_welding_current": 0.04,
-        "p99_score_rampup": 0.72,
-        "p99_score_active": 0.88,
-        "valid_start_idx": 1,
-        "valid_end_idx": 4,
     }
 
 
 @pytest.fixture
 def thermal_drift_scores() -> dict:
     return {
-        "p99_score": 0.72,
         "p99_score_wire_feed_speed": 0.10,
         "p99_score_wire_temperature": 0.72,
         "p99_score_welding_current": 0.08,
-        "p99_score_rampup": 0.30,
-        "p99_score_active": 0.72,
-        "valid_start_idx": 1,
-        "valid_end_idx": 4,
     }
 
 
 @pytest.fixture
 def instability_scores() -> dict:
     return {
-        "p99_score": 0.65,
         "p99_score_wire_feed_speed": 0.12,
         "p99_score_wire_temperature": 0.10,
         "p99_score_welding_current": 0.65,
-        "p99_score_rampup": 0.40,
-        "p99_score_active": 0.65,
-        "valid_start_idx": 1,
-        "valid_end_idx": 4,
     }
 
 
@@ -112,8 +92,7 @@ class TestParseV9Scores:
         """Heatmap fields should not cause errors when absent."""
         result = parse_v9_scores(normal_scores)
         assert "heatmap_wire_feed_speed" not in result
-        # Parsing should succeed without heatmap fields
-        assert result["p99_score"] == 0.05
+        assert result["p99_score_wire_feed_speed"] == 0.04
 
 
 # ── dominant_sensor ──────────────────────────────────────────────────────────

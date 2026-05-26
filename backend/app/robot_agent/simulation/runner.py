@@ -110,9 +110,9 @@ class SimulationRunner:
         sensor, sensor_score = dominant_sensor(v9_scores)
         abnormal_family = sensor_to_family(sensor, v9_scores)
 
-        # Determine score and severity from V9 scores (fall back to legacy for safety)
+        # Determine score and severity from V9 per-sensor scores (3-key schema)
         if v9_scores:
-            score = float(v9_scores.get("p99_score", sensor_score))
+            score = float(sensor_score)
             severity = score_to_severity(score)
         else:
             # Fallback: legacy density/slope calculation
