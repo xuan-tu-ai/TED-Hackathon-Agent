@@ -57,7 +57,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://app-ted-hackathon-fe-dev-001.azurewebsites.net"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

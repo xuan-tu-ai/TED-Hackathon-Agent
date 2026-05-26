@@ -8,7 +8,7 @@ on:
     branches:
       - dev/ai
     paths:
-      - 'backend/**' # Chỉ kích hoạt khi code trong thư mục backend thay đổi
+      - 'frontend/**' # Chỉ kích hoạt khi code trong thư mục backend thay đổi
       - '.github/workflows/*be*.yml'
   workflow_dispatch:
 
@@ -32,6 +32,9 @@ jobs:
           npm install
           npm run build --if-present
           npm run test --if-present
+        env:
+            VITE_API_URL: 'https://app-ted-hackathon-be-dev-001.azurewebsites.net' # ← THÊM
+
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4

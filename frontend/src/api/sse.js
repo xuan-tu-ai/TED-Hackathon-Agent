@@ -1,4 +1,4 @@
-const API_BASE = '/api/sim';
+const API_BASE = (import.meta.env.VITE_API_URL || '') + '/api/sim';
 
 export function createSSEConnection(onEvent, onConnectionChange, onError) {
     let eventSource = null;
