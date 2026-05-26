@@ -8,7 +8,7 @@ import ChatPanel from './components/ChatPanel.jsx';
 import HITLModal from './components/HITLModal.jsx';
 import ErrorTimeline from './components/ErrorTimeline.jsx';
 
-const API_BASE = '/api/sim';
+import { API_BASE } from './api/config.js';
 
 function StartScreen({ onStart, speed, onSpeedChange }) {
     return (
@@ -186,7 +186,7 @@ function App() {
     const handleStart = async () => {
         for (let attempt = 0; attempt < 10; attempt++) {
             try {
-                const result = await requestJson(`${API_BASE}/start`, {
+                const result = await requestJson(`${API_BASE}/sim/start`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ speed_factor: speed })
@@ -213,7 +213,7 @@ function App() {
     };
 
     const handleStop = async () => {
-        await requestNoBody(`${API_BASE}/stop`, { method: 'POST' }, 'sim/stop');
+        await requestNoBody(`${API_BASE}/sim/stop`, { method: 'POST' }, 'sim/stop');
         if (sseRef.current) {
             sseRef.current.disconnect();
             sseRef.current = null;
@@ -308,7 +308,7 @@ function App() {
     }
 
     const handleResolveHitl = async (queueId, action) => {
-        const ok = await requestNoBody(`${API_BASE}/hitl/${queueId}/${action}`, {
+        const ok = await requestNoBody(`${API_BASE}/sim/hitl/${queueId}/${action}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -324,7 +324,7 @@ function App() {
     };
 
     const handleSkip = async () => {
-        await requestNoBody(`${API_BASE}/skip_to_alert`, { method: 'POST' }, 'sim/skip_to_alert');
+        await requestNoBody(`${API_BASE}/sim/skip_to_alert`, { method: 'POST' }, 'sim/skip_to_alert');
     };
 
     const handleSpeedChange = (newSpeed) => {

@@ -25,6 +25,9 @@ services:
       - "3000:80"
     depends_on:
       - backend
+    environment:
+      API_URL: http://backend:8000
+      WS_URL: ws://backend:8000
 
   # ── PostgreSQL (start with: docker compose --profile db up) ────
   postgres:

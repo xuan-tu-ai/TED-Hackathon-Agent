@@ -1,5 +1,6 @@
 import React from 'react';
 import { useSimulationStore } from '../stores/useSimulationStore.js';
+import { API_BASE } from '../api/config.js';
 
 export default function HITLModal({ onViewIncident, onError }) {
     const { globalHitlQueue, selectIncident, removeGlobalHitl, removeHitlItem } = useSimulationStore();
@@ -12,7 +13,7 @@ export default function HITLModal({ onViewIncident, onError }) {
 
     const handleApprove = async (queueId) => {
         try {
-            const response = await fetch(`/api/sim/hitl/${queueId}/approve`, {
+            const response = await fetch(`${API_BASE}/sim/hitl/${queueId}/approve`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ queue_id: queueId, status: 'APPROVED', resolved_by: 'Supervisor' })
@@ -33,7 +34,7 @@ export default function HITLModal({ onViewIncident, onError }) {
 
     const handleReject = async (queueId) => {
         try {
-            const response = await fetch(`/api/sim/hitl/${queueId}/reject`, {
+            const response = await fetch(`${API_BASE}/sim/hitl/${queueId}/reject`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ queue_id: queueId, status: 'REJECTED', resolved_by: 'Supervisor' })
