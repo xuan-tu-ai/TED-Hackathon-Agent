@@ -14,6 +14,7 @@ Usage::
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import ClassVar, Literal
@@ -89,12 +90,18 @@ class AppConfig:
         self.db_path: Path = self.data_dir / "demo.db"
         self.sql_dir: Path = self.data_dir / "sql"
 
+        # ── Anomaly detection thresholds (from agent_knowledge/thresholds.json) ──
+        self.l1_density_threshold: float
+        self.l2_min_slope: float
+        self._load_thresholds()
+
         # ── Databricks configuration (OT data tables) ─────────
         self.databricks_host: str | None = os.getenv("DATABRICKS_HOST")
         self.databricks_http_path: str | None = os.getenv("DATABRICKS_HTTP_PATH")
         self.databricks_token: str | None = os.getenv("DATABRICKS_TOKEN")
         self.databricks_catalog: str | None = os.getenv("DATABRICKS_CATALOG")
         self.databricks_schema: str | None = os.getenv("DATABRICKS_SCHEMA")
+        self.databricks_vs_index_pm_cards: str | None = os.getenv("DATABRICKS_VS_INDEX_PM_CARDS")
 
         # ── LLM configuration (no computed path defaults) ─────
         self.lm_provider: str = (
@@ -109,6 +116,23 @@ class AppConfig:
         self.lm_api_key: str = (
             os.getenv("LM_API_KEY") or self._resolve_api_key(self.lm_provider)
         )
+
+    # ── Threshold loader ─────────────────────────────────────
+
+    def _load_thresholds(self) -> None:
+        """Load L1/L2 thresholds from agent_knowledge/thresholds.json."""
+        path = self.agent_knowledge_dir / "thresholds.json"
+        defaults = {"l1_density_threshold": 40.0, "l2_min_slope": 0.05}
+        if path.exists():
+            with path.open() as f:
+                data = json.load(f)
+            defaults.update({k: v for k, v in data.items() if not k.startswith("_")})
+        self.l1_density_threshold = float(defaults["l1_density_threshold"])
+        self.l2_min_slope = float(defaults["l2_min_slope"])
+
+    def reload_thresholds(self) -> None:
+        """Hot-reload thresholds from disk without restarting the app."""
+        self._load_thresholds()
 
     # ── Helpers ───────────────────────────────────────────────
 

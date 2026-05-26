@@ -21,14 +21,43 @@ from ..chroma.client import get_collection
 logger = logging.getLogger(__name__)
 
 
-def _query_databricks_pm_cards(query_text: str, limit: int = 5) -> list[dict[str, Any]]:
-    """Query PM Cards directly from the Databricks ``pm_cards`` table.
-
-    Returns a list of card dicts with ``card_id``, ``sensor``, ``robot_code``,
-    ``cause``, ``symptom``, and ``action`` keys.
-    """
+def _query_databricks_vs_pm_cards(query_text: str, limit: int = 5) -> list[dict[str, Any]]:
+    """Semantic search via Databricks Vector Search index on pm_cards gold table."""
+    index_name = config.databricks_vs_index_pm_cards
+    if not index_name:
+        return []
     try:
-        from ..db.databricks_session import create_databricks_session_factory
+        from databricks.sdk import WorkspaceClient
+        ws = WorkspaceClient(
+            host=f"https://{config.databricks_host}",
+            token=config.databricks_token,
+        )
+        result = ws.vector_search_indexes.query_index(
+            index_name=index_name,
+            columns=["card_id", "sensor", "robot_code", "cause", "symptom", "action"],
+            query_text=query_text,
+            num_results=limit,
+        )
+        cards = []
+        if result.result and result.result.data_array:
+            cols = [c.name for c in (result.result.manifest.columns or [])]
+            for row in result.result.data_array:
+                d = dict(zip(cols, row))
+                cards.append({
+                    "id": d.get("card_id"),
+                    "content": f"Cause: {d.get('cause')}\nSymptom: {d.get('symptom')}\nAction: {d.get('action')}",
+                    "metadata": {**d, "source": "databricks_vs"},
+                })
+        return cards
+    except Exception as exc:
+        logger.warning("Databricks VS PMCard query failed: %s", exc)
+        return []
+
+
+def _query_databricks_pm_cards(query_text: str, limit: int = 5) -> list[dict[str, Any]]:
+    """Keyword fallback: ILIKE query on Databricks bronze pm_cards table."""
+    try:
+        from ..db.databricks_session import create_databricks_session_factory, DB_TABLE_PM_CARDS
 
         sf = create_databricks_session_factory()
         session = sf()
@@ -42,35 +71,28 @@ def _query_databricks_pm_cards(query_text: str, limit: int = 5) -> list[dict[str
                     text("symptom"),
                     text("action"),
                 )
-                .select_from(text("pm_cards"))
-                .where(
-                    text(
-                        "cause ILIKE :q OR symptom ILIKE :q OR action ILIKE :q"
-                    )
-                )
+                .select_from(text(DB_TABLE_PM_CARDS))
+                .where(text("cause ILIKE :q OR symptom ILIKE :q OR action ILIKE :q"))
                 .limit(limit)
             )
             rows = session.execute(stmt, {"q": f"%{query_text}%"}).fetchall()
-            cards = []
-            for row in rows:
-                cards.append({
+            return [
+                {
                     "id": row.card_id,
                     "content": f"Cause: {row.cause}\nSymptom: {row.symptom}\nAction: {row.action}",
                     "metadata": {
-                        "card_id": row.card_id,
-                        "sensor": row.sensor,
-                        "robot_code": row.robot_code,
-                        "cause": row.cause,
-                        "symptom": row.symptom,
-                        "action": row.action,
-                        "source": "databricks",
+                        "card_id": row.card_id, "sensor": row.sensor,
+                        "robot_code": row.robot_code, "cause": row.cause,
+                        "symptom": row.symptom, "action": row.action,
+                        "source": "databricks_sql",
                     },
-                })
-            return cards
+                }
+                for row in rows
+            ]
         finally:
             session.close()
     except Exception as exc:
-        logger.warning("Databricks PMCard query failed, falling back: %s", exc)
+        logger.warning("Databricks PMCard SQL query failed: %s", exc)
         return []
 
 
@@ -93,12 +115,16 @@ class QueryPMCardsTool:
     description: ClassVar[str] = "Search PM Cards to find similar past incidents. Use this to correlate current incident with historical maintenance records."
 
     def __call__(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
-        # Prefer Databricks when configured
         if config.databricks_configured:
+            # 1st: Vector Search (semantic)
+            cards = _query_databricks_vs_pm_cards(query, limit=limit)
+            if cards:
+                return cards
+            # 2nd: SQL ILIKE (keyword fallback)
             cards = _query_databricks_pm_cards(query, limit=limit)
             if cards:
                 return cards
-            logger.info("Databricks query returned no results, falling back to ChromaDB")
+            logger.info("Databricks returned no results, falling back to ChromaDB")
 
         # Fallback: ChromaDB vector search
         try:

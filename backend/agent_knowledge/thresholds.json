@@ -1,0 +1,5 @@
+{
+  "_comment": "Anomaly detection thresholds — tune via notebook Load-Inference-Json-To-Silver.ipynb then fill here.",
+  "l1_density_threshold": 33.0,
+  "l2_min_slope": 0.05
+}

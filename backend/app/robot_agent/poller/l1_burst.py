@@ -17,6 +17,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from ..agent.config import config
 from ..seed import create_session_factory
 from ..db.models import PerceptionResult
 
@@ -25,7 +26,7 @@ def detect_l1_burst(
     session: Session,
     robot_id: str,
     window_hours: int = 1,
-    density_threshold: float = 2.5,
+    density_threshold: float | None = None,
     reference_time: datetime | None = None,
 ) -> dict[str, Any]:
     """Detect L1 density burst: random dense events in a short time window.
@@ -36,6 +37,8 @@ def detect_l1_burst(
         - density_per_hour: float
         - recent_events: list of PerceptionResult
     """
+    if density_threshold is None:
+        density_threshold = config.l1_density_threshold
     if reference_time is None:
         reference_time = datetime.now(UTC)
 
@@ -79,7 +82,6 @@ def get_l1_summary(session: Session, robot_id: str) -> dict[str, Any]:
         burst_info = detect_l1_burst(
             session, robot_id,
             window_hours=hours,
-            density_threshold=8.0
         )
         result["windows"][f"{hours}h"] = {
             "is_burst": burst_info["is_burst"],

@@ -18,6 +18,7 @@ from typing import Any
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from ..agent.config import config
 from ..db.models import PerceptionResult
 
 
@@ -25,7 +26,7 @@ def detect_l2_slope(
     session: Session,
     robot_id: str,
     days: int = 30,
-    min_slope: float = 0.015,
+    min_slope: float | None = None,
     reference_time: datetime | None = None,
 ) -> dict[str, Any]:
     """Detect L2 slope escalation: progressive worsening over time.
@@ -39,6 +40,8 @@ def detect_l2_slope(
         - r2: float (fit quality, 0-1)
         - daily_averages: list of (date, avg_score) tuples
     """
+    if min_slope is None:
+        min_slope = config.l2_min_slope
     if reference_time is None:
         reference_time = datetime.now(UTC)
 

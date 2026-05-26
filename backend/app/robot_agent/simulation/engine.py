@@ -104,13 +104,13 @@ class SimulationEngine:
 
         l1_info = detect_l1_burst(
             session, robot_id,
-            window_hours=24, density_threshold=15,
+            window_hours=24,
             reference_time=reference_time,
         )
 
         l2_info = detect_l2_slope(
             session, robot_id,
-            days=30, min_slope=0.005,
+            days=30,
             reference_time=reference_time,
         )
 

@@ -23,6 +23,7 @@ dependencies = [
     "numpy<2.3",
     "databricks-sql-connector[pyarrow]",
     "databricks-sqlalchemy>=2.0.9",
+    "databricks-sdk>=0.111.0",
 ]
 
 [build-system]

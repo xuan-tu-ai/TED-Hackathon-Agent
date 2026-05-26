@@ -17,6 +17,7 @@ from typing import Callable
 
 from ..seed import create_session_factory
 
+from ..agent.config import config as _config
 from .l1_burst import detect_l1_burst, get_l1_summary
 from .l2_slope import detect_l2_slope, get_l2_summary
 
@@ -34,15 +35,15 @@ class CognitivePoller:
         db_url: str,
         robots: list[str] | None = None,
         poll_interval: int = 10,
-        l1_threshold: float = 8.0,
-        l2_min_slope: float = 0.10,
+        l1_threshold: float | None = None,
+        l2_min_slope: float | None = None,
     ):
         self.db_url = db_url
         self.session_factory = create_session_factory(db_url)
         self.robots = robots or [f"R-{idx:02d}" for idx in range(1, 48)]
         self.poll_interval = poll_interval
-        self.l1_threshold = l1_threshold
-        self.l2_min_slope = l2_min_slope
+        self.l1_threshold = l1_threshold if l1_threshold is not None else _config.l1_density_threshold
+        self.l2_min_slope = l2_min_slope if l2_min_slope is not None else _config.l2_min_slope
         self._running = False
         self._on_alert: Callable[[dict], None] | None = None
 

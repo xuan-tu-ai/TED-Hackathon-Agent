@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from ..agent.config import config
 from ..seed import create_session_factory
 from ..db.models import PerceptionResult
 
@@ -22,9 +23,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/robots", tags=["robots"])
 
-# L1/L2 default thresholds (mirrors detect_l1_burst / detect_l2_slope defaults)
-L1_DENSITY_THRESHOLD = 2.5       # events/hour (1 h window)
-L2_MIN_SLOPE = 0.015             # score change/day (30 d window)
+L1_DENSITY_THRESHOLD = config.l1_density_threshold
+L2_MIN_SLOPE = config.l2_min_slope
 
 
 class ErrorPoint(BaseModel):
