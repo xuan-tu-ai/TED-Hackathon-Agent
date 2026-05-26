@@ -8,7 +8,7 @@
 Current test count: **~180+ tests** across anomaly detection (Sprint 1), agent system (Sprint 2), and codebase unification (Sprint 3).
 
 ## Active Sprints
-- None (all sprints 0-22 are completed)
+- [Sprint 23](docs/sprint-plans/sprint-23.md) — *In Progress* — Extract `anomaly-detection/` sub-component: move modules, fix `src.` imports, archive V1–V6 models, clean up backend
 
 ## Recent Completed Sprints
 - [Sprint 21](docs/sprint-plans/sprint-21.md) — *Completed* — Migrate agent knowledge paint-shop→welding (3 sensors, 5 anomaly types); connect backend to Databricks for PerceptionResult/PMCard/MaintenanceEvent; 2 Databricks SQL seed scripts
@@ -110,6 +110,7 @@ frontend/                         ← React 18 + Vite + Zustand (SSE streaming, 
 | 20 | GLCMaeV9 Anomaly Pipeline | ✅ Done | LogScaler+GlobalSeqNorm replace RevIN; 4-dataset strategy (train/val/threshold_calibration/test); drop tail window; p99 aggregation; inference notebook with threshold calibration flow |
 | 21 | Databricks Integration + Agent Knowledge Migration | ✅ Done | Agent knowledge migrated paint-shop→welding (WeldBot AI, 3 sensors, 5 anomaly types); Databricks session layer; PerceptionResult/PMCard/MaintenanceEvent on Delta Lake; 2 SQL seed scripts; 9 tests |
 | 22 | V9 Scores + Agent Context | ✅ Done | Fix V9 `per_sensor_scores` schema; parse dominant sensor + derive family; include per-sensor scores in incident packet_json and agent context |
+| 23 | Project Reconstruction — `anomaly-detection/` Sub-Component | 🔄 In Progress | Scaffold new uv package; move `anomaly_detection`, `data_simulator`, `databricks_connect`, notebooks, checkpoints, SQL, tests; fix `src.` imports; archive V1–V6; clean backend |
 
 ## Backlog / Future Work
 - **Real OT data integration** — Replace mock simulation with live paint-shop sensor data feed
