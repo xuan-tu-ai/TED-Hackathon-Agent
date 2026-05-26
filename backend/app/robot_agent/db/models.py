@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM models for the paint-shop diagnostic system.
+"""SQLAlchemy ORM models for the welding robot diagnostic system.
 
 Defines the relational schema used by the robot_agent subsystem,
 covering perception results, maintenance history, preventive-maintenance

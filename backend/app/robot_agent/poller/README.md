@@ -1,6 +1,6 @@
 # Poller Sub-package
 
-Cognitive polling loop for real-time L1 (burst) and L2 (slope) anomaly detection across all 47 paint-shop robots.
+Cognitive polling loop for real-time L1 (burst) and L2 (slope) anomaly detection across all welding robots.
 
 ## Architecture
 
@@ -24,7 +24,7 @@ The poller iterates over all robots at a configurable `poll_interval` (default 1
 ```python
 poller = CognitivePoller(
     db_url="sqlite:///data/demo.db",
-    robots=None,                           # None = all 47 robots
+    robots=None,                           # None = all robots
     poll_interval=10,                      # seconds
     l1_threshold=8.0,                      # density threshold
     l2_min_slope=0.10,                     # min slope for escalation

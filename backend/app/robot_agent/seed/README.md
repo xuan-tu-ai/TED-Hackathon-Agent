@@ -1,6 +1,6 @@
 # Seed Sub-package
 
-Database seeding scripts for populating the demo database with synthetic `PerceptionResult` and `PMCard` data across 47 paint-shop robots.
+Database seeding scripts for populating the demo database with synthetic `PerceptionResult` and `PMCard` data across welding robots.
 
 ## Seed Scripts
 

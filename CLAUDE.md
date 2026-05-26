@@ -8,7 +8,7 @@ This file provides guidance to Agentic Coding like Claude Code (claude.ai/code) 
 
 - Build a **anomaly detection model** based-on Flow-Matching paradigm.
 
-- Build a **multi-agent diagnostic system** on top of a completed anomaly detection model for 47 paint-shop robots.
+- Build a **multi-agent diagnostic system** on top of a completed anomaly detection model for welding robots.
 
 ---
 

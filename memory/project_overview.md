@@ -7,7 +7,7 @@ metadata:
 
 # Autonomous Robot Forensics Ecosystem (V2026)
 
-**Domain:** Automotive Paint Shop — 47 industrial robots running in parallel.
+**Domain:** Automotive Welding Shop — industrial robots running in parallel.
 
 **Why:** Hard-threshold maintenance systems failed. Need AI that can (1) detect micro-anomalies (0.2s spikes), (2) spot drift before breakdown, (3) explain faults in human language.
 

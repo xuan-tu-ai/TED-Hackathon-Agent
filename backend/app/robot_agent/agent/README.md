@@ -3,7 +3,7 @@
 ## Overview
 
 The agent package implements a **multi-agent diagnostic system** for 47
-paint-shop robots.  At its core is a **Planning-First** workflow driven
+welding robots.  At its core is a **Planning-First** workflow driven
 by DSPy (Declarative Self-Improving Python) and a **skill system** that
 provides the LLM with domain-specific diagnostic sub-routines.
 

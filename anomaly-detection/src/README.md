@@ -1,6 +1,6 @@
 # Anomaly Detection
 
-Self-contained anomaly detection sub-component for paint-shop robots using Flow-Matching models.
+Self-contained anomaly detection sub-component for welding robots using Flow-Matching models.
 
 ## Setup
 

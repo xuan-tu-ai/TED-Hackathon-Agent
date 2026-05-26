@@ -1,6 +1,6 @@
-# PaintBot Diagnostic Agent — `robot_agent`
+# WeldBot Diagnostic Agent — `robot_agent`
 
-Multi-agent diagnostic system for 47 paint-shop robots, built with FastAPI, DSPy, SQLAlchemy, and ChromaDB.
+Multi-agent diagnostic system for welding robots, built with FastAPI, DSPy, SQLAlchemy, and ChromaDB.
 
 ---
 
@@ -279,7 +279,7 @@ The `pm_cards` collection stores PM card text and metadata. It is queried via se
 | File | Purpose |
 |------|---------|
 | `seed/__init__.py` | Exports `seed_all`, `seed_demo_data` |
-| `seed/perception_results.py` | Deterministic anomaly data (47 robots × 30 days) |
+| `seed/perception_results.py` | Deterministic anomaly data (robots × 30 days) |
 | `seed/perception_results_legacy.py` | Probabilistic anomaly data (legacy format) |
 | `seed/pm_cards.py` | Static PM card seed data (8 cards) |
 | `seed/run.py` | Seed orchestrator + SQL snapshot export |

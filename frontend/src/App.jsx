@@ -14,8 +14,8 @@ function StartScreen({ onStart, speed, onSpeedChange }) {
     return (
         <div className="start-screen">
             <div className="start-screen-content">
-                <h1>🎨 Painting Robot Diagnostics</h1>
-                <p>Multi-Agent Diagnostic System for Paint Shop Anomaly Detection</p>
+                <h1>🔧 Welding Robot Diagnostics</h1>
+                <p>Multi-Agent Diagnostic System for Welding Shop Anomaly Detection</p>
                 <div className="start-screen-actions">
                     <button className="btn-start" onClick={onStart}>
                         ▶ Start Simulation
@@ -349,7 +349,7 @@ function App() {
             {errorPanel}
             <HITLModal onViewIncident={selectIncident} onError={pushClientError} />
             <header className="app-header">
-                <h1>🎨 Painting Robot Diagnostics</h1>
+                <h1>🔧 Welding Robot Diagnostics</h1>
             </header>
             <main className="app-main">
                 <DashboardHeader

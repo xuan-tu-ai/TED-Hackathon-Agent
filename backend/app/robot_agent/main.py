@@ -1,4 +1,4 @@
-"""FastAPI application factory for the PaintBot Diagnostic Agent API.
+"""FastAPI application factory for the WeldBot Diagnostic Agent API.
 
 Initialises the FastAPI application with CORS middleware, includes all
 route routers (HITL, incidents, simulation), and auto-seeds the database
@@ -50,8 +50,8 @@ from .db import init_db
 
 
 app = FastAPI(
-    title="PaintBot Diagnostic Agent API",
-    description="Multi-agent diagnostic system for paint-shop robots",
+    title="WeldBot Diagnostic Agent API",
+    description="Multi-agent diagnostic system for welding robots",
     version="0.1.0",
 )
 

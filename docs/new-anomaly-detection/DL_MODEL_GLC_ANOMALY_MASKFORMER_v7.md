@@ -12,7 +12,7 @@
 
 ## 1. Executive Summary
 
-GLC-Anomaly-MaskFormer is a hybrid deep learning architecture for unsupervised anomaly detection on multivariate industrial time-series data from automotive paint shop robots. It combines two complementary paradigms into a single unified model:
+GLC-Anomaly-MaskFormer is a hybrid deep learning architecture for unsupervised anomaly detection on multivariate industrial time-series data from automotive welding robots. It combines two complementary paradigms into a single unified model:
 
 **Paradigm A — Masked Predictive Modeling:** Inspired by BERT (NLP) and MAE (Computer Vision), the model randomly hides portions of the input signal during training and learns to predict the missing parts from global context. At inference, patches that the model cannot predict well are flagged as anomalous.
 

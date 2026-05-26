@@ -4,7 +4,7 @@
 
 # ĐẶC TẢ KIẾN TRÚC MÔ HÌNH: GLC VQ-MIXER (V6)
 **Tên hệ thống:** Global-Local Contextual VQ-VAE with Post-Quantization Mixing  
-**Lĩnh vực:** Industrial IoT - Automotive Paint Shop Diagnostics  
+**Lĩnh vực:** Industrial IoT - Automotive Welding Shop Diagnostics  
 **Trạng thái:** Production-Ready Baseline
 
 ---

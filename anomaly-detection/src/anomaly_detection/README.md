@@ -1,6 +1,6 @@
 # Anomaly Detection Module
 
-Multi-paradigm deep-learning anomaly detection for 47 paint-shop robots.  Six
+Multi-paradigm deep-learning anomaly detection for welding robots.  Six
 sensors per robot (air motor rotation speed, electro-pneumatic output, high
 pressure current/voltage, paint pressure, paint flow rate) are monitored at
 100 Hz and scored by models ranging from simple auto-encoders to flow-matching

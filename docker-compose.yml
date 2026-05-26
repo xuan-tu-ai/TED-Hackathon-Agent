@@ -5,7 +5,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: paintbot-backend
+    container_name: weldbot-backend
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -19,7 +19,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: paintbot-frontend
+    container_name: weldbot-frontend
     restart: unless-stopped
     ports:
       - "3000:80"
@@ -33,7 +33,7 @@ services:
   postgres:
     profiles: ["db"]
     image: postgres:16-alpine
-    container_name: paintbot-postgres
+    container_name: weldbot-postgres
     restart: unless-stopped
     ports:
       - "5432:5432"

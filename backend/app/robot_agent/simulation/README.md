@@ -81,6 +81,6 @@ Repeated alerts for the same robot are suppressed for `DEBOUNCE_WINDOW_TICKS` (2
 
 | Constant | Default | Purpose |
 |---|---|---|
-| `ALL_ROBOTS` | `R-01` … `R-47` | All 47 paint-shop robots |
+| `ALL_ROBOTS` | `R-01` … `R-03` | All welding robots |
 | `ALERT_STORM_THRESHOLD` | 5 | Alerts per hour to trigger storm detection |
 | `DEBOUNCE_WINDOW_TICKS` | 24 | Ticks to wait before re-triggering same robot |

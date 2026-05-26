@@ -1,6 +1,6 @@
 # BÁO CÁO KIẾN TRÚC MÔ HÌNH: GLC-Flow (V7)
 **Tên hệ thống:** Global-Local Contextual Flow Matching Anomaly Detector  
-**Lĩnh vực:** Industrial IoT — Automotive Paint Shop Diagnostics  
+**Lĩnh vực:** Industrial IoT — Automotive Welding Shop Diagnostics  
 **Paradigm:** Continuous Normalizing Flow (CNF) thay thế Reconstruction-based Autoencoder  
 **Trạng thái:** Research / Hackathon Prototype
 

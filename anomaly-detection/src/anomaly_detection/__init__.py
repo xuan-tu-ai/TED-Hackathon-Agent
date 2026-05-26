@@ -31,4 +31,4 @@ Development workflow
 6. Add inference logic in :mod:`~.inference` under the appropriate paradigm.
 """
 
-# GLC-Flow V7 deep learning model for robotic paint-shop anomaly detection
+# GLC-Flow V7 deep learning model for robotic welding anomaly detection

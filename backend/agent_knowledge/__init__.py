@@ -1,7 +1,7 @@
-"""Agent knowledge base for the PaintBot AI Diagnostic Agent.
+"""Agent knowledge base for the WeldBot AI Diagnostic Agent.
 
 This package provides the knowledge base consumed by the multi-agent system
-for paint-shop robot anomaly diagnosis. It is organised into three parts:
+for welding robot anomaly diagnosis. It is organised into three parts:
 
     AGENTS.md       System prompt that defines agent role, rules, and flow.
     skills/         Diagnostic skill definitions (SKILL.md) loaded

@@ -1,7 +1,7 @@
 """Cognitive Poller sub-package — real-time anomaly detection polling loop.
 
 The poller package provides a continuous polling loop that evaluates L1 burst
-density and L2 slope escalation for all 4 paint-shop robots (R-00 to R-03). It is designed
+density and L2 slope escalation for all 4 welding robots (R-00 to R-03). It is designed
 for production deployment alongside the live data-ingestion pipeline.
 
 Exports:

@@ -1,4 +1,4 @@
-"""PaintBot Diagnostic Agent — multi-agent system for paint-shop robot anomaly diagnosis.
+"""WeldBot Diagnostic Agent — multi-agent system for welding robot anomaly diagnosis.
 
 Package hierarchy
 -----------------

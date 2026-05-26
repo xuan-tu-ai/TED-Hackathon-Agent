@@ -2,7 +2,7 @@
 
 ## Overview
 - **Project:** Autonomous Robot Forensics Ecosystem - Anomaly Detection & Multi-Agent Diagnostic System
-- **Goal:** Build anomaly detection model based on Flow-Matching paradigm + multi-agent diagnostic system for 47 paint-shop robots
+- **Goal:** Build anomaly detection model based on Flow-Matching paradigm + multi-agent diagnostic system for welding robots
 - **Paradigm:** Decoupled Intelligence - Perception Layer (GLC-Flow) + Cognition Layer (SignalHub + LLM Agents)
 
 Current test count: **~180+ tests** across anomaly detection (Sprint 1), agent system (Sprint 2), and codebase unification (Sprint 3).
@@ -11,8 +11,8 @@ Current test count: **~180+ tests** across anomaly detection (Sprint 1), agent s
 - [Sprint 23](docs/sprint-plans/sprint-23.md) — *In Progress* — Extract `anomaly-detection/` sub-component: move modules, fix `src.` imports, archive V1–V6 models, clean up backend
 
 ## Recent Completed Sprints
-- [Sprint 21](docs/sprint-plans/sprint-21.md) — *Completed* — Migrate agent knowledge paint-shop→welding (3 sensors, 5 anomaly types); connect backend to Databricks for PerceptionResult/PMCard/MaintenanceEvent; 2 Databricks SQL seed scripts
-- [Sprint 22](docs/sprint-plans/sprint-22.md) — *Completed* — Fix V9 `per_sensor_scores` schema in seed SQL; connect real perception result signal data into agent context (remove paint-shop hard-codes, derive sensor/family from V9 scores)
+- [Sprint 21](docs/sprint-plans/sprint-21.md) — *Completed* — Migrate agent knowledge from paint-shop→welding (3 sensors, 5 anomaly types); connect backend to Databricks for PerceptionResult/PMCard/MaintenanceEvent; 2 Databricks SQL seed scripts
+- [Sprint 22](docs/sprint-plans/sprint-22.md) — *Completed* — Fix V9 `per_sensor_scores` schema in seed SQL; connect real perception result signal data into agent context (remove legacy paint-shop hard-codes, derive sensor/family from V9 scores)
 - [Sprint 20](docs/sprint-plans/sprint-20.md) — *Completed* — GLCMaeV9: LogScaler+GlobalSeqNorm thay RevIN, 4-dataset strategy, bỏ tail window, p99 scoring
 - [Sprint 18](docs/sprint-plans/sprint-18.md) — *Completed* — Welding Robot Data Regeneration: convergent normal data + 5 anomaly types
 - [Sprint 19](docs/sprint-plans/sprint-19.md) — *Completed* — Dashboard: reduce robots to 4 + real-time error-count timeline panel with L1/L2 reference lines
@@ -113,7 +113,7 @@ frontend/                         ← React 18 + Vite + Zustand (SSE streaming, 
 | 23 | Project Reconstruction — `anomaly-detection/` Sub-Component | 🔄 In Progress | Scaffold new uv package; move `anomaly_detection`, `data_simulator`, `databricks_connect`, notebooks, checkpoints, SQL, tests; fix `src.` imports; archive V1–V6; clean backend |
 
 ## Backlog / Future Work
-- **Real OT data integration** — Replace mock simulation with live paint-shop sensor data feed
+- **Real OT data integration** — Replace mock simulation with live welding sensor data feed
 - **SystemicAgent crisis handling** — Full fleet-wide alert storm management
 - **Production deployment** — Containerization, CI/CD, scaling to 100+ robots
 - **Agentic Web integration** — Cross-factory agent communication (Moltbook)
