@@ -25,8 +25,9 @@ SECONDS_PER_STEP = 0.125
 # Daily operating hours per robot (min, max)
 DAILY_OPERATING_HOURS = (16, 20)
 
-# Gap between cycles (minutes)
-CYCLE_GAP_MINUTES = (1, 5)
+# Gap between cycles: fixed 6-second sleep per robot
+# Each cycle = 512 steps / 8 Hz = 64s  →  cycle + sleep = 64 + 6 = 70s
+CYCLE_GAP_SECONDS = 6
 
 
 @dataclass
@@ -203,10 +204,10 @@ class BatchGenerator:
                     sample, day_start, cycle_id=self._cycle_counter,
                 )
 
-                # Advance time by the cycle duration + a gap
+                # Advance time by the cycle duration + fixed 6s sleep
+                # Each cycle = 512 steps / 8 Hz = 64s → 64+6=70s per cycle (incremental)
                 cycle_duration = len(sample.wire_feed_speed) * SECONDS_PER_STEP
-                gap_minutes = self._rng.uniform(*CYCLE_GAP_MINUTES)
-                gap = timedelta(minutes=gap_minutes)
+                gap = timedelta(seconds=CYCLE_GAP_SECONDS)
                 day_start += timedelta(seconds=cycle_duration) + gap
 
                 yield rows
@@ -259,6 +260,6 @@ class BatchGenerator:
             total_steps += len(sample.wire_feed_speed)
         avg_steps = total_steps / n_samples
         avg_cycle_secs = avg_steps * SECONDS_PER_STEP
-        avg_gap_secs = (CYCLE_GAP_MINUTES[0] + CYCLE_GAP_MINUTES[1]) / 2 * 60
+        avg_gap_secs = CYCLE_GAP_SECONDS
         avg_op_secs = sum(DAILY_OPERATING_HOURS) / 2 * 3600
         return max(1, int(avg_op_secs / (avg_cycle_secs + avg_gap_secs)))
