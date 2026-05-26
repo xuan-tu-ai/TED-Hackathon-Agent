@@ -1,4 +1,4 @@
-const API_BASE = (import.meta.env.VITE_API_URL || '') + '/api/sim';
+const API_BASE = '/api/sim';
 
 export function createSSEConnection(onEvent, onConnectionChange, onError) {
     let eventSource = null;
@@ -29,7 +29,7 @@ export function createSSEConnection(onEvent, onConnectionChange, onError) {
         isIntentionallyDisconnected = false;
         setConnectionStatus('connecting');
 
-        eventSource = new EventSource('https://app-ted-hackathon-be-dev-001.azurewebsites.net/api/stream');
+        eventSource = new EventSource('${API_BASE}/stream');
 
         eventSource.onopen = () => {
             reconnectAttempts = 0;
