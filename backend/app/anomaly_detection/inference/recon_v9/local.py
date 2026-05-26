@@ -11,11 +11,12 @@ The inference pipeline:
 1. **PreResult**: score each file by sliding a 256-step window with 64-step stride,
    computing per-patch reconstruction MSE heatmap via ``compute_heatmap()``,
    and aggregating into a timestep-level score map.
-   Produces global + phase-aware (rampup/active) P99 scores.
+   Produces per-sensor P99 scores (``p99_score_{sensor_name}``).
 
-2. **ThresholdCreator**: calibrate multi-score threshold from normal-file pre-results.
-
-3. **Applier**: apply OR-logic verdict using the multi-score thresholds.
+2. **Applier**: apply manually-chosen per-sensor thresholds with OR-logic verdict.
+   Pass ``sensor_thresholds={"p99_score_wire_feed_speed": X, ...}`` directly.
+   No ThresholdCreator — thresholds are read from the calibration distribution
+   plots and set explicitly in the inference notebook.
 """
 
 import warnings
@@ -423,76 +424,83 @@ class Reconf9LocalThresholdCreator:
 
 
 class Reconf9LocalApplier:
-    """Apply per-sensor heatmap thresholds for GLCMaeV9 (p99).
+    """Apply manually-chosen per-sensor thresholds for GLCMaeV9 (p99, OR logic).
 
-    Supports multi-score verdict: a file is anomalous if ANY score exceeds
-    its corresponding threshold (OR logic).
+    Each file is flagged as anomalous if ANY per-sensor score exceeds its
+    threshold (OR logic).  Thresholds are chosen manually from calibration
+    distribution plots — there is no automated ThresholdCreator.
+
+    Args:
+        sensor_thresholds: Mapping of exact score key → threshold value, e.g.::
+
+            {
+                "p99_score_wire_feed_speed":   3.5,
+                "p99_score_wire_temperature": 10.0,
+                "p99_score_welding_current":  15.0,
+            }
+
+        quantile: Must match the quantile used in Reconf9LocalPreResult (default 0.99).
+
+    Raises:
+        ValueError: If any key in sensor_thresholds does not start with
+            ``p{quantile*100:.0f}_score_`` — prevents silent key mismatches.
+        KeyError: At apply time if any threshold key is absent from the
+            pre_results rows — hard failure, no silent fallback.
     """
 
-    def __init__(self, threshold_config: dict, quantile: float = 0.99):
-        self.threshold_config = threshold_config
+    def __init__(self, sensor_thresholds: dict[str, float], quantile: float = 0.99):
+        pq = f"p{quantile * 100:.0f}"
+        bad_keys = [k for k in sensor_thresholds if not k.startswith(f"{pq}_score_")]
+        if bad_keys:
+            raise ValueError(
+                f"[Reconf9LocalApplier] sensor_thresholds keys must start with "
+                f"'{pq}_score_' (quantile={quantile}). Bad keys: {bad_keys}"
+            )
+        if not sensor_thresholds:
+            raise ValueError(
+                "[Reconf9LocalApplier] sensor_thresholds is empty. "
+                "Provide at least one per-sensor threshold."
+            )
+        self.sensor_thresholds = dict(sensor_thresholds)
         self.quantile = quantile
+        self._pq = pq
 
     def apply(self, pre_results: list[dict]) -> list[dict]:
-        """Apply thresholds to pre-result dicts.
+        """Apply per-sensor thresholds with OR logic.
 
         Args:
-            pre_results: Output from Reconf9LocalPreResult.score_batch().
+            pre_results: Output of ``Reconf9LocalPreResult.score_batch()``.
 
         Returns:
-            list[dict] with added keys:
-                is_file_anomaly, is_anomaly_{s} (per sensor),
-                triggered_by (list of score keys that triggered)
+            list[dict] with keys added per row:
+                ``is_file_anomaly`` (bool), ``triggered_by`` (list[str]),
+                all original ``p99_score_*`` and ``heatmap_*`` keys preserved.
+
+        Raises:
+            KeyError: If any threshold key from sensor_thresholds is missing
+                in the pre_results rows.
         """
-        pq = f"p{self.quantile * 100:.0f}"
-        global_thresh = self.threshold_config.get("global_threshold", 0.5)
-        sensor_thresholds = self.threshold_config.get("sensors", {})
-
-        # Multi-score thresholds
-        score_thresholds: dict[str, float] = self.threshold_config.get("score_thresholds", {})
-
         if not pre_results:
             return []
-        sensors = [k[len("heatmap_"):] for k in pre_results[0] if k.startswith("heatmap_")]
 
-        if not score_thresholds:
-            warnings.warn(
-                f"[Reconf9LocalApplier] score_thresholds is empty — using only "
-                f"global_threshold={global_thresh}.",
-                UserWarning, stacklevel=2,
+        # Hard validation: all threshold keys must exist in the result rows
+        first_row = pre_results[0]
+        missing = [k for k in self.sensor_thresholds if k not in first_row]
+        if missing:
+            available = sorted(k for k in first_row if k.startswith(f"{self._pq}_score"))
+            raise KeyError(
+                f"[Reconf9LocalApplier] threshold key(s) not found in pre_results:\n"
+                f"  Missing:   {missing}\n"
+                f"  Available: {available}\n"
+                f"Ensure quantile and sensor names match between scorer and applier."
             )
-        else:
-            available = {k for k in pre_results[0] if k.startswith(f"{pq}_score")}
-            calibrated = set(score_thresholds.keys())
-            missing = available - calibrated
-            if missing:
-                warnings.warn(
-                    f"[Reconf9LocalApplier] {len(missing)} score key(s) present but "
-                    f"NOT in score_thresholds — falling back to global_threshold:\n"
-                    f"  {sorted(missing)}",
-                    UserWarning, stacklevel=2,
-                )
-
-        base_keys = [f"{pq}_score", f"{pq}_score_rampup", f"{pq}_score_active"]
-        _base_set = set(base_keys)
-        sensor_keys = [k for k in score_thresholds if k.startswith(f"{pq}_score_") and k not in _base_set]
-        score_keys = base_keys + sensor_keys
 
         results = []
         for row in pre_results:
-            triggered_by: list[str] = []
-            for sk in score_keys:
-                if sk not in row:
-                    continue
-                score_val = float(row[sk])
-                thresh = score_thresholds.get(sk, global_thresh)
-                if score_val > thresh:
-                    triggered_by.append(sk)
-
-            global_score = float(row.get(f"{pq}_score", 0.0))
-            if not triggered_by and global_score > global_thresh:
-                triggered_by.append(f"{pq}_score")
-
+            triggered_by = [
+                k for k, thresh in self.sensor_thresholds.items()
+                if float(row[k]) > thresh
+            ]
             is_file_anomaly = len(triggered_by) > 0
 
             res = {
@@ -501,25 +509,10 @@ class Reconf9LocalApplier:
                 "start_time": row["start_time"],
                 "is_file_anomaly": is_file_anomaly,
                 "triggered_by": triggered_by,
-                f"{pq}_score": float(global_score),
             }
-            for sk in score_keys:
-                if sk in row:
-                    res[sk] = float(row[sk])
-
-            valid_start = int(row.get("valid_start_idx", 0))
-            valid_end = int(row.get("valid_end_idx", 0)) or None
-
-            for s in sensors:
-                heatmap = row.get(f"heatmap_{s}", [])
-                res[f"heatmap_{s}"] = heatmap
-
-                if heatmap and valid_end:
-                    sensor_thresh = sensor_thresholds.get(s, global_thresh)
-                    valid_region = np.array(heatmap[valid_start:valid_end], dtype=np.float32)
-                    res[f"is_anomaly_{s}"] = bool(valid_region.max() > sensor_thresh)
-                else:
-                    res[f"is_anomaly_{s}"] = is_file_anomaly
+            for k, v in row.items():
+                if k.startswith(f"{self._pq}_score") or k.startswith("heatmap_"):
+                    res[k] = v
 
             results.append(res)
 
