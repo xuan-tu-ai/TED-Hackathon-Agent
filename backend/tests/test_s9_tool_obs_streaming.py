@@ -120,6 +120,7 @@ class TestToolObservationStreaming:
             events.append(e)
 
         runner = SimulationRunner(
+            sim_id="test-sim",
             engine=engine,
             state=state,
             speed_factor=3600,

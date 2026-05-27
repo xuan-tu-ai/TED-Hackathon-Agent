@@ -54,11 +54,11 @@ class TestHitlOutcomeHandling:
         mock_result, mock_event, mock_state, mock_sf = self._setup_mocks(
             agent, event_was_set=False, hitl_entry_status="PENDING"
         )
+        agent.hitl_gate.set_state_getter(lambda: mock_state)
 
         with patch("app.robot_agent.agent.hitl_gate.perform_hitl_check", return_value=mock_result):
             with patch("threading.Event", return_value=mock_event):
-                with patch("app.robot_agent.simulation.state.get_simulation_state", return_value=mock_state):
-                    result = agent.hitl_check(action="dispatch_maintenance", parameters={}, reasoning="test")
+                result = agent.hitl_check(action="dispatch_maintenance", parameters={}, reasoning="test")
 
         assert result["resolved"] is False
         assert result.get("timeout") is True
@@ -69,11 +69,12 @@ class TestHitlOutcomeHandling:
         mock_result, mock_event, mock_state, mock_sf = self._setup_mocks(
             agent, event_was_set=True, hitl_entry_status="REJECTED"
         )
+        agent.hitl_gate.set_state_getter(lambda: mock_state)
+
         with patch("app.robot_agent.agent.hitl_gate.perform_hitl_check", return_value=mock_result):
             with patch("threading.Event", return_value=mock_event):
-                with patch("app.robot_agent.simulation.state.get_simulation_state", return_value=mock_state):
-                    with patch("app.robot_agent.agent.hitl_gate.create_session_factory", side_effect=lambda url: mock_sf):
-                        result = agent.hitl_check(action="dispatch_maintenance", parameters={}, reasoning="test")
+                with patch("app.robot_agent.agent.hitl_gate.create_session_factory", side_effect=lambda url: mock_sf):
+                    result = agent.hitl_check(action="dispatch_maintenance", parameters={}, reasoning="test")
 
         assert result["resolved"] is False
         assert agent.state == "failed"
@@ -83,12 +84,12 @@ class TestHitlOutcomeHandling:
         mock_result, mock_event, mock_state, mock_sf = self._setup_mocks(
             agent, event_was_set=True, hitl_entry_status="EXPIRED"
         )
+        agent.hitl_gate.set_state_getter(lambda: mock_state)
 
         with patch("app.robot_agent.agent.hitl_gate.perform_hitl_check", return_value=mock_result):
             with patch("threading.Event", return_value=mock_event):
-                with patch("app.robot_agent.simulation.state.get_simulation_state", return_value=mock_state):
-                    with patch("app.robot_agent.agent.hitl_gate.create_session_factory", side_effect=lambda url: mock_sf):
-                        result = agent.hitl_check(action="dispatch_maintenance", parameters={}, reasoning="test")
+                with patch("app.robot_agent.agent.hitl_gate.create_session_factory", side_effect=lambda url: mock_sf):
+                    result = agent.hitl_check(action="dispatch_maintenance", parameters={}, reasoning="test")
 
         assert result["resolved"] is False
         assert agent.state == "failed"
@@ -98,12 +99,12 @@ class TestHitlOutcomeHandling:
         mock_result, mock_event, mock_state, mock_sf = self._setup_mocks(
             agent, event_was_set=True, hitl_entry_status="APPROVED"
         )
+        agent.hitl_gate.set_state_getter(lambda: mock_state)
 
         with patch("app.robot_agent.agent.hitl_gate.perform_hitl_check", return_value=mock_result):
             with patch("threading.Event", return_value=mock_event):
-                with patch("app.robot_agent.simulation.state.get_simulation_state", return_value=mock_state):
-                    with patch("app.robot_agent.agent.hitl_gate.create_session_factory", side_effect=lambda url: mock_sf):
-                        result = agent.hitl_check(action="dispatch_maintenance", parameters={}, reasoning="test")
+                with patch("app.robot_agent.agent.hitl_gate.create_session_factory", side_effect=lambda url: mock_sf):
+                    result = agent.hitl_check(action="dispatch_maintenance", parameters={}, reasoning="test")
 
         assert result["resolved"] is True
         assert agent.state == "running"
@@ -174,11 +175,12 @@ class TestHitlContextEnrichment:
         mock_session.get = MagicMock(return_value=mock_entry)
         mock_session_factory = MagicMock(return_value=mock_session)
 
+        agent.hitl_gate.set_state_getter(lambda: mock_state)
+
         with patch("app.robot_agent.agent.hitl_gate.perform_hitl_check", return_value=mock_result):
             with patch("threading.Event", return_value=mock_event):
-                with patch("app.robot_agent.simulation.state.get_simulation_state", return_value=mock_state):
-                    with patch("app.robot_agent.agent.hitl_gate.create_session_factory", return_value=mock_session_factory):
-                        agent.hitl_check(action="approve_plan", parameters={}, reasoning="test")
+                with patch("app.robot_agent.agent.hitl_gate.create_session_factory", return_value=mock_session_factory):
+                    agent.hitl_check(action="approve_plan", parameters={}, reasoning="test")
 
         hitl_events = [e for e in events if e["type"] == "hitl_request"]
         assert len(hitl_events) == 1

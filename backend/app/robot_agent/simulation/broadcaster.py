@@ -1,13 +1,16 @@
-"""Thread-safe SSE (Server-Sent Events) broadcaster for simulation events.
+"""Thread-safe SSE broadcaster with per-session registry.
 
 :class:`EventBroadcaster` manages a set of ``asyncio.Queue`` subscribers that
-FastAPI endpoints consume as SSE streams. The :meth:`broadcast` method is
+FastAPI endpoints consume as SSE streams.  The :meth:`broadcast` method is
 synchronous and thread-safe — it acquires a ``threading.Lock`` — and is called
-from :class:`SimulationRunner`\'s background thread. The :meth:`subscribe` and
+from :class:`SimulationRunner`\'s background thread.  The :meth:`subscribe` and
 :meth:`unsubscribe` methods are async and called from FastAPI coroutines.
 
 Dead queues (clients that have disconnected) are detected via ``QueueFull``
 exceptions and pruned after each broadcast cycle.
+
+Use :func:`create_broadcaster` / :func:`get_broadcaster` / :func:`delete_broadcaster`
+to manage one broadcaster per simulation session.
 """
 
 from __future__ import annotations
@@ -31,7 +34,7 @@ class EventBroadcaster:
 
     def __init__(self) -> None:
         self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
-        self._lock = threading.Lock()  # threading.Lock, not asyncio.Lock
+        self._lock = threading.Lock()
 
     async def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=100)
@@ -69,13 +72,33 @@ class EventBroadcaster:
             logger.warning(f"Removed {len(dead)} dead SSE subscriber(s)")
 
 
-_broadcaster: EventBroadcaster | None = None
+# Per-session registry — keyed by sim_id
+_broadcasters: dict[str, EventBroadcaster] = {}
 _broadcaster_lock = threading.Lock()
 
 
-def get_broadcaster() -> EventBroadcaster:
-    global _broadcaster
+def create_broadcaster(sim_id: str) -> EventBroadcaster:
+    """Create and register a new :class:`EventBroadcaster` for *sim_id*."""
+    broadcaster = EventBroadcaster()
     with _broadcaster_lock:
-        if _broadcaster is None:
-            _broadcaster = EventBroadcaster()
-    return _broadcaster
+        _broadcasters[sim_id] = broadcaster
+    return broadcaster
+
+
+def get_broadcaster(sim_id: str) -> EventBroadcaster:
+    """Return the :class:`EventBroadcaster` for *sim_id*.
+
+    Raises:
+        KeyError: if *sim_id* has no registered broadcaster.
+    """
+    with _broadcaster_lock:
+        broadcaster = _broadcasters.get(sim_id)
+    if broadcaster is None:
+        raise KeyError(sim_id)
+    return broadcaster
+
+
+def delete_broadcaster(sim_id: str) -> None:
+    """Remove the broadcaster for *sim_id* (no-op if absent)."""
+    with _broadcaster_lock:
+        _broadcasters.pop(sim_id, None)

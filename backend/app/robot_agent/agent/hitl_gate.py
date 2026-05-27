@@ -41,6 +41,7 @@ class HitlGate:
         Allows dependency injection of the simulation state for testing
         without circular imports at module level.
         """
+        self.state_getter = getter
 
     def check(
         self,
@@ -99,8 +100,9 @@ class HitlGate:
             if self.state_getter is not None:
                 state = self.state_getter()
             else:
-                from ..simulation.state import get_simulation_state
-                state = get_simulation_state()
+                raise RuntimeError(
+                    "HitlGate.state_getter is not set — call set_state_getter() before running."
+                )
 
             hitl_event = threading.Event()
             state.set_hitl_event(result.queue_id, hitl_event)

@@ -48,11 +48,13 @@ DEBOUNCE_WINDOW_TICKS = 24
 class SimulationRunner:
     def __init__(
         self,
+        sim_id: str,
         engine: SimulationEngine,
         state: SimulationState,
         speed_factor: int = 3600,
         on_event: Callable[[dict[str, Any]], None] | None = None,
     ):
+        self.sim_id = sim_id
         self.engine = engine
         self.state = state
         self.speed_factor = speed_factor
@@ -240,6 +242,7 @@ class SimulationRunner:
 
         try:
             agent = DiagnosticAgent()
+            agent.hitl_gate.set_state_getter(lambda: self.state)
             agent.emitter.on_hitl_request = self._broadcast
             agent.emitter.on_step = self._broadcast
             agent.emitter.on_observation = self._broadcast

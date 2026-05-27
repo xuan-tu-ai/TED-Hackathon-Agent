@@ -66,6 +66,7 @@ function App() {
     const [isStarting, setIsStarting] = React.useState(false);
     const [totalTicks, setTotalTicks] = React.useState(0);
     const [clientErrors, setClientErrors] = React.useState([]);
+    const [simId, setSimId] = React.useState(null);
     const sseRef = React.useRef(null);
 
     const {
@@ -183,7 +184,22 @@ function App() {
         setIsStarting(true);
         for (let attempt = 0; attempt < 10; attempt++) {
             try {
-                const result = await requestJson(`${API_BASE}/sim/start`, {
+                // Step 1: create a new session to get a unique sim_id
+                const sessionResult = await requestJson(`${API_BASE}/sim/sessions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                }, 'sim/sessions');
+                if (!sessionResult.ok) {
+                    throw new Error('Failed to create session: ' + sessionResult.status);
+                }
+                const currentSimId = sessionResult.data?.sim_id;
+                if (!currentSimId) {
+                    throw new Error('Backend returned no sim_id');
+                }
+                setSimId(currentSimId);
+
+                // Step 2: start the simulation for this session
+                const result = await requestJson(`${API_BASE}/sim/${currentSimId}/start`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ speed_factor: speed })
@@ -191,10 +207,10 @@ function App() {
                 if (!result.ok) {
                     throw new Error('Server returned ' + result.status);
                 }
-                console.info('[sim/start] OK', result.data);
+                console.info('[sim/start] OK', result.data, 'sim_id:', currentSimId);
                 // Connect SSE only after backend confirms it is running, so the
                 // EventSource is never created against an unreachable server.
-                sseRef.current = createSSEConnection(handleSimEvent, null, pushClientError);
+                sseRef.current = createSSEConnection(currentSimId, handleSimEvent, null, pushClientError);
                 sseRef.current.connect();
                 setTotalTicks(result.data?.total_ticks || 0);
                 setIsRunning(true);
@@ -211,13 +227,16 @@ function App() {
     };
 
     const handleStop = async () => {
-        await requestNoBody(`${API_BASE}/sim/stop`, { method: 'POST' }, 'sim/stop');
+        if (simId) {
+            await requestNoBody(`${API_BASE}/sim/${simId}/stop`, { method: 'POST' }, 'sim/stop');
+        }
         if (sseRef.current) {
             sseRef.current.disconnect();
             sseRef.current = null;
         }
         setIsRunning(false);
         setIsStarting(false);
+        setSimId(null);
         reset();
     };
 
@@ -307,7 +326,7 @@ function App() {
     }
 
     const handleResolveHitl = async (queueId, action) => {
-        const ok = await requestNoBody(`${API_BASE}/sim/hitl/${queueId}/${action}`, {
+        const ok = await requestNoBody(`${API_BASE}/sim/${simId}/hitl/${queueId}/${action}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -337,7 +356,7 @@ function App() {
     return (
         <div className="app">
             {errorPanel}
-            <HITLModal onViewIncident={selectIncident} onError={pushClientError} />
+            <HITLModal simId={simId} onViewIncident={selectIncident} onError={pushClientError} />
             <header className="app-header">
                 <h1>🔧 Welding Robot Diagnostics</h1>
             </header>

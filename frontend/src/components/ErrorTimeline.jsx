@@ -23,7 +23,6 @@ const CHART_COLORS = {
  */
 export default function ErrorTimeline({ onApiFetch }) {
     const [activeRobot, setActiveRobot] = useState('R-00');
-    const [mode, setMode] = useState('easy'); // 'easy' | 'hard'
     const [thresholds, setThresholds] = useState({ l1: 30, l2: 0.005 });
     const [infoOpen, setInfoOpen] = useState(false);
     const [chartData, setChartData] = useState([]);
@@ -33,7 +32,6 @@ export default function ErrorTimeline({ onApiFetch }) {
 
     const errorCounts = useSimulationStore(s => s.errorCounts);
     const addErrorCount = useSimulationStore(s => s.addErrorCount);
-    const clearErrorCounts = useSimulationStore(s => s.clearErrorCounts);
 
     // Fetch L1/L2 thresholds on mount (any robot gives same thresholds)
     useEffect(() => {
@@ -124,54 +122,24 @@ export default function ErrorTimeline({ onApiFetch }) {
     const switchRobot = useCallback((robotId) => {
         setActiveRobot(robotId);
 
-        if (mode === 'easy') {
-            // Easy: clear data for this robot, start fresh
-            clearErrorCounts(robotId);
-            dataCache.current[robotId] = [];
-            setChartData([]);
+        if (dataCache.current[robotId]?.length > 0) {
+            setChartData(dataCache.current[robotId]);
         } else {
-            // Hard: try cache first, else HTTP backfill
-            if (dataCache.current[robotId]?.length > 0) {
-                setChartData(dataCache.current[robotId]);
-            } else {
-                setChartData([]);
-                backfillData(robotId);
-            }
+            setChartData([]);
+            backfillData(robotId);
         }
-    }, [mode, clearErrorCounts, backfillData]);
+    }, [backfillData]);
 
-    // Listen for SSE error_count events
+    // Listen for SSE error_count events — merge with cached HTTP data
     useEffect(() => {
         const points = errorCounts[activeRobot] || [];
         if (points.length === 0) return;
 
-        if (mode === 'easy') {
-            // Easy: just use SSE data directly
-            setChartData([...points]);
-        } else {
-            // Hard: merge with cached HTTP data
-            const cached = dataCache.current[activeRobot] || [];
-            const merged = mergeData(cached, points);
-            dataCache.current[activeRobot] = merged;
-            setChartData([...merged]);
-        }
-    }, [errorCounts, activeRobot, mode]);
-
-    // Easy mode: clear chart when switching (done in switchRobot)
-
-    const toggleMode = () => {
-        const newMode = mode === 'easy' ? 'hard' : 'easy';
-        setMode(newMode);
-        if (newMode === 'easy') {
-            // Switch to easy: clear, start fresh
-            clearErrorCounts(activeRobot);
-            dataCache.current[activeRobot] = [];
-            setChartData([]);
-        } else {
-            // Switch to hard: backfill
-            backfillData(activeRobot);
-        }
-    };
+        const cached = dataCache.current[activeRobot] || [];
+        const merged = mergeData(cached, points);
+        dataCache.current[activeRobot] = merged;
+        setChartData([...merged]);
+    }, [errorCounts, activeRobot]);
 
     // Custom tooltip
     const CustomTooltip = ({ active, payload, label }) => {
@@ -218,18 +186,6 @@ export default function ErrorTimeline({ onApiFetch }) {
                                 {rid}
                             </button>
                         ))}
-                    </div>
-                    {/* Mode toggle */}
-                    <div className="mode-toggle">
-                        <span className={`mode-label ${mode === 'easy' ? 'active' : ''}`}>Easy</span>
-                        <button
-                            className={`mode-switch ${mode}`}
-                            onClick={toggleMode}
-                            title={mode === 'easy' ? 'Switch to Hard (backfill history)' : 'Switch to Easy (start fresh)'}
-                        >
-                            <div className="mode-switch-knob" />
-                        </button>
-                        <span className={`mode-label ${mode === 'hard' ? 'active' : ''}`}>Hard</span>
                     </div>
                 </div>
             </div>

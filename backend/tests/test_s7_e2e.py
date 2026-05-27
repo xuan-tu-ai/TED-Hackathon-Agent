@@ -125,7 +125,7 @@ class TestRunnerIntegration:
 
         state = SimulationState()
         engine = SimulationEngine(db_url=db_url)
-        runner = SimulationRunner(engine=engine, state=state, speed_factor=1)
+        runner = SimulationRunner(sim_id="test-sim", engine=engine, state=state, speed_factor=1)
 
         assert hasattr(runner, '_handle_alert_storm')
         assert hasattr(runner, '_submit_incident')
@@ -138,7 +138,7 @@ class TestRunnerIntegration:
 
         state = SimulationState()
         engine = SimulationEngine(db_url=db_url)
-        runner = SimulationRunner(engine=engine, state=state, speed_factor=1)
+        runner = SimulationRunner(sim_id="test-sim", engine=engine, state=state, speed_factor=1)
 
         assert runner._agent_executor._max_workers == 5
 
@@ -149,7 +149,7 @@ class TestRunnerIntegration:
 
         state = SimulationState()
         engine = SimulationEngine(db_url=db_url)
-        runner = SimulationRunner(engine=engine, state=state, speed_factor=1)
+        runner = SimulationRunner(sim_id="test-sim", engine=engine, state=state, speed_factor=1)
 
         assert runner._pending_incidents == []
         assert runner._active_incident_count == 0

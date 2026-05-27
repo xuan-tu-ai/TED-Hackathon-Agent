@@ -105,8 +105,8 @@ class HitlResolveResponse(BaseModel):
     status: str
 
 
-@sim_router.post("/hitl/{queue_id}/approve", response_model=HitlResolveResponse)
-def approve_hitl(queue_id: str, req: HitlResolveRequest) -> HitlResolveResponse:
+@sim_router.post("/{sim_id}/hitl/{queue_id}/approve", response_model=HitlResolveResponse)
+def approve_hitl(sim_id: str, queue_id: str, req: HitlResolveRequest) -> HitlResolveResponse:
     resolved = resolve_hitl_entry_and_set_event(
         queue_id=queue_id,
         status="APPROVED",
@@ -118,8 +118,8 @@ def approve_hitl(queue_id: str, req: HitlResolveRequest) -> HitlResolveResponse:
     return HitlResolveResponse(success=True, queue_id=queue_id, status="APPROVED")
 
 
-@sim_router.post("/hitl/{queue_id}/reject", response_model=HitlResolveResponse)
-def reject_hitl(queue_id: str, req: HitlResolveRequest) -> HitlResolveResponse:
+@sim_router.post("/{sim_id}/hitl/{queue_id}/reject", response_model=HitlResolveResponse)
+def reject_hitl(sim_id: str, queue_id: str, req: HitlResolveRequest) -> HitlResolveResponse:
     resolved = resolve_hitl_entry_and_set_event(
         queue_id=queue_id,
         status="REJECTED",

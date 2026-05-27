@@ -1,6 +1,6 @@
 import { API_BASE } from './config.js';
 
-export function createSSEConnection(onEvent, onConnectionChange, onError) {
+export function createSSEConnection(simId, onEvent, onConnectionChange, onError) {
     let eventSource = null;
     let reconnectAttempts = 0;
     let reconnectTimeout = null;
@@ -29,7 +29,7 @@ export function createSSEConnection(onEvent, onConnectionChange, onError) {
         isIntentionallyDisconnected = false;
         setConnectionStatus('connecting');
 
-        eventSource = new EventSource(`${API_BASE}/sim/stream`);
+        eventSource = new EventSource(`${API_BASE}/sim/${simId}/stream`);
 
         eventSource.onopen = () => {
             reconnectAttempts = 0;

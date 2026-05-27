@@ -17,7 +17,7 @@ def test_priority_queue_max_workers_is_2(db_url):
 
     state = SimulationState()
     engine = SimulationEngine(db_url=db_url)
-    runner = SimulationRunner(engine=engine, state=state, speed_factor=1)
+    runner = SimulationRunner(sim_id="test-sim", engine=engine, state=state, speed_factor=1)
 
     assert runner._agent_executor._max_workers == 2
 
@@ -29,7 +29,7 @@ def test_pending_incidents_list_initialized(db_url):
 
     state = SimulationState()
     engine = SimulationEngine(db_url=db_url)
-    runner = SimulationRunner(engine=engine, state=state, speed_factor=1)
+    runner = SimulationRunner(sim_id="test-sim", engine=engine, state=state, speed_factor=1)
 
     assert runner._pending_incidents == []
     assert runner._active_incident_count == 0
@@ -42,7 +42,7 @@ def test_submit_incident_decrements_active_count(db_url):
 
     state = SimulationState()
     engine = SimulationEngine(db_url=db_url)
-    runner = SimulationRunner(engine=engine, state=state, speed_factor=1)
+    runner = SimulationRunner(sim_id="test-sim", engine=engine, state=state, speed_factor=1)
 
     runner._active_incident_count = 1
     runner._process_pending_incidents()
@@ -56,7 +56,7 @@ def test_submit_incident_queues_when_full(db_url):
 
     state = SimulationState()
     engine = SimulationEngine(db_url=db_url)
-    runner = SimulationRunner(engine=engine, state=state, speed_factor=1)
+    runner = SimulationRunner(sim_id="test-sim", engine=engine, state=state, speed_factor=1)
 
     inc = DiagnosticIncident(
         incident_id="INC-001",

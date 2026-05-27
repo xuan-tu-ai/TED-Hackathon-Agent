@@ -219,15 +219,16 @@ def resolve_hitl_entry_and_set_event(
     Returns:
         True if the entry was found and updated, False otherwise.
     """
-    from ..simulation.state import get_simulation_state
+    from ..simulation.state import find_state_with_hitl_event
 
     resolved = resolve_hitl_entry(queue_id, status, resolved_by, db_url)
 
-    state = get_simulation_state()
-    event = state.get_hitl_event(queue_id)
-    if event is not None:
-        event.set()
-        state.remove_hitl_event(queue_id)
+    state = find_state_with_hitl_event(queue_id)
+    if state is not None:
+        event = state.get_hitl_event(queue_id)
+        if event is not None:
+            event.set()
+            state.remove_hitl_event(queue_id)
 
     return resolved
 

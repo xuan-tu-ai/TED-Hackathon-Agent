@@ -1,18 +1,21 @@
-"""Thread-safe simulation state machine and singleton accessor.
+"""Thread-safe simulation state machine with per-session registry.
 
-:class:`SimulationState` is a dataclass holding the mutable runtime state of
-the simulation loop — status, current simulation time, tick index, accumulated
-alerts, active incident id, speed factor, and human-in-the-loop (HITL) events.
-All read/write methods acquire an internal ``threading.Lock`` to allow safe
-access from the background runner thread and FastAPI request handlers.
+:class:`SimulationState` holds the mutable runtime state for one simulation
+session — status, current simulation time, tick index, accumulated alerts,
+active incident id, speed factor, and HITL events.  All read/write methods
+acquire an internal ``threading.Lock`` for safe access from the background
+runner thread and FastAPI request handlers.
 
-The module-level :func:`get_simulation_state` function provides a lazily
-initialized singleton shared across the application.
+:func:`create_simulation_session` generates a UUID session key, stores a new
+:class:`SimulationState` in a module-level dict, and returns the key.
+:func:`get_simulation_state` looks up an existing session by key.
+:func:`delete_simulation_session` removes a finished session from memory.
 """
 
 from __future__ import annotations
 
 import threading
+import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -124,13 +127,48 @@ class SimulationState:
             }
 
 
-_simulation_state: SimulationState | None = None
-_state_lock = threading.Lock()
+# Per-session registry — keyed by sim_id (UUID hex string)
+_sessions: dict[str, SimulationState] = {}
+_registry_lock = threading.Lock()
 
 
-def get_simulation_state() -> SimulationState:
-    global _simulation_state
-    with _state_lock:
-        if _simulation_state is None:
-            _simulation_state = SimulationState()
-        return _simulation_state
+def create_simulation_session() -> str:
+    """Create a new simulation session and return its sim_id."""
+    sim_id = uuid.uuid4().hex
+    with _registry_lock:
+        _sessions[sim_id] = SimulationState()
+    return sim_id
+
+
+def get_simulation_state(sim_id: str) -> SimulationState:
+    """Return the :class:`SimulationState` for *sim_id*.
+
+    Raises:
+        KeyError: if *sim_id* is not a known session.
+    """
+    with _registry_lock:
+        state = _sessions.get(sim_id)
+    if state is None:
+        raise KeyError(sim_id)
+    return state
+
+
+def delete_simulation_session(sim_id: str) -> None:
+    """Remove session *sim_id* from the registry (no-op if absent)."""
+    with _registry_lock:
+        _sessions.pop(sim_id, None)
+
+
+def find_state_with_hitl_event(queue_id: str) -> SimulationState | None:
+    """Return the session state that owns a pending HITL event for *queue_id*.
+
+    Used by :func:`~.hitl.resolve_hitl_entry_and_set_event` to locate the
+    correct session without requiring the caller to know the *sim_id*.
+    Returns ``None`` when no active session has that queue_id.
+    """
+    with _registry_lock:
+        states = list(_sessions.values())
+    for state in states:
+        if state.get_hitl_event(queue_id) is not None:
+            return state
+    return None

@@ -138,8 +138,9 @@ class TestHitlResolutionFlow:
         assert queue_id is not None
 
         test_event = threading.Event()
-        from app.robot_agent.simulation.state import get_simulation_state
-        state = get_simulation_state()
+        from app.robot_agent.simulation.state import create_simulation_session, get_simulation_state
+        sim_id = create_simulation_session()
+        state = get_simulation_state(sim_id)
         state.set_hitl_event(queue_id, test_event)
 
         assert not test_event.is_set()

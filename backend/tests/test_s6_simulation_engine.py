@@ -366,18 +366,45 @@ class TestSimulationState:
         assert len(d["alerts"]) == 1
 
 
-class TestGetSimulationStateSingleton:
-    def test_returns_same_instance(self):
+class TestSimulationSessionRegistry:
+    def test_create_session_returns_unique_ids(self):
+        from app.robot_agent.simulation.state import create_simulation_session
+
+        s1 = create_simulation_session()
+        s2 = create_simulation_session()
+        assert s1 != s2
+
+    def test_get_state_returns_correct_instance(self):
+        from app.robot_agent.simulation.state import create_simulation_session, get_simulation_state
+
+        sim_id = create_simulation_session()
+        state = get_simulation_state(sim_id)
+        assert state is not None
+        assert state.get_status() == "idle"
+
+    def test_get_state_raises_for_unknown_id(self):
         from app.robot_agent.simulation.state import get_simulation_state
 
-        s1 = get_simulation_state()
-        s2 = get_simulation_state()
-        assert s1 is s2
+        with pytest.raises(KeyError):
+            get_simulation_state("nonexistent-sim-id")
 
-    def test_singleton_reset_clears_state(self):
-        from app.robot_agent.simulation.state import get_simulation_state
+    def test_delete_session_removes_entry(self):
+        from app.robot_agent.simulation.state import (
+            create_simulation_session,
+            delete_simulation_session,
+            get_simulation_state,
+        )
 
-        state = get_simulation_state()
+        sim_id = create_simulation_session()
+        delete_simulation_session(sim_id)
+        with pytest.raises(KeyError):
+            get_simulation_state(sim_id)
+
+    def test_session_reset_clears_state(self):
+        from app.robot_agent.simulation.state import create_simulation_session, get_simulation_state
+
+        sim_id = create_simulation_session()
+        state = get_simulation_state(sim_id)
         state.set_status("running")
         state.set_tick_index(100)
 
@@ -399,6 +426,7 @@ class TestSimulationRunner:
         events = []
 
         runner = SimulationRunner(
+            sim_id="test-sim",
             engine=engine,
             state=state,
             speed_factor=3600,
@@ -407,7 +435,7 @@ class TestSimulationRunner:
 
         assert runner.speed_factor == 3600
         assert runner._running is False
-        assert runner._already_triggered == {}
+        assert runner._debounce_timestamps == {}
 
     def test_runner_start_stop(self, db_url):
         from app.robot_agent.simulation.runner import SimulationRunner
@@ -420,6 +448,7 @@ class TestSimulationRunner:
         events = []
 
         runner = SimulationRunner(
+            sim_id="test-sim",
             engine=engine,
             state=state,
             speed_factor=3600,
@@ -446,6 +475,7 @@ class TestSimulationRunner:
         events = []
 
         runner = SimulationRunner(
+            sim_id="test-sim",
             engine=engine,
             state=state,
             speed_factor=3600,
@@ -472,6 +502,7 @@ class TestSimulationRunner:
         events = []
 
         runner = SimulationRunner(
+            sim_id="test-sim",
             engine=engine,
             state=state,
             speed_factor=7200,
@@ -496,6 +527,7 @@ class TestSimulationRunner:
         events = []
 
         runner = SimulationRunner(
+            sim_id="test-sim",
             engine=engine,
             state=state,
             speed_factor=3600,
@@ -588,11 +620,11 @@ class TestResolveHitlEntryAndSetEvent:
         s.close()
 
     def test_event_set_on_resolve(self):
-        from app.robot_agent.simulation.state import get_simulation_state
+        from app.robot_agent.simulation.state import create_simulation_session, get_simulation_state
         import threading
 
-        state = get_simulation_state()
-        state.reset()
+        sim_id = create_simulation_session()
+        state = get_simulation_state(sim_id)
 
         queue_id = "q-test-123"
         event = threading.Event()
@@ -604,12 +636,12 @@ class TestResolveHitlEntryAndSetEvent:
 
     def test_resolve_and_set_event_rejects(self):
         from app.robot_agent.agent.hitl import resolve_hitl_entry_and_set_event, hitl_check
-        from app.robot_agent.simulation.state import get_simulation_state
+        from app.robot_agent.simulation.state import create_simulation_session, get_simulation_state
         import threading
         import uuid
 
-        state = get_simulation_state()
-        state.reset()
+        sim_id = create_simulation_session()
+        state = get_simulation_state(sim_id)
 
         queue_id = uuid.uuid4().hex[:8]
 
@@ -677,10 +709,10 @@ class TestDiagnosticAgentHitlBlocking:
         import threading
         import uuid
 
-        # Reset state singleton
-        from app.robot_agent.simulation.state import get_simulation_state
-        state = get_simulation_state()
-        state.reset()
+        from app.robot_agent.simulation.state import create_simulation_session, get_simulation_state
+
+        sim_id = create_simulation_session()
+        sim_state = get_simulation_state(sim_id)
 
         incident = DiagnosticIncident(
             incident_id=f"INC-TEST-HITL-{uuid.uuid4().hex[:6]}",
@@ -693,6 +725,7 @@ class TestDiagnosticAgentHitlBlocking:
         )
 
         agent = DiagnosticAgent()
+        agent.hitl_gate.set_state_getter(lambda: sim_state)
         agent.start_session(incident)
 
         result_holder: dict = {}
@@ -837,12 +870,20 @@ class TestEventBroadcaster:
 
         asyncio.run(_run())
 
-    def test_get_broadcaster_is_singleton(self):
+    def test_create_and_get_broadcaster_per_session(self):
+        from app.robot_agent.simulation.broadcaster import create_broadcaster, get_broadcaster
+
+        b1 = create_broadcaster("session-a")
+        b2 = create_broadcaster("session-b")
+        assert b1 is not b2
+        assert get_broadcaster("session-a") is b1
+        assert get_broadcaster("session-b") is b2
+
+    def test_get_broadcaster_raises_for_unknown_session(self):
         from app.robot_agent.simulation.broadcaster import get_broadcaster
 
-        b1 = get_broadcaster()
-        b2 = get_broadcaster()
-        assert b1 is b2
+        with pytest.raises(KeyError):
+            get_broadcaster("nonexistent-session-xyz")
 
     def test_broadcast_is_thread_safe(self):
         """Multiple threads broadcasting simultaneously should not corrupt _subscribers."""
@@ -881,30 +922,53 @@ class TestEventBroadcaster:
 # ============================================================
 
 class TestSimulationApi:
-    """Real endpoint tests via FastAPI TestClient."""
+    """Real endpoint tests via FastAPI TestClient — session-based API."""
 
-    @pytest.fixture(autouse=True)
-    def reset_sim_state(self):
-        """Stop any running simulation and reset state before each test."""
+    def _create_session(self, client) -> str:
+        """Helper: POST /api/sim/sessions → sim_id."""
+        resp = client.post("/api/sim/sessions")
+        assert resp.status_code == 200, resp.text
+        return resp.json()["sim_id"]
+
+    def test_create_session_returns_sim_id(self):
         from fastapi.testclient import TestClient
         from app.robot_agent.main import app
         client = TestClient(app)
-        client.post("/api/sim/stop")  # idempotent
-        from app.robot_agent.simulation.state import get_simulation_state
-        get_simulation_state().reset()
-        yield
-        client.post("/api/sim/stop")
+
+        resp = client.post("/api/sim/sessions")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "sim_id" in data
+        assert len(data["sim_id"]) == 32  # UUID hex
+
+    def test_two_sessions_have_distinct_ids(self):
+        from fastapi.testclient import TestClient
+        from app.robot_agent.main import app
+        client = TestClient(app)
+
+        r1 = client.post("/api/sim/sessions").json()["sim_id"]
+        r2 = client.post("/api/sim/sessions").json()["sim_id"]
+        assert r1 != r2
 
     def test_status_returns_idle_before_start(self):
         from fastapi.testclient import TestClient
         from app.robot_agent.main import app
         client = TestClient(app)
 
-        resp = client.get("/api/sim/status")
+        sim_id = self._create_session(client)
+        resp = client.get(f"/api/sim/{sim_id}/status")
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "idle"
         assert data["tick_index"] == 0
+
+    def test_status_404_for_unknown_session(self):
+        from fastapi.testclient import TestClient
+        from app.robot_agent.main import app
+        client = TestClient(app)
+
+        resp = client.get("/api/sim/deadbeef/status")
+        assert resp.status_code == 404
 
     def test_start_returns_running(self, db_url):
         _ensure_seeded(db_url)
@@ -912,21 +976,28 @@ class TestSimulationApi:
         from app.robot_agent.main import app
         client = TestClient(app)
 
-        resp = client.post("/api/sim/start", json={"speed_factor": 1})
+        sim_id = self._create_session(client)
+        resp = client.post(f"/api/sim/{sim_id}/start", json={"speed_factor": 1})
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "running"
         assert data["total_ticks"] == 720
+        client.post(f"/api/sim/{sim_id}/stop")
 
-    def test_start_twice_returns_409(self, db_url):
+    def test_two_sessions_run_independently(self, db_url):
         _ensure_seeded(db_url)
         from fastapi.testclient import TestClient
         from app.robot_agent.main import app
         client = TestClient(app)
 
-        client.post("/api/sim/start", json={"speed_factor": 1})
-        resp2 = client.post("/api/sim/start", json={"speed_factor": 1})
-        assert resp2.status_code == 409
+        s1 = self._create_session(client)
+        s2 = self._create_session(client)
+        r1 = client.post(f"/api/sim/{s1}/start", json={"speed_factor": 1})
+        r2 = client.post(f"/api/sim/{s2}/start", json={"speed_factor": 1})
+        assert r1.status_code == 200
+        assert r2.status_code == 200
+        client.post(f"/api/sim/{s1}/stop")
+        client.post(f"/api/sim/{s2}/stop")
 
     def test_stop_returns_idle(self, db_url):
         _ensure_seeded(db_url)
@@ -934,10 +1005,23 @@ class TestSimulationApi:
         from app.robot_agent.main import app
         client = TestClient(app)
 
-        client.post("/api/sim/start", json={"speed_factor": 1})
-        resp = client.post("/api/sim/stop")
+        sim_id = self._create_session(client)
+        client.post(f"/api/sim/{sim_id}/start", json={"speed_factor": 1})
+        resp = client.post(f"/api/sim/{sim_id}/stop")
         assert resp.status_code == 200
         assert resp.json()["status"] == "idle"
+
+    def test_stop_removes_session(self, db_url):
+        _ensure_seeded(db_url)
+        from fastapi.testclient import TestClient
+        from app.robot_agent.main import app
+        client = TestClient(app)
+
+        sim_id = self._create_session(client)
+        client.post(f"/api/sim/{sim_id}/start", json={"speed_factor": 1})
+        client.post(f"/api/sim/{sim_id}/stop")
+        resp = client.get(f"/api/sim/{sim_id}/status")
+        assert resp.status_code == 404
 
     def test_pause_and_resume(self, db_url):
         _ensure_seeded(db_url)
@@ -945,22 +1029,26 @@ class TestSimulationApi:
         from app.robot_agent.main import app
         client = TestClient(app)
 
-        client.post("/api/sim/start", json={"speed_factor": 1})
+        sim_id = self._create_session(client)
+        client.post(f"/api/sim/{sim_id}/start", json={"speed_factor": 1})
 
-        resp = client.post("/api/sim/pause")
+        resp = client.post(f"/api/sim/{sim_id}/pause")
         assert resp.status_code == 200
         assert resp.json()["status"] == "paused"
 
-        resp = client.post("/api/sim/resume")
+        resp = client.post(f"/api/sim/{sim_id}/resume")
         assert resp.status_code == 200
         assert resp.json()["status"] == "running"
+
+        client.post(f"/api/sim/{sim_id}/stop")
 
     def test_pause_when_not_running_returns_409(self):
         from fastapi.testclient import TestClient
         from app.robot_agent.main import app
         client = TestClient(app)
 
-        resp = client.post("/api/sim/pause")
+        sim_id = self._create_session(client)
+        resp = client.post(f"/api/sim/{sim_id}/pause")
         assert resp.status_code == 409
 
     def test_hitl_approve_not_found_returns_404(self):
@@ -968,8 +1056,9 @@ class TestSimulationApi:
         from app.robot_agent.main import app
         client = TestClient(app)
 
+        sim_id = self._create_session(client)
         resp = client.post(
-            "/api/sim/hitl/nonexistent-queue/approve",
+            f"/api/sim/{sim_id}/hitl/nonexistent-queue/approve",
             json={"queue_id": "nonexistent-queue", "status": "APPROVED", "resolved_by": "tester"},
         )
         assert resp.status_code == 404
@@ -984,6 +1073,7 @@ class TestSimulationApi:
         import uuid
 
         client = TestClient(app)
+        sim_id = self._create_session(client)
 
         queue_id = uuid.uuid4().hex[:8]
         session = create_session_factory(db_url)()
@@ -1003,7 +1093,7 @@ class TestSimulationApi:
         session.close()
 
         resp = client.post(
-            f"/api/sim/hitl/{queue_id}/approve",
+            f"/api/sim/{sim_id}/hitl/{queue_id}/approve",
             json={"queue_id": queue_id, "status": "APPROVED", "resolved_by": "tester"},
         )
         assert resp.status_code == 200
@@ -1022,6 +1112,7 @@ class TestSimulationApi:
         import uuid
 
         client = TestClient(app)
+        sim_id = self._create_session(client)
 
         queue_id = uuid.uuid4().hex[:8]
         session = create_session_factory(db_url)()
@@ -1041,7 +1132,7 @@ class TestSimulationApi:
         session.close()
 
         resp = client.post(
-            f"/api/sim/hitl/{queue_id}/reject",
+            f"/api/sim/{sim_id}/hitl/{queue_id}/reject",
             json={"queue_id": queue_id, "status": "REJECTED", "resolved_by": "tester"},
         )
         assert resp.status_code == 200
@@ -1054,12 +1145,14 @@ class TestSimulationApi:
         from app.robot_agent.main import app
         client = TestClient(app)
 
-        client.post("/api/sim/start", json={"speed_factor": 1})
+        sim_id = self._create_session(client)
+        client.post(f"/api/sim/{sim_id}/start", json={"speed_factor": 1})
         time.sleep(0.2)
 
-        resp = client.get("/api/sim/status")
+        resp = client.get(f"/api/sim/{sim_id}/status")
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] in ("running", "finished")
         assert data["total_ticks"] == 720
+        client.post(f"/api/sim/{sim_id}/stop")
 
