@@ -78,7 +78,7 @@ function MsTeamsButton() {
     );
 }
 
-export default function SummaryReport({ report, showToggle, onToggleTrace, traceVisible }) {
+export default function SummaryReport({ report }) {
     if (!report) return null;
 
     // Strip "FINAL DIAGNOSTIC SUMMARY:" prefix if present
@@ -86,14 +86,6 @@ export default function SummaryReport({ report, showToggle, onToggleTrace, trace
 
     return (
         <div className="summary-report">
-            {showToggle && (
-                <button
-                    className="summary-report-toggle-trace"
-                    onClick={onToggleTrace}
-                >
-                    {traceVisible ? '🔽 Hide thinking trace' : '🔼 Show thinking trace'}
-                </button>
-            )}
             <ReportContent content={cleaned} />
             <div className="summary-report-footer">
                 <MsTeamsButton />

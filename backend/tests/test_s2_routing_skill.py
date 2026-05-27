@@ -14,9 +14,9 @@ def test_routing_skill_has_if_else_logic():
     skill_path = BASE / "agent_knowledge" / "skills" / "diagnose" / "SKILL.md"
     content = skill_path.read_text(encoding="utf-8")
 
-    families = ["SURGE", "DROPOUT", "INSTABILITY", "DEVIATION", "TRANSITION"]
-    for family in families:
-        assert family in content
+    sensors = ["wire_feed_speed", "wire_temperature", "welding_current"]
+    for sensor in sensors:
+        assert sensor in content
 
 
 def test_routing_skill_loads_diagnose_references():
@@ -24,11 +24,9 @@ def test_routing_skill_loads_diagnose_references():
     content = skill_path.read_text(encoding="utf-8")
 
     references = [
-        "diagnose/references/surge",
-        "diagnose/references/dropout",
-        "diagnose/references/instability",
-        "diagnose/references/deviation",
-        "diagnose/references/transition",
+        "diagnose/references/wire_feed_speed",
+        "diagnose/references/wire_temperature",
+        "diagnose/references/welding_current",
     ]
     for ref in references:
         assert ref in content

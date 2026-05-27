@@ -1,25 +1,19 @@
-"""L1 burst detection — short-term density-based anomaly detection.
-
-L1 (Level 1) detects burst anomalies by measuring the density of anomalous
-``PerceptionResult`` events within configurable time windows (1 h, 6 h, 24 h).
-A burst is declared when the event density per hour exceeds a configurable
-threshold.
-
-Functions:
-    detect_l1_burst: Single-window burst detection.
-    get_l1_summary: Multi-window (1 h / 6 h / 24 h) burst summary.
-"""
+"""L1 burst detection — short-term density-based anomaly detection."""
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from ..agent.config import config
-from ..seed import create_session_factory
 from ..db.models import PerceptionResult
+from ..db.gold_queries import fetch_l1_gold
+from ..db.databricks_session import _ensure_databricks_engine
+
+logger = logging.getLogger(__name__)
 
 
 def detect_l1_burst(
@@ -29,16 +23,44 @@ def detect_l1_burst(
     density_threshold: float | None = None,
     reference_time: datetime | None = None,
 ) -> dict[str, Any]:
-    """Detect L1 density burst: random dense events in a short time window.
+    """Detect L1 density burst.
 
-    Returns dict with:
-        - is_burst: bool
-        - event_count: int
-        - density_per_hour: float
-        - recent_events: list of PerceptionResult
+    When Databricks is configured, fetches from Gold table — no fallback,
+    errors propagate.  Uses local SQLite only when Databricks is not configured.
     """
     if density_threshold is None:
         density_threshold = config.l1_density_threshold
+
+    # ── Databricks Gold-table path ──────────────────────────────────────
+    if config.databricks_configured:
+        engine = _ensure_databricks_engine()
+        with engine.connect() as conn:
+            result = fetch_l1_gold(
+                robot_id, window_hours, conn,
+                reference_time=reference_time,
+            )
+        data_ts = result.get("data_timestamp")
+        hours = result["hours_scanned"] or window_hours
+        logger.info(
+            "[L1][Databricks] robot=%s window=%dh | is_burst=%s density=%.1f/h "
+            "anomalies=%d burst_hours=%d data_ts=%s (host=%s)",
+            robot_id, hours,
+            result["is_burst"], result["max_density"],
+            result["total_anomaly_count"], result["burst_hours"],
+            data_ts, config.databricks_host,
+        )
+        return {
+            "is_burst": result["is_burst"],
+            "event_count": result["total_anomaly_count"],
+            "density_per_hour": result["max_density"],
+            "burst_hours": result["burst_hours"],
+            "threshold": density_threshold,
+            "window_hours": hours,
+            "reference_time": data_ts.isoformat() if data_ts else (reference_time or datetime.now(UTC)).isoformat(),
+            "recent_events": [],
+        }
+
+    # ── Local SQLite path (only when Databricks not configured) ────────
     if reference_time is None:
         reference_time = datetime.now(UTC)
 
@@ -72,21 +94,12 @@ def detect_l1_burst(
 
 
 def get_l1_summary(session: Session, robot_id: str) -> dict[str, Any]:
-    """Get L1 summary for a robot across all recent windows."""
-    result = {
-        "robot_id": robot_id,
-        "windows": {},
-    }
-
+    result = {"robot_id": robot_id, "windows": {}}
     for hours in [1, 6, 24]:
-        burst_info = detect_l1_burst(
-            session, robot_id,
-            window_hours=hours,
-        )
+        burst_info = detect_l1_burst(session, robot_id, window_hours=hours)
         result["windows"][f"{hours}h"] = {
             "is_burst": burst_info["is_burst"],
             "event_count": burst_info["event_count"],
             "density_per_hour": burst_info["density_per_hour"],
         }
-
     return result

@@ -1,20 +1,21 @@
 """V9 ``per_sensor_scores`` parsing and sensor/family derivation utilities.
 
-The V9 inference pipeline produces ``per_sensor_scores`` dicts (or JSON
-strings) with the following schema:
+The V9 inference pipeline stores ``per_sensor_scores`` as MAE (Mean Absolute
+Error) per sensor.  Silver schema example:
 
 .. code-block:: json
 
     {
-      "p99_score_wire_feed_speed": 0.88,
-      "p99_score_wire_temperature": 0.05,
-      "p99_score_welding_current": 0.04
+      "wire_feed_speed": 0.658,
+      "wire_temperature": 4.26,
+      "welding_current": 28.4,
+      "active": 16.7,
+      "rampup": 0.0
     }
 
-Only the three per-sensor p99 scores are stored.  Global aggregate keys
-(``p99_score``, ``p99_score_rampup``, ``p99_score_active``) and heatmap
-fields (``heatmap_wire_*``) are produced by the inference notebook but are
-not persisted — they are silently ignored if present.
+Only the three calibrated sensors are used for diagnosis.  ``active`` and
+``rampup`` are ignored.  MAE values are normalized against per-sensor
+thresholds before severity classification.
 """
 
 from __future__ import annotations
@@ -24,7 +25,9 @@ from typing import Any
 
 SENSORS = ["wire_feed_speed", "wire_temperature", "welding_current"]
 
-# ── Severity thresholds (matching seed/simulation conventions) ──────────────
+# ── Severity thresholds on normalized score (0-1) ───────────────────────────
+# normalized = min(1.0, mae / (5 * sensor_threshold))
+# → 1x threshold ≈ 0.20 (LOW), 2x ≈ 0.40 (MEDIUM), 3.25x ≈ 0.65 (HIGH), 4.25x+ ≈ 0.85 (CRITICAL)
 SEVERITY_THRESHOLDS: list[tuple[float, str]] = [
     (0.85, "CRITICAL"),
     (0.65, "HIGH"),
@@ -60,31 +63,43 @@ def parse_v9_scores(per_sensor_scores: dict[str, Any] | str) -> dict[str, Any]:
 
 
 def dominant_sensor(scores: dict[str, Any]) -> tuple[str, float]:
-    """Return the sensor with the highest ``p99_score_<sensor>``.
+    """Return the calibrated sensor with the highest MAE.
 
     Parameters
     ----------
     scores : dict
-        Parsed V9 per-sensor scores dict.
+        Parsed per_sensor_scores dict from Silver (raw MAE values).
 
     Returns
     -------
     tuple[str, float]
-        ``(sensor_name, p99_score)`` for the dominant sensor.
-        Falls back to ``("wire_feed_speed", 0.0)`` if no known sensor keys
-        are present.
+        ``(sensor_name, mae)`` for the dominant sensor.
+        Falls back to ``("wire_feed_speed", 0.0)`` if no calibrated key found.
     """
     best_sensor: str = "wire_feed_speed"
     best_score: float = 0.0
 
     for sensor in SENSORS:
-        key = f"p99_score_{sensor}"
-        val = scores.get(key, 0.0)
+        val = scores.get(sensor, 0.0)
         if isinstance(val, (int, float)) and val > best_score:
             best_score = float(val)
             best_sensor = sensor
 
     return best_sensor, best_score
+
+
+def normalize_mae(mae: float, sensor_threshold: float) -> float:
+    """Normalize a raw MAE value to a 0-1 severity score.
+
+    Uses 5x the sensor threshold as the cap so that:
+    - 1x threshold → 0.20 (LOW)
+    - 2x threshold → 0.40 (MEDIUM)
+    - 3.25x threshold → 0.65 (HIGH)
+    - 4.25x+ threshold → 0.85+ (CRITICAL)
+    """
+    if sensor_threshold <= 0:
+        return 0.0
+    return min(1.0, mae / (5.0 * sensor_threshold))
 
 
 def sensor_to_family(sensor: str, scores: dict[str, Any] | None = None) -> str:

@@ -36,8 +36,11 @@ dst = Path(os.environ['AGENT_KNOWLEDGE_DIR'])
 
 os.makedirs(dst, exist_ok=True)
 
-shutil.copytree(src, dst, dirs_exist_ok=True)
-logger.info(f"Copied agent knowledge files from {src} to {dst}")
+if src.resolve() != dst.resolve():
+    shutil.copytree(src, dst, dirs_exist_ok=True)
+    logger.info(f"Copied agent knowledge files from {src} to {dst}")
+else:
+    logger.info(f"agent_knowledge already at {dst}, skipping copy")
 
 from .agent.config import config
 os.environ["DATABASE_URL"] = config.database_url
@@ -57,7 +60,11 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://app-ted-hackathon-fe-dev-001.azurewebsites.net"],
+    allow_origins=[
+        "https://app-ted-hackathon-fe-dev-001.azurewebsites.net",
+        "http://localhost:3000",
+        "http://localhost:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -78,14 +85,20 @@ def health():
 
 @app.on_event("startup")
 def on_startup() -> None:
-    """Ensure all database tables exist and seed demo data if empty.
+    """Ensure all SQLite agent-state tables exist.
 
-    On first run (when the ``perception_results`` table is empty) the
-    function calls :func:`.seed.seed_all` to populate 30 days of
-    synthetic sensor data across all 4 robots (R-00 to R-03).
+    When Databricks is configured, Silver/Bronze/Gold data lives in Databricks —
+    SQLite holds only agent-state tables (incidents, alerts, hitl_queue, …)
+    which are created empty by init_db() and populated at runtime.
+
+    When Databricks is NOT configured, seeds SQLite with synthetic demo data
+    so the system works fully offline.
     """
-    
     init_db()
+
+    if config.databricks_configured:
+        logger.info("Databricks configured — skipping SQLite demo-data seed (Silver/Bronze/Gold in Databricks)")
+        return
 
     from sqlalchemy import func, select
     from .db.models import PerceptionResult, create_session_factory
@@ -94,7 +107,7 @@ def on_startup() -> None:
     try:
         count = session.execute(select(func.count()).select_from(PerceptionResult)).scalar()
         if count == 0:
-            logger.info("Database empty — seeding demo data (45 days)...")
+            logger.info("Database empty — seeding demo data (30 days)...")
             from .seed import seed_all
             counts = seed_all(session, days=30)
             for table, c in counts.items():

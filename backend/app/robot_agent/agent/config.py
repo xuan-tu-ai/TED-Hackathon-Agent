@@ -122,13 +122,22 @@ class AppConfig:
     def _load_thresholds(self) -> None:
         """Load L1/L2 thresholds from agent_knowledge/thresholds.json."""
         path = self.agent_knowledge_dir / "thresholds.json"
-        defaults = {"l1_density_threshold": 40.0, "l2_min_slope": 0.05}
+        defaults: dict = {
+            "l1_density_threshold": 30.0,
+            "l2_min_slope": 0.005,
+            "sensor_thresholds": {
+                "wire_feed_speed": 0.13,
+                "wire_temperature": 12.06,
+                "welding_current": 0.56,
+            },
+        }
         if path.exists():
             with path.open() as f:
                 data = json.load(f)
             defaults.update({k: v for k, v in data.items() if not k.startswith("_")})
         self.l1_density_threshold = float(defaults["l1_density_threshold"])
         self.l2_min_slope = float(defaults["l2_min_slope"])
+        self.sensor_thresholds: dict[str, float] = defaults["sensor_thresholds"]
 
     def reload_thresholds(self) -> None:
         """Hot-reload thresholds from disk without restarting the app."""

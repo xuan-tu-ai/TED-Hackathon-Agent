@@ -8,9 +8,10 @@
 Current test count: **~180+ tests** across anomaly detection (Sprint 1), agent system (Sprint 2), and codebase unification (Sprint 3).
 
 ## Active Sprints
-- [Sprint 23](docs/sprint-plans/sprint-23.md) — *In Progress* — Extract `anomaly-detection/` sub-component: move modules, fix `src.` imports, archive V1–V6 models, clean up backend
+- [Sprint 24](docs/sprint-plans/sprint-24.md) — *Completed* — Gold-layer pre-calculation notebook (L1/L2/sensor stats); backend poller fetches from Gold; agent diagnose refactored to sensor-based routing with `query_sensor_stats` tool
 
 ## Recent Completed Sprints
+- [Sprint 23](docs/sprint-plans/sprint-23.md) — *Completed* — Extract `anomaly-detection/` sub-component: move modules, fix `src.` imports, archive V1–V6 models, clean up backend
 - [Sprint 21](docs/sprint-plans/sprint-21.md) — *Completed* — Migrate agent knowledge from paint-shop→welding (3 sensors, 5 anomaly types); connect backend to Databricks for PerceptionResult/PMCard/MaintenanceEvent; 2 Databricks SQL seed scripts
 - [Sprint 22](docs/sprint-plans/sprint-22.md) — *Completed* — Fix V9 `per_sensor_scores` schema in seed SQL; connect real perception result signal data into agent context (remove legacy paint-shop hard-codes, derive sensor/family from V9 scores)
 - [Sprint 20](docs/sprint-plans/sprint-20.md) — *Completed* — GLCMaeV9: LogScaler+GlobalSeqNorm thay RevIN, 4-dataset strategy, bỏ tail window, p99 scoring
@@ -110,7 +111,8 @@ frontend/                         ← React 18 + Vite + Zustand (SSE streaming, 
 | 20 | GLCMaeV9 Anomaly Pipeline | ✅ Done | LogScaler+GlobalSeqNorm replace RevIN; 4-dataset strategy (train/val/threshold_calibration/test); drop tail window; p99 aggregation; inference notebook with threshold calibration flow |
 | 21 | Databricks Integration + Agent Knowledge Migration | ✅ Done | Agent knowledge migrated paint-shop→welding (WeldBot AI, 3 sensors, 5 anomaly types); Databricks session layer; PerceptionResult/PMCard/MaintenanceEvent on Delta Lake; 2 SQL seed scripts; 9 tests |
 | 22 | V9 Scores + Agent Context | ✅ Done | Fix V9 `per_sensor_scores` schema; parse dominant sensor + derive family; include per-sensor scores in incident packet_json and agent context |
-| 23 | Project Reconstruction — `anomaly-detection/` Sub-Component | 🔄 In Progress | Scaffold new uv package; move `anomaly_detection`, `data_simulator`, `databricks_connect`, notebooks, checkpoints, SQL, tests; fix `src.` imports; archive V1–V6; clean backend |
+| 23 | Project Reconstruction — `anomaly-detection/` Sub-Component | ✅ Done | Scaffold new uv package; move `anomaly_detection`, `data_simulator`, `databricks_connect`, notebooks, checkpoints, SQL, tests; fix `src.` imports; archive V1–V6; clean backend |
+| 24 | Gold-Layer Pre-Calculation + Sensor-Routing Agent | 🔄 In Progress | Databricks notebook pre-computes L1/L2/sensor stats → Gold; poller fetches Gold instead of scanning Silver; diagnose skill routes by sensor; `query_sensor_stats` tool |
 
 ## Backlog / Future Work
 - **Real OT data integration** — Replace mock simulation with live welding sensor data feed

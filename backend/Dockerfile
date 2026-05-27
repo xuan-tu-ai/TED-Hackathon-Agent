@@ -19,7 +19,7 @@ WORKDIR /app
 # ── Install dependencies (layer caching) ───────────────────────
 # Excludes 'anomaly-detection' group (torch, mlflow, etc.)
 COPY pyproject.toml README.md ./
-RUN uv sync --no-dev --no-group anomaly-detection
+RUN uv sync --no-dev
 
 # ── Copy application code ──────────────────────────────────────
 # Excluded via .dockerignore: app/anomaly_detection, data_simulator, notebooks, tests

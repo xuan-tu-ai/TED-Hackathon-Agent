@@ -10,56 +10,51 @@ import ErrorTimeline from './components/ErrorTimeline.jsx';
 
 import { API_BASE } from './api/config.js';
 
-function StartScreen({ onStart, speed, onSpeedChange }) {
+function StartScreen({ onStart, isStarting }) {
     return (
         <div className="start-screen">
             <div className="start-screen-content">
                 <h1>🔧 Welding Robot Diagnostics</h1>
                 <p>Multi-Agent Diagnostic System for Welding Shop Anomaly Detection</p>
-                <div className="start-screen-actions">
-                    <button className="btn-start" onClick={onStart}>
-                        ▶ Start Simulation
-                    </button>
-                </div>
-                <div className="speed-selector">
-                    <span>Speed:</span>
-                    <button
-                        className={`speed-btn ${speed === 1 ? 'active' : ''}`}
-                        onClick={() => onSpeedChange(1)}
-                    >
-                        1h=1s
-                    </button>
-                    <button
-                        className={`speed-btn ${speed === 2 ? 'active' : ''}`}
-                        onClick={() => onSpeedChange(2)}
-                    >
-                        2x
-                    </button>
-                    <button
-                        className={`speed-btn ${speed === 5 ? 'active' : ''}`}
-                        onClick={() => onSpeedChange(5)}
-                    >
-                        5x
-                    </button>
-                </div>
+                {isStarting ? (
+                    <div className="start-loading">
+                        <div className="start-loading-spinner" />
+                        <div className="start-loading-text">Initializing simulation…</div>
+                        <div className="start-loading-sub">Querying Databricks, this may take a few seconds</div>
+                    </div>
+                ) : (
+                    <div className="start-screen-actions">
+                        <button className="btn-start" onClick={onStart}>
+                            ▶ Start Simulation
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );
 }
 
-function DashboardHeader({ tick, totalTicks, onStop, onSkip }) {
+function formatSimTime(t) {
+    if (!t) return '—';
+    try {
+        const d = new Date(String(t).replace(' ', 'T'));
+        // "2025-07-01 06:00 UTC"
+        return d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+    } catch { return String(t).slice(0, 16); }
+}
+
+function DashboardHeader({ tick, totalTicks, simTime, onStop }) {
     const progress = totalTicks > 0 ? (tick / totalTicks) * 100 : 0;
     return (
         <div className="dashboard-header">
             <div className="sim-time">
-                <span className="sim-label">Simulation</span>
-                <span className="sim-tick">Tick: {tick}</span>
+                <span className="sim-label">Sim Time</span>
+                <span className="sim-tick">{formatSimTime(simTime)}</span>
             </div>
             <div className="sim-progress">
                 <div className="sim-progress-bar" style={{ width: `${progress}%` }}></div>
             </div>
             <div className="dashboard-actions">
-                <button className="btn-skip" onClick={onSkip} title="Fast-forward to first alert">⏭ Skip to Alert</button>
                 <button className="btn-stop" onClick={onStop}>⏹ Stop</button>
             </div>
         </div>
@@ -68,6 +63,7 @@ function DashboardHeader({ tick, totalTicks, onStop, onSkip }) {
 
 function App() {
     const [isRunning, setIsRunning] = React.useState(false);
+    const [isStarting, setIsStarting] = React.useState(false);
     const [totalTicks, setTotalTicks] = React.useState(0);
     const [clientErrors, setClientErrors] = React.useState([]);
     const sseRef = React.useRef(null);
@@ -78,6 +74,7 @@ function App() {
         activeIncidentId,
         alerts,
         tick,
+        simTime,
         updateRobot,
         addIncident,
         updateIncidentStatus,
@@ -94,7 +91,6 @@ function App() {
         removeGlobalHitl,
         globalHitlQueue,
         speed,
-        setSpeed,
         reset,
         addErrorCount
     } = useSimulationStore();
@@ -184,6 +180,7 @@ function App() {
     ) : null;
 
     const handleStart = async () => {
+        setIsStarting(true);
         for (let attempt = 0; attempt < 10; attempt++) {
             try {
                 const result = await requestJson(`${API_BASE}/sim/start`, {
@@ -206,6 +203,7 @@ function App() {
                 if (attempt < 9) {
                     await new Promise(r => setTimeout(r, 1000));
                 } else {
+                    setIsStarting(false);
                     alert('Cannot start simulation:\n\n' + err.message + '\n\nMake sure backend is running on port 8000:\n  uv run uvicorn app.robot_agent.main:app --reload --port 8000');
                 }
             }
@@ -219,6 +217,7 @@ function App() {
             sseRef.current = null;
         }
         setIsRunning(false);
+        setIsStarting(false);
         reset();
     };
 
@@ -323,22 +322,13 @@ function App() {
         }
     };
 
-    const handleSkip = async () => {
-        await requestNoBody(`${API_BASE}/sim/skip_to_alert`, { method: 'POST' }, 'sim/skip_to_alert');
-    };
-
-    const handleSpeedChange = (newSpeed) => {
-        setSpeed(newSpeed);
-    };
-
     if (!isRunning) {
         return (
             <div className="app">
                 {errorPanel}
                 <StartScreen
                     onStart={handleStart}
-                    speed={speed}
-                    onSpeedChange={handleSpeedChange}
+                    isStarting={isStarting}
                 />
             </div>
         );
@@ -355,8 +345,8 @@ function App() {
                 <DashboardHeader
                     tick={tick}
                     totalTicks={totalTicks}
+                    simTime={simTime}
                     onStop={handleStop}
-                    onSkip={handleSkip}
                 />
                 <div className="dashboard">
                     <div className="dashboard-top">

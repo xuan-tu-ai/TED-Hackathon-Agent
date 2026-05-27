@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from typing import Any, ClassVar
 
-from sqlalchemy import select, text
+from sqlalchemy import text
 
 from ..agent.config import config
 from ..chroma.client import get_collection
@@ -22,78 +22,67 @@ logger = logging.getLogger(__name__)
 
 
 def _query_databricks_vs_pm_cards(query_text: str, limit: int = 5) -> list[dict[str, Any]]:
-    """Semantic search via Databricks Vector Search index on pm_cards gold table."""
+    """Semantic search via Databricks Vector Search index on pm_cards gold table.
+    Returns [] when index not configured or returns no results. Raises on errors.
+    """
     index_name = config.databricks_vs_index_pm_cards
     if not index_name:
         return []
-    try:
-        from databricks.sdk import WorkspaceClient
-        ws = WorkspaceClient(
-            host=f"https://{config.databricks_host}",
-            token=config.databricks_token,
-        )
-        result = ws.vector_search_indexes.query_index(
-            index_name=index_name,
-            columns=["card_id", "sensor", "robot_code", "cause", "symptom", "action"],
-            query_text=query_text,
-            num_results=limit,
-        )
-        cards = []
-        if result.result and result.result.data_array:
-            cols = [c.name for c in (result.result.manifest.columns or [])]
-            for row in result.result.data_array:
-                d = dict(zip(cols, row))
-                cards.append({
-                    "id": d.get("card_id"),
-                    "content": f"Cause: {d.get('cause')}\nSymptom: {d.get('symptom')}\nAction: {d.get('action')}",
-                    "metadata": {**d, "source": "databricks_vs"},
-                })
-        return cards
-    except Exception as exc:
-        logger.warning("Databricks VS PMCard query failed: %s", exc)
-        return []
+    from databricks.sdk import WorkspaceClient
+    ws = WorkspaceClient(
+        host=f"https://{config.databricks_host}",
+        token=config.databricks_token,
+    )
+    result = ws.vector_search_indexes.query_index(
+        index_name=index_name,
+        columns=["card_id", "sensor", "robot_code", "cause", "symptom", "action"],
+        query_text=query_text,
+        num_results=limit,
+    )
+    cards = []
+    if result.result and result.result.data_array:
+        cols = ["card_id", "sensor", "robot_code", "cause", "symptom", "action"]
+        for row in result.result.data_array:
+            d = dict(zip(cols, row))
+            cards.append({
+                "id": d.get("card_id"),
+                "content": f"Cause: {d.get('cause')}\nSymptom: {d.get('symptom')}\nAction: {d.get('action')}",
+                "metadata": {**d, "source": "databricks_vs"},
+            })
+    return cards
 
 
 def _query_databricks_pm_cards(query_text: str, limit: int = 5) -> list[dict[str, Any]]:
-    """Keyword fallback: ILIKE query on Databricks bronze pm_cards table."""
-    try:
-        from ..db.databricks_session import create_databricks_session_factory, DB_TABLE_PM_CARDS
+    """Keyword ILIKE query on Databricks bronze pm_cards table. Raises on errors."""
+    from ..db.databricks_session import create_databricks_session_factory, DB_TABLE_PM_CARDS
 
-        sf = create_databricks_session_factory()
-        session = sf()
-        try:
-            stmt = (
-                select(
-                    text("card_id"),
-                    text("sensor"),
-                    text("robot_code"),
-                    text("cause"),
-                    text("symptom"),
-                    text("action"),
-                )
-                .select_from(text(DB_TABLE_PM_CARDS))
-                .where(text("cause ILIKE :q OR symptom ILIKE :q OR action ILIKE :q"))
-                .limit(limit)
-            )
-            rows = session.execute(stmt, {"q": f"%{query_text}%"}).fetchall()
-            return [
-                {
-                    "id": row.card_id,
-                    "content": f"Cause: {row.cause}\nSymptom: {row.symptom}\nAction: {row.action}",
-                    "metadata": {
-                        "card_id": row.card_id, "sensor": row.sensor,
-                        "robot_code": row.robot_code, "cause": row.cause,
-                        "symptom": row.symptom, "action": row.action,
-                        "source": "databricks_sql",
-                    },
-                }
-                for row in rows
-            ]
-        finally:
-            session.close()
-    except Exception as exc:
-        logger.warning("Databricks PMCard SQL query failed: %s", exc)
-        return []
+    sf = create_databricks_session_factory()
+    session = sf()
+    try:
+        rows = session.execute(
+            text(
+                f"SELECT card_id, sensor, robot_code, cause, symptom, action "
+                f"FROM {DB_TABLE_PM_CARDS} "
+                f"WHERE cause ILIKE :q OR symptom ILIKE :q OR action ILIKE :q "
+                f"LIMIT {int(limit)}"
+            ),
+            {"q": f"%{query_text}%"},
+        ).fetchall()
+        return [
+            {
+                "id": row.card_id,
+                "content": f"Cause: {row.cause}\nSymptom: {row.symptom}\nAction: {row.action}",
+                "metadata": {
+                    "card_id": row.card_id, "sensor": row.sensor,
+                    "robot_code": row.robot_code, "cause": row.cause,
+                    "symptom": row.symptom, "action": row.action,
+                    "source": "databricks_sql",
+                },
+            }
+            for row in rows
+        ]
+    finally:
+        session.close()
 
 
 class QueryPMCardsTool:
@@ -116,44 +105,30 @@ class QueryPMCardsTool:
 
     def __call__(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
         if config.databricks_configured:
-            # 1st: Vector Search (semantic)
+            # 1st: Vector Search (semantic) — errors propagate
             cards = _query_databricks_vs_pm_cards(query, limit=limit)
             if cards:
+                logger.info("[PMCards][Databricks-VS] %d results for query=%r", len(cards), query[:60])
                 return cards
-            # 2nd: SQL ILIKE (keyword fallback)
+            # 2nd: SQL ILIKE — errors propagate
             cards = _query_databricks_pm_cards(query, limit=limit)
-            if cards:
-                return cards
-            logger.info("Databricks returned no results, falling back to ChromaDB")
-
-        # Fallback: ChromaDB vector search
-        try:
-            collection = get_collection("pm_cards")
-            try:
-                count = collection.count()
-                if count == 0:
-                    return [{"error": "ChromaDB collection is empty", "detail": "pm_cards"}]
-            except Exception as exc:
-                return [{"error": "ChromaDB unavailable", "detail": str(exc)}]
-
-            results = collection.query(query_texts=[query], n_results=limit)
-            documents = results.get("documents", [[]])[0]
-            metadatas = results.get("metadatas", [[]])[0]
-            ids = results.get("ids", [[]])[0]
-
-            if not documents:
-                return [{"error": "No results from ChromaDB", "detail": query}]
-
-            cards = []
-            for i, doc in enumerate(documents):
-                cards.append({
-                    "id": ids[i] if i < len(ids) else None,
-                    "content": doc,
-                    "metadata": metadatas[i] if i < len(metadatas) else {},
-                })
+            logger.info("[PMCards][Databricks-SQL] %d results for query=%r", len(cards), query[:60])
             return cards
-        except Exception as exc:
-            return [{"error": "ChromaDB unavailable", "detail": str(exc)}]
+
+        # ChromaDB path — only when Databricks not configured
+        collection = get_collection("pm_cards")
+        results = collection.query(query_texts=[query], n_results=limit)
+        documents = results.get("documents", [[]])[0]
+        metadatas = results.get("metadatas", [[]])[0]
+        ids = results.get("ids", [[]])[0]
+        return [
+            {
+                "id": ids[i] if i < len(ids) else None,
+                "content": doc,
+                "metadata": metadatas[i] if i < len(metadatas) else {},
+            }
+            for i, doc in enumerate(documents)
+        ]
 
 
 class IndexPMCardsTool:

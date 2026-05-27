@@ -435,10 +435,80 @@ body {
     font-size: 0.875rem;
 }
 
-.chat-container {
+/* ── 3-section chat layout ───────────────────────────────── */
+
+/* Section 1: Thinking Trace */
+.trace-section {
+    display: flex;
+    flex-direction: column;
+    border-bottom: 1px solid var(--border-color);
+    min-height: 0;
+    /* no overflow:hidden — would clip the scrollbar */
+}
+.trace-section--open {
+    flex: 1;
+    min-height: 0;
+}
+.trace-section--closed {
+    flex: 0 0 auto;
+}
+
+.trace-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 1rem;
+    background: var(--bg-tertiary);
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border-color);
+}
+.trace-section-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.trace-toggle-btn {
+    font-size: 0.75rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+.trace-toggle-btn:hover {
+    background: var(--accent-blue);
+    color: #fff;
+    border-color: var(--accent-blue);
+}
+
+.trace-scroll-area {
     flex: 1;
     overflow-y: auto;
     padding: 1rem;
+    min-height: 0;
+}
+.trace-empty {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    text-align: center;
+    padding: 1.5rem 0;
+    font-style: italic;
+}
+
+/* Section 2: Diagnostic Plan */
+.plan-section {
+    flex-shrink: 0;
+    border-top: 1px solid var(--border-color);
+}
+
+/* Section 3: Final Report */
+.report-section {
+    flex-shrink: 0;
+    border-top: 1px solid var(--border-color);
 }
 
 @keyframes pulse-border {
@@ -493,6 +563,38 @@ body {
 .btn-start:hover {
     background-color: #16a34a;
     transform: scale(1.05);
+}
+
+.start-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem 0 0.5rem;
+}
+
+.start-loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--border-color);
+    border-top-color: var(--accent-blue);
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.start-loading-text {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.start-loading-sub {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
 }
 
 .speed-selector {
@@ -647,11 +749,53 @@ body {
 }
 
 .bubble-thinking-body {
-    font-size: 0.9375rem;
-    line-height: 1.6;
+    font-size: 0.875rem;
+    line-height: 1.65;
     color: var(--text-primary);
-    white-space: pre-wrap;
     word-break: break-word;
+}
+
+.bubble-thinking-body p {
+    margin: 0 0 0.45rem 0;
+}
+.bubble-thinking-body p:last-child { margin-bottom: 0; }
+
+.bubble-thinking-body h1,
+.bubble-thinking-body h2,
+.bubble-thinking-body h3 {
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0.6rem 0 0.25rem;
+    line-height: 1.3;
+}
+.bubble-thinking-body h1 { font-size: 0.95rem; }
+.bubble-thinking-body h2 { font-size: 0.9rem; }
+.bubble-thinking-body h3 { font-size: 0.875rem; }
+
+.bubble-thinking-body ul,
+.bubble-thinking-body ol {
+    padding-left: 1.2rem;
+    margin: 0.2rem 0 0.45rem;
+}
+.bubble-thinking-body li { margin: 0.1rem 0; }
+
+.bubble-thinking-body strong { font-weight: 700; }
+.bubble-thinking-body em { font-style: italic; color: var(--text-secondary); }
+
+.bubble-thinking-body code {
+    background: var(--bg-primary);
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+    font-size: 0.8rem;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    color: #f0c674;
+}
+
+.bubble-thinking-body blockquote {
+    border-left: 3px solid var(--border-color);
+    padding-left: 0.6rem;
+    color: var(--text-secondary);
+    margin: 0.2rem 0;
 }
 
 /* ToolCallChip Component */
@@ -906,10 +1050,6 @@ body {
 
 /* PlanTracker Component */
 .plan-tracker {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    border-bottom: 1px solid var(--border-color);
     padding: 0.75rem 1rem;
     background-color: var(--bg-secondary);
 }
@@ -1258,10 +1398,71 @@ body {
     border-bottom: 1px solid var(--border-color);
 }
 
+.error-timeline-title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
 .error-timeline-title {
     font-weight: 600;
     font-size: 0.875rem;
     white-space: nowrap;
+}
+
+.error-timeline-info-btn {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s, color 0.15s;
+}
+.error-timeline-info-btn:hover {
+    background: var(--accent-blue);
+    color: #fff;
+    border-color: var(--accent-blue);
+}
+
+.error-timeline-info-panel {
+    padding: 0.75rem 1rem;
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.8rem;
+    line-height: 1.6;
+    color: var(--text-primary);
+    position: relative;
+}
+.error-timeline-info-panel p {
+    margin: 0 0 0.5rem 0;
+}
+.error-timeline-info-panel p:last-child {
+    margin-bottom: 0;
+}
+.info-panel-note {
+    color: var(--text-secondary);
+    font-style: italic;
+}
+.info-panel-close {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.75rem;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    line-height: 1;
+}
+.info-panel-close:hover {
+    color: var(--text-primary);
 }
 
 .error-timeline-controls {
@@ -1502,27 +1703,6 @@ body {
     color: var(--text-secondary);
 }
 
-/* ── SummaryReport: toggle trace button (T24) ─────────── */
-.summary-report-toggle-trace {
-    display: block;
-    width: 100%;
-    padding: 0.5rem 1rem;
-    margin-bottom: 0.75rem;
-    background-color: var(--bg-tertiary);
-    border: 1px dashed var(--border-color);
-    border-radius: 6px;
-    color: var(--text-secondary);
-    font-size: 0.8rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    text-align: center;
-}
-
-.summary-report-toggle-trace:hover {
-    background-color: var(--border-color);
-    color: var(--text-primary);
-}
 
 /* ── SummaryReport footer + MS Teams button (T25) ─────── */
 .summary-report-footer {

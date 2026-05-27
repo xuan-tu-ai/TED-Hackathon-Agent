@@ -13,6 +13,7 @@ export const useSimulationStore = create((set, get) => ({
     incidents: {},
     activeIncidentId: null,
     tick: 0,
+    simTime: null,
     speed: 1,
     alerts: [],
     hitlItems: [],
@@ -170,6 +171,7 @@ export const useSimulationStore = create((set, get) => ({
         set(state => {
             const existing = state.errorCounts[robotId] || [];
             return {
+                simTime: time,
                 errorCounts: {
                     ...state.errorCounts,
                     [robotId]: [...existing, { tick, time, count }]
@@ -206,6 +208,7 @@ export const useSimulationStore = create((set, get) => ({
             incidents: {},
             activeIncidentId: null,
             tick: 0,
+            simTime: null,
             speed: 1,
             alerts: [],
             hitlItems: [],

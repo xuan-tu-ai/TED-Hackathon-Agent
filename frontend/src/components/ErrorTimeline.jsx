@@ -24,7 +24,8 @@ const CHART_COLORS = {
 export default function ErrorTimeline({ onApiFetch }) {
     const [activeRobot, setActiveRobot] = useState('R-00');
     const [mode, setMode] = useState('easy'); // 'easy' | 'hard'
-    const [thresholds, setThresholds] = useState({ l1: 2.5, l2: 0.015 });
+    const [thresholds, setThresholds] = useState({ l1: 30, l2: 0.005 });
+    const [infoOpen, setInfoOpen] = useState(false);
     const [chartData, setChartData] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -42,32 +43,36 @@ export default function ErrorTimeline({ onApiFetch }) {
                 const res = await onApiFetch(`/api/robots/${activeRobot}/error-history`, {}, 'error-timeline/thresholds');
                 if (res.ok && res.data) {
                     setThresholds({
-                        l1: res.data.l1_threshold ?? 2.5,
-                        l2: res.data.l2_threshold ?? 0.015,
+                        l1: res.data.l1_threshold ?? 30,
+                        l2: res.data.l2_threshold ?? 0.005,
                     });
                 }
             } catch { /* use defaults */ }
         })();
     }, []);
 
-    // Switch robot
-    const switchRobot = useCallback((robotId) => {
-        setActiveRobot(robotId);
-
-        if (mode === 'easy') {
-            // Easy: clear data for this robot, start fresh
-            clearErrorCounts(robotId);
-            dataCache.current[robotId] = [];
-            setChartData([]);
-        } else {
-            // Hard: try cache first, else HTTP backfill
-            if (dataCache.current[robotId] && dataCache.current[robotId].length > 0) {
-                setChartData(dataCache.current[robotId]);
-            } else {
-                backfillData(robotId);
-            }
+    // Normalise any time string → epoch ms for dedup and sort.
+    // Handles both "2025-07-01 06:00:00+00:00" (HTTP/Databricks) and
+    // "2025-07-01T06:00:00+00:00" (SSE/ISO) as the same key.
+    const toEpoch = (p) => {
+        if (p.time) {
+            const t = new Date(String(p.time).replace(' ', 'T'));
+            if (!isNaN(t)) return t.getTime();
         }
-    }, [mode, clearErrorCounts]);
+        return (p.tick ?? 0) * 1e12; // tick-only fallback, kept distinct from epoch range
+    };
+
+    // Merge HTTP data + SSE data, deduplicating by epoch (format-agnostic).
+    const mergeData = (httpPoints, ssePoints) => {
+        const seen = new Map(); // epoch → point (first-wins; HTTP before SSE)
+        for (const p of [...httpPoints, ...ssePoints]) {
+            const key = toEpoch(p);
+            if (!seen.has(key)) seen.set(key, p);
+        }
+        const result = [...seen.values()];
+        result.sort((a, b) => toEpoch(a) - toEpoch(b));
+        return result;
+    };
 
     // Hard mode backfill
     const backfillData = useCallback(async (robotId) => {
@@ -77,13 +82,32 @@ export default function ErrorTimeline({ onApiFetch }) {
         try {
             const res = await onApiFetch(`/api/robots/${robotId}/error-history`, {}, 'error-timeline/backfill');
             if (res.ok && res.data) {
-                const points = (res.data.data || []).map(d => ({
-                    tick: 0,
+                // Find the latest sim time across all robots from SSE data.
+                // This prevents showing DB rows that belong to future simulation ticks.
+                let cutoff = null;
+                for (const pts of Object.values(errorCounts)) {
+                    for (const p of pts) {
+                        if (!p.time) continue;
+                        const t = new Date(String(p.time).replace(' ', 'T'));
+                        if (!isNaN(t) && (!cutoff || t > cutoff)) cutoff = t;
+                    }
+                }
+
+                let points = (res.data.data || []).map(d => ({
                     time: d.hour,
                     count: d.count,
                 }));
-                dataCache.current[robotId] = points;
-                // Also merge any SSE data we already have for this robot
+
+                if (cutoff) {
+                    points = points.filter(p => {
+                        const t = new Date(String(p.time).replace(' ', 'T'));
+                        return !isNaN(t) && t <= cutoff;
+                    });
+                } else {
+                    // No SSE data yet — simulation hasn't started; show nothing from DB
+                    points = [];
+                }
+
                 const ssePoints = errorCounts[robotId] || [];
                 const merged = mergeData(points, ssePoints);
                 dataCache.current[robotId] = merged;
@@ -96,23 +120,25 @@ export default function ErrorTimeline({ onApiFetch }) {
         }
     }, [onApiFetch, errorCounts]);
 
-    // Merge HTTP data + SSE data, deduplicating by time
-    const mergeData = (httpPoints, ssePoints) => {
-        const seen = new Set();
-        const result = [];
-        for (const p of [...httpPoints, ...ssePoints]) {
-            const key = p.time || p.tick;
-            if (!seen.has(key)) {
-                seen.add(key);
-                result.push(p);
+    // Switch robot
+    const switchRobot = useCallback((robotId) => {
+        setActiveRobot(robotId);
+
+        if (mode === 'easy') {
+            // Easy: clear data for this robot, start fresh
+            clearErrorCounts(robotId);
+            dataCache.current[robotId] = [];
+            setChartData([]);
+        } else {
+            // Hard: try cache first, else HTTP backfill
+            if (dataCache.current[robotId]?.length > 0) {
+                setChartData(dataCache.current[robotId]);
+            } else {
+                setChartData([]);
+                backfillData(robotId);
             }
         }
-        result.sort((a, b) => {
-            if (a.tick !== undefined && b.tick !== undefined) return a.tick - b.tick;
-            return String(a.time).localeCompare(String(b.time));
-        });
-        return result;
-    };
+    }, [mode, clearErrorCounts, backfillData]);
 
     // Listen for SSE error_count events
     useEffect(() => {
@@ -172,7 +198,14 @@ export default function ErrorTimeline({ onApiFetch }) {
     return (
         <div className="error-timeline">
             <div className="error-timeline-header">
-                <span className="error-timeline-title">📊 Error Timeline</span>
+                <div className="error-timeline-title-row">
+                    <span className="error-timeline-title">📊 Error Timeline</span>
+                    <button
+                        className="error-timeline-info-btn"
+                        onClick={() => setInfoOpen(v => !v)}
+                        title="What are L1 and L2 triggers?"
+                    >?</button>
+                </div>
                 <div className="error-timeline-controls">
                     {/* Robot selector */}
                     <div className="robot-selector">
@@ -200,6 +233,14 @@ export default function ErrorTimeline({ onApiFetch }) {
                     </div>
                 </div>
             </div>
+            {infoOpen && (
+                <div className="error-timeline-info-panel">
+                    <div className="info-panel-close" onClick={() => setInfoOpen(false)}>✕</div>
+                    <p><strong>L1 Burst</strong> — detects a sudden spike in anomaly density within a short rolling window (24 h). Fires when the number of file-anomaly events per hour exceeds <strong>{thresholds.l1}</strong>. Indicates an acute fault requiring immediate attention.</p>
+                    <p><strong>L2 Escalation</strong> — detects a slow upward trend in anomaly rate over a longer window (48 h, bucketed by 6 h). Fires when the linear slope of hourly error counts exceeds <strong>{thresholds.l2}</strong> errors/hour². Indicates progressive wear or a developing fault before it becomes critical.</p>
+                    <p className="info-panel-note">Both triggers are evaluated independently; either one can open an incident.</p>
+                </div>
+            )}
             <div className="error-timeline-chart">
                 {loading && <div className="error-timeline-loading">Loading history…</div>}
                 {error && <div className="error-timeline-error">{error}</div>}
@@ -217,8 +258,14 @@ export default function ErrorTimeline({ onApiFetch }) {
                                 axisLine={{ stroke: CHART_COLORS.grid }}
                                 tickFormatter={(v) => {
                                     if (!v) return '';
-                                    const parts = v.split('T');
-                                    return parts.length > 1 ? parts[1].slice(0, 5) : v.slice(-8, -3);
+                                    const s = String(v);
+                                    // ISO: "2025-07-08T06:00:00+00:00" or space: "2025-07-08 06:00:00"
+                                    const sep = s.includes('T') ? 'T' : ' ';
+                                    const [datePart, timePart] = s.split(sep);
+                                    if (datePart && timePart) {
+                                        return `${datePart.slice(5)} ${timePart.slice(0, 5)}`;
+                                    }
+                                    return s.slice(0, 16);
                                 }}
                             />
                             <YAxis
@@ -251,19 +298,6 @@ export default function ErrorTimeline({ onApiFetch }) {
                                     value: `L1 (${thresholds.l1})`,
                                     position: 'insideTopRight',
                                     fill: CHART_COLORS.l1,
-                                    fontSize: 11,
-                                }}
-                            />
-                            {/* L2 Threshold reference line */}
-                            <ReferenceLine
-                                y={thresholds.l2}
-                                stroke={CHART_COLORS.l2}
-                                strokeDasharray="3 6"
-                                strokeWidth={1.5}
-                                label={{
-                                    value: `L2 (${thresholds.l2})`,
-                                    position: 'insideTopRight',
-                                    fill: CHART_COLORS.l2,
                                     fontSize: 11,
                                 }}
                             />

@@ -21,11 +21,11 @@ def test_agents_md_has_diagnose_instruction():
     assert "diagnose" in content
 
 
-def test_agents_md_has_signal_families():
+def test_agents_md_has_signal_sensors():
     content = DIAGNOSE_PATH.read_text(encoding="utf-8")
-    families = ["SURGE", "DROPOUT", "INSTABILITY", "DEVIATION", "TRANSITION"]
-    for family in families:
-        assert family in content
+    sensors = ["wire_feed_speed", "wire_temperature", "welding_current"]
+    for sensor in sensors:
+        assert sensor in content
 
 
 def test_agents_md_has_session_rules():

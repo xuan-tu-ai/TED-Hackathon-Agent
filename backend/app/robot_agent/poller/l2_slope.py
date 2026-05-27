@@ -1,33 +1,22 @@
-"""L2 slope detection — long-term trend-based anomaly escalation.
-
-L2 (Level 2) identifies progressive degradation by performing linear regression
-on anomaly RATE (fraction of is_file_anomaly=True rows) grouped into fixed-size
-time buckets. A positive slope above a configurable threshold (``min_slope``)
-indicates an escalating trend; a negative slope indicates improving conditions.
-
-Bucket size defaults to 6 hours so that short test windows (~39 h per robot)
-produce enough data points for meaningful regression. The window is expressed
-in hours (``hours`` parameter) rather than days.
-
-Functions:
-    detect_l2_slope: Single-window linear-regression slope detection.
-    get_l2_summary: Multi-window (12 h / 24 h / 48 h) trend summary.
-"""
+"""L2 slope detection — long-term trend-based anomaly escalation."""
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..agent.config import config
 from ..db.models import PerceptionResult
+from ..db.gold_queries import fetch_l2_gold
+from ..db.databricks_session import _ensure_databricks_engine
+
+logger = logging.getLogger(__name__)
 
 
 def _linreg_slope(x_values: list[float], y_values: list[float]) -> tuple[float, float]:
-    """Return (slope, r2) from simple linear regression."""
     n = len(x_values)
     x_mean = sum(x_values) / n
     y_mean = sum(y_values) / n
@@ -48,32 +37,45 @@ def detect_l2_slope(
     min_slope: float | None = None,
     reference_time: datetime | None = None,
 ) -> dict[str, Any]:
-    """Detect L2 slope escalation using anomaly rate per fixed time bucket.
+    """Detect L2 slope escalation.
 
-    Groups observations into ``bucket_hours``-wide buckets and computes the
-    fraction of ``is_file_anomaly=True`` rows in each bucket (anomaly rate).
-    Linear regression on that rate series detects whether anomaly frequency
-    is trending up (escalating) or down (improving).
-
-    Returns dict with:
-        - trend: "escalating" | "stable" | "improving" | "insufficient_data"
-        - slope: float (rate change per bucket)
-        - r2: float (fit quality, 0-1)
-        - bucket_averages: list of (bucket_label, anomaly_rate) tuples
-        - buckets_analyzed: int
+    When Databricks is configured, fetches from Gold table — no fallback,
+    errors propagate.  Uses local SQLite only when Databricks is not configured.
     """
     if min_slope is None:
         min_slope = config.l2_min_slope
     if reference_time is None:
         reference_time = datetime.now(UTC)
 
+    # ── Databricks Gold-table path ──────────────────────────────────────
+    if config.databricks_configured:
+        engine = _ensure_databricks_engine()
+        with engine.connect() as conn:
+            result = fetch_l2_gold(robot_id, conn, reference_time=reference_time)
+        data_ts = result.get("data_timestamp")
+        logger.info(
+            "[L2][Databricks] robot=%s | trend=%s slope=%.6f r2=%.4f buckets=%d data_ts=%s (host=%s)",
+            robot_id,
+            result["trend"], result["slope"], result["r2"], result["buckets_analyzed"],
+            data_ts, config.databricks_host,
+        )
+        return {
+            "trend": result["trend"],
+            "slope": result["slope"],
+            "r2": result["r2"],
+            "bucket_averages": [],
+            "buckets_analyzed": result["buckets_analyzed"],
+            "bucket_hours": bucket_hours,
+            "hours_analyzed": hours,
+            "min_slope_threshold": min_slope,
+            "reference_time": data_ts.isoformat() if data_ts else reference_time.isoformat(),
+        }
+
+    # ── Local SQLite path (only when Databricks not configured) ────────
     start_time = reference_time - timedelta(hours=hours)
 
     rows = (
-        session.query(
-            PerceptionResult.observed_at,
-            PerceptionResult.is_file_anomaly,
-        )
+        session.query(PerceptionResult.observed_at, PerceptionResult.is_file_anomaly)
         .filter(
             PerceptionResult.robot_code == robot_id,
             PerceptionResult.observed_at >= start_time,
@@ -93,7 +95,6 @@ def detect_l2_slope(
             "reference_time": reference_time.isoformat(),
         }
 
-    # Group into bucket_hours-wide buckets counted from start_time
     bucket_seconds = bucket_hours * 3600
     buckets: dict[int, list[bool]] = {}
     for row in rows:
@@ -105,11 +106,7 @@ def detect_l2_slope(
         buckets.setdefault(bucket_idx, []).append(bool(row.is_file_anomaly))
 
     sorted_buckets = sorted(buckets.items())
-    bucket_averages = []
-    for idx, flags in sorted_buckets:
-        rate = sum(flags) / len(flags)
-        label = f"B{idx}(+{idx * bucket_hours}h)"
-        bucket_averages.append((label, round(rate, 4)))
+    bucket_averages = [(f"B{i}(+{i * bucket_hours}h)", round(sum(f) / len(f), 4)) for i, f in sorted_buckets]
 
     if len(bucket_averages) < 3:
         return {
@@ -125,12 +122,7 @@ def detect_l2_slope(
     y_values = [rate for _, rate in bucket_averages]
     slope, r2 = _linreg_slope(x_values, y_values)
 
-    if slope >= min_slope:
-        trend = "escalating"
-    elif slope <= -min_slope:
-        trend = "improving"
-    else:
-        trend = "stable"
+    trend = "escalating" if slope >= min_slope else ("improving" if slope <= -min_slope else "stable")
 
     return {
         "trend": trend,
@@ -146,12 +138,7 @@ def detect_l2_slope(
 
 
 def get_l2_summary(session: Session, robot_id: str) -> dict[str, Any]:
-    """Get L2 summary for a robot across multiple time windows (in hours)."""
-    result = {
-        "robot_id": robot_id,
-        "windows": {},
-    }
-
+    result = {"robot_id": robot_id, "windows": {}}
     for hours in [12, 24, 48]:
         slope_info = detect_l2_slope(session, robot_id, hours=hours, bucket_hours=6)
         result["windows"][f"{hours}h"] = {
@@ -160,5 +147,4 @@ def get_l2_summary(session: Session, robot_id: str) -> dict[str, Any]:
             "r2": slope_info["r2"],
             "buckets_analyzed": slope_info["buckets_analyzed"],
         }
-
     return result

@@ -106,17 +106,17 @@ class TestAllSkillsLoad:
 
 
 class TestDiagnoseReferences:
-    """Sprint 10 T11: Verify diagnose/references files load correctly."""
+    """Sprint 24: Verify sensor-based diagnose/references files load correctly."""
 
-    REFERENCE_NAMES = ["surge", "dropout", "instability", "deviation", "transition"]
+    SENSOR_NAMES = ["wire_feed_speed", "wire_temperature", "welding_current"]
 
     def test_reference_files_exist(self):
-        """All 5 family reference files exist under diagnose/references/."""
+        """All 3 sensor reference files exist under diagnose/references/."""
         refs_dir = SKILLS_BASE / "diagnose" / "references"
         assert refs_dir.is_dir(), (
             f"diagnose/references directory not found at {refs_dir}"
         )
-        for name in self.REFERENCE_NAMES:
+        for name in self.SENSOR_NAMES:
             ref_path = refs_dir / f"{name}.md"
             assert ref_path.exists(), (
                 f"Reference file missing: {ref_path}"
@@ -125,7 +125,7 @@ class TestDiagnoseReferences:
     def test_reference_files_have_content(self):
         """Each reference file has meaningful content (>50 chars)."""
         refs_dir = SKILLS_BASE / "diagnose" / "references"
-        for name in self.REFERENCE_NAMES:
+        for name in self.SENSOR_NAMES:
             content = (refs_dir / f"{name}.md").read_text(encoding="utf-8")
             assert len(content) > 50, (
                 f"Reference '{name}.md' content too short ({len(content)} chars)"
@@ -136,7 +136,7 @@ class TestDiagnoseReferences:
         from app.robot_agent.agent.skills import LoadSkillTool
 
         tool = LoadSkillTool()
-        for name in self.REFERENCE_NAMES:
+        for name in self.SENSOR_NAMES:
             ref_path = f"diagnose/references/{name}"
             result = tool(ref_path)
             assert "not found" not in result.lower(), (
@@ -147,11 +147,11 @@ class TestDiagnoseReferences:
             )
 
     def test_refs_prefix_alias_works(self):
-        """Short alias 'diagnose/refs/surge' also loads correctly."""
+        """Short alias 'diagnose/refs/wire_feed_speed' also loads correctly."""
         from app.robot_agent.agent.skills import LoadSkillTool
 
         tool = LoadSkillTool()
-        result = tool("diagnose/refs/surge")
+        result = tool("diagnose/refs/wire_feed_speed")
         assert "not found" not in result.lower()
         assert len(result) > 50
 

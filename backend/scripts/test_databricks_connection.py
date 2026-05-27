@@ -74,7 +74,7 @@ def test_vector_search() -> bool:
             num_results=3,
         )
         if result.result and result.result.data_array:
-            cols = [c.name for c in (result.result.manifest.columns or [])]
+            cols = ["card_id", "sensor", "robot_code", "cause"]
             for row in result.result.data_array:
                 print(f"  sample    : {dict(zip(cols, row))}")
             print(f"  [OK] OK ({len(result.result.data_array)} results)")

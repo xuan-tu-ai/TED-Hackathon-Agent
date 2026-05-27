@@ -33,6 +33,7 @@ from .plan_manager import PlanManager
 from .config import config
 from .rag_tools import QueryPMCardsTool
 from .session_trace import SessionTraceWriter
+from .signal_tools import QuerySensorStatsTool
 from .skills import LoadSkillTool
 
 logging.basicConfig(
@@ -143,7 +144,7 @@ class AgentStepSignature(dspy.Signature):
     past_steps = dspy.InputField(desc="Previous actions and their observations. Pay close attention to what you already did.")
 
     reasoning = dspy.OutputField(desc="Your thought process for what to do next based on the incident context and past steps.")
-    action = dspy.OutputField(desc="The tool to call. Must be exactly one of: load_skill, query_pm_cards, hitl_check, update_task_status, create_plan, complete.")
+    action = dspy.OutputField(desc="The tool to call. Must be exactly one of: load_skill, query_pm_cards, query_sensor_stats, hitl_check, update_task_status, create_plan, complete.")
     action_input = dspy.OutputField(desc="The argument for the tool. \n- load_skill: 'skill_name'\n- update_task_status: '{\"task_id\": 1, \"status\": \"completed\"}'\n- create_plan: Use only to initialize or radically change the roadmap.\n- complete: 'summary_text'. Use ONLY when ALL plan tasks are 'completed'.")
 
 class DiagnosticAgent:
@@ -171,6 +172,7 @@ class DiagnosticAgent:
     AVAILABLE_TOOLS: ClassVar[list[str]] = [
         "load_skill",
         "query_pm_cards",
+        "query_sensor_stats",
         "hitl_check",
         "update_task_status",
         "create_plan",
@@ -599,6 +601,9 @@ class DiagnosticAgent:
             elif action == "query_pm_cards":
                 tool = QueryPMCardsTool()
                 obs = str(tool(action_input))
+            elif action == "query_sensor_stats":
+                tool = QuerySensorStatsTool()
+                obs = str(tool(action_input))
             elif action == "hitl_check":
                 try:
                     try:
@@ -695,22 +700,20 @@ class DiagnosticAgent:
         """
         self.start_session(incident)
 
-        # Build per-sensor scores context from V9 data
+        # Build per-sensor MAE context (Silver keys are raw sensor names)
         ps_scores = incident.per_sensor_scores or {}
         v9_lines = []
         if ps_scores:
             sensors_in_order = ["wire_feed_speed", "wire_temperature", "welding_current"]
-            dom_key = f"p99_score_{incident.sensor}"
             for s in sensors_in_order:
-                key = f"p99_score_{s}"
-                val = ps_scores.get(key, None)
+                val = ps_scores.get(s, None)
                 if val is not None:
-                    marker = "  ← DOMINANT" if key == dom_key else ""
-                    v9_lines.append(f"    {s}: {val}{marker}")
+                    marker = "  ← DOMINANT" if s == incident.sensor else ""
+                    v9_lines.append(f"    {s}: {round(float(val), 4)} MAE{marker}")
 
         per_sensor_context = ""
         if v9_lines:
-            per_sensor_context = "\nPer-sensor p99 scores:\n" + "\n".join(v9_lines)
+            per_sensor_context = "\nPer-sensor MAE scores:\n" + "\n".join(v9_lines)
 
         incident_context = (
             f"Robot: {incident.robot_code}, "

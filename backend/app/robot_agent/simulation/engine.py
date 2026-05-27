@@ -18,18 +18,22 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any, Generator
 
-from sqlalchemy import func
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..agent.config import config
-from ..db.databricks_session import create_databricks_session_factory
-from ..db.models import PerceptionResult
+from ..db.databricks_session import create_databricks_session_factory, DB_TABLE_PERCEPTION_RESULTS
 
 from ..poller.l1_burst import detect_l1_burst
 from ..poller.l2_slope import detect_l2_slope
 
 
 ALL_ROBOTS = [f"R-{idx:02d}" for idx in range(0, 4)]
+
+
+def _silver_rc(robot_id: str) -> str:
+    """Convert 'R-00' → '0' for Silver table robot_code column."""
+    return str(int(robot_id[2:]))
 
 
 class SimulationEngine:
@@ -51,42 +55,35 @@ class SimulationEngine:
 
         session = self.session_factory()
         try:
-            hourly_timestamps = (
-                session.query(
-                    func.date_trunc("hour", PerceptionResult.observed_at).label("hour")
-                )
-                .distinct()
-                .order_by(func.date_trunc("hour", PerceptionResult.observed_at))
-                .all()
-            )
+            rows = session.execute(text(
+                f"SELECT DISTINCT date_trunc('hour', observed_at) AS hour "
+                f"FROM {DB_TABLE_PERCEPTION_RESULTS} "
+                f"ORDER BY hour"
+            )).fetchall()
             self._timeline = [
                 row.hour.replace(tzinfo=UTC) if row.hour.tzinfo is None else row.hour.astimezone(UTC)
-                for row in hourly_timestamps
-            ][-720:]  # Only last 30 days for simulation
+                for row in rows
+            ]
             return self._timeline
         finally:
             session.close()
 
-    def get_events_at(self, sim_time: datetime) -> list[PerceptionResult]:
+    def get_events_at(self, sim_time: datetime) -> list[Any]:
         session = self.session_factory()
         try:
             tick_start = sim_time.replace(minute=0, second=0, microsecond=0)
             tick_end = tick_start + timedelta(hours=1)
-
-            events = (
-                session.query(PerceptionResult)
-                .filter(
-                    PerceptionResult.observed_at >= tick_start,
-                    PerceptionResult.observed_at < tick_end,
-                )
-                .order_by(PerceptionResult.observed_at)
-                .all()
-            )
-            return events
+            rows = session.execute(text(
+                f"SELECT event_id, robot_code, observed_at, is_file_anomaly, per_sensor_scores "
+                f"FROM {DB_TABLE_PERCEPTION_RESULTS} "
+                f"WHERE observed_at >= :start AND observed_at < :end "
+                f"ORDER BY observed_at"
+            ), {"start": tick_start.isoformat(), "end": tick_end.isoformat()}).fetchall()
+            return rows
         finally:
             session.close()
 
-    def tick_generator(self) -> Generator[tuple[datetime, list[PerceptionResult]], None, None]:
+    def tick_generator(self) -> Generator[tuple[datetime, list[Any]], None, None]:
         timeline = self.get_timeline()
         for tick_time in timeline:
             events = self.get_events_at(tick_time)
@@ -129,6 +126,46 @@ class SimulationEngine:
             "has_alert": has_alert,
             "alert_type": alert_type,
         }
+
+    def get_error_count_at(self, robot_id: str, tick_time: datetime) -> int:
+        """Count is_file_anomaly=True rows for a robot within a 1h tick window."""
+        tick_end = tick_time + timedelta(hours=1)
+        session = self.session_factory()
+        try:
+            row = session.execute(text(
+                f"SELECT COUNT(*) AS cnt "
+                f"FROM {DB_TABLE_PERCEPTION_RESULTS} "
+                f"WHERE robot_code = :rc "
+                f"AND observed_at >= :start AND observed_at < :end "
+                f"AND is_file_anomaly = TRUE"
+            ), {
+                "rc": _silver_rc(robot_id),
+                "start": tick_time.isoformat(),
+                "end": tick_end.isoformat(),
+            }).fetchone()
+            return row.cnt if row else 0
+        finally:
+            session.close()
+
+    def get_latest_anomaly_at(self, robot_id: str, tick_time: datetime) -> Any | None:
+        """Get the most recent anomalous PerceptionResult for a robot within a 1h tick window."""
+        tick_end = tick_time + timedelta(hours=1)
+        session = self.session_factory()
+        try:
+            return session.execute(text(
+                f"SELECT event_id, robot_code, observed_at, is_file_anomaly, per_sensor_scores "
+                f"FROM {DB_TABLE_PERCEPTION_RESULTS} "
+                f"WHERE robot_code = :rc "
+                f"AND observed_at >= :start AND observed_at < :end "
+                f"AND is_file_anomaly = TRUE "
+                f"ORDER BY observed_at DESC LIMIT 1"
+            ), {
+                "rc": _silver_rc(robot_id),
+                "start": tick_time.isoformat(),
+                "end": tick_end.isoformat(),
+            }).fetchone()
+        finally:
+            session.close()
 
     def get_robots(self) -> list[str]:
         return ALL_ROBOTS

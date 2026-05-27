@@ -1,83 +1,81 @@
 ---
 name: diagnose
-description: Main diagnostic skill with embedded routing table and family-specific references for SURGE (spike), DROPOUT (cable_wear/flatline), INSTABILITY (highfreq), DEVIATION (thermal_drift)
-required_tools: [query_pm_cards]
+description: Sensor-based diagnostic routing for wire_feed_speed, wire_temperature, welding_current with per-sensor deep-dive references
+required_tools: [query_pm_cards, query_sensor_stats]
 ---
 
 # Diagnose Skill
 
 ## Purpose
-This is the central diagnostic skill. It contains the hard-coded routing rules to direct incidents to the correct anomaly-type reference file, followed by a general diagnostic workflow applicable to all anomaly families.
+This is the central diagnostic skill. It contains the hard-coded **sensor-based** routing rules to direct incidents to the correct sensor-specific reference file, followed by a general diagnostic workflow applicable to all welding-robot sensors.
 
-## Routing Rules (Hard-Coded)
+## Sensor Routing Rules (Hard-Coded)
 
-Use the following IF-ELSE logic to determine which anomaly-type reference to load:
+### STEP 1 — Identify Primary Sensor
 
 ```
-IF abnormal_type == "spike":
-    THEN load "diagnose/references/spike.md"
+IF incident context already contains a "sensor" field → use it directly.
+
+OTHERWISE:
+    CALL query_sensor_stats(robot_code)
+    SELECT the sensor with the highest p99_score
+    WHERE is_anomalous_sensor == True
+    IF no sensor has is_anomalous_sensor == True:
+        SELECT the sensor with the highest p99_score overall
+    IF query_sensor_stats returns empty:
+        FALLBACK to the incident's "sensor" field value
+```
+
+### STEP 2 — Route to Sensor Reference (HARD RULES)
+
+```
+IF sensor == "wire_feed_speed":
+    THEN load "diagnose/references/wire_feed_speed.md"
     AND STOP
 
-ELIF abnormal_type == "cable_wear":
-    THEN load "diagnose/references/cable_wear.md"
+ELIF sensor == "wire_temperature":
+    THEN load "diagnose/references/wire_temperature.md"
     AND STOP
 
-ELIF abnormal_type == "flatline":
-    THEN load "diagnose/references/flatline.md"
-    AND STOP
-
-ELIF abnormal_type == "thermal_drift":
-    THEN load "diagnose/references/thermal_drift.md"
-    AND STOP
-
-ELIF abnormal_type == "highfreq":
-    THEN load "diagnose/references/highfreq.md"
+ELIF sensor == "welding_current":
+    THEN load "diagnose/references/welding_current.md"
     AND STOP
 
 ELSE:
-    IF abnormal_family == "SURGE":
-        THEN load "diagnose/references/spike.md"
-    ELIF abnormal_family == "DROPOUT":
-        THEN load "diagnose/references/cable_wear.md"
-    ELIF abnormal_family == "INSTABILITY":
-        THEN load "diagnose/references/highfreq.md"
-    ELIF abnormal_family == "DEVIATION":
-        THEN load "diagnose/references/thermal_drift.md"
-    ELSE:
-        RETURN "Unknown anomaly type/family. Cannot route."
+    RETURN "Unknown sensor: <sensor>. Cannot route."
 ```
 
 These are HARD RULES, not suggestions. Always follow the IF-ELSE structure exactly.
 
-## Anomaly Type Keywords Reference
+### STEP 3 — Deep Analysis
+- Follow the loaded sensor reference step by step.
+- Use `query_pm_cards` with the sensor-specific keywords listed in the reference.
+- Cross-reference signal patterns from the reference against the actual incident data.
 
-| Anomaly Type | Diagnostic Family | Keywords | Sensor(s) |
-|---|---|---|---|
-| `spike` | SURGE | surge, overshoot, impulse, peak, transient | welding_current, wire_feed_speed |
-| `cable_wear` | DROPOUT | intermittent, signal dropout, cable wear, wire_feed dropout | wire_feed_speed |
-| `flatline` | DROPOUT | zero signal, complete loss, sensor failure, PLC dropout | any sensor |
-| `thermal_drift` | DEVIATION | drift, bias, offset, temperature rise, baseline shift | wire_temperature |
-| `highfreq` | INSTABILITY | jitter, oscillation, arc instability, chattering, ripple | welding_current |
+### STEP 4 — Recommend Action per Severity
+- Consult the severity table in the loaded sensor reference.
+- Short-term actions (immediate / shift-level).
+- Long-term actions (scheduled maintenance / replacement).
 
 ## General Diagnostic Workflow
 
-Follow these steps after loading the correct anomaly-type reference:
+Follow these steps after loading the correct sensor reference:
 
 ### Step 1: Analyze Sensor Data
-- Use incident context fields (`sensor`, `anomaly_score`, `abnormal_subtype`)
-- Identify pattern characteristics specific to the anomaly type
+- Use incident context fields (`sensor`, `anomaly_score`, `per_sensor_scores`)
+- Identify pattern characteristics using the sensor reference's observable signal patterns
 
 ### Step 2: Check Maintenance History
-- Use `query_pm_cards` with anomaly-type-specific keywords from the reference
+- Use `query_pm_cards` with sensor-specific keywords from the reference
 
 ### Step 3: Identify Root Cause Candidates
-- Cross-reference sensor type against known failure modes (see anomaly-type reference)
+- Cross-reference observed signal patterns against known failure modes in the sensor reference
 
 ### Step 4: Evaluate Severity
-- Follow severity guidance in the anomaly-type reference
+- Follow severity guidance in the sensor reference (LOW / MEDIUM / HIGH / CRITICAL)
 
 ### Step 5: Recommend Action
-- Short-term and long-term recommendations (see anomaly-type reference)
+- Short-term and long-term recommendations from the sensor reference
 
 ## HITL Checkpoints (Apply After Routing)
 Whenever you propose an action during diagnosis, check its severity:
@@ -88,3 +86,5 @@ Whenever you propose an action during diagnosis, check its severity:
 When all diagnostic steps are complete, call `update_task_status` for the current plan item, then proceed to the next task in the plan.
 
 > HITL rules are enforced system-wide. See `agent_knowledge/rules/hitl-rules.md` for the full action severity table.
+>
+> Archived type-based references (spike.md, cable_wear.md, flatline.md, thermal_drift.md, highfreq.md) are preserved in `diagnose/references/_archived/` for historical reference and domain knowledge.

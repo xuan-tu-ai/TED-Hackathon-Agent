@@ -1,5 +1,10 @@
 {
   "_comment": "Anomaly detection thresholds — tune via notebook Load-Inference-Json-To-Silver.ipynb then fill here.",
-  "l1_density_threshold": 33.0,
-  "l2_min_slope": 0.05
+  "l1_density_threshold": 30.0,
+  "l2_min_slope": 0.005,
+  "sensor_thresholds": {
+    "wire_feed_speed": 0.13,
+    "wire_temperature": 12.06,
+    "welding_current": 0.56
+  }
 }

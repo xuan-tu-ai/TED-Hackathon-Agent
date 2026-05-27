@@ -28,12 +28,13 @@ from ..agent.triage_agent import triage_incident, TriageDecision
 from ..agent.systemic_agent import SystemicIncident
 from ..inference.v9_scores import (
     dominant_sensor,
+    normalize_mae,
     parse_v9_scores,
     score_to_severity,
     sensor_to_family,
 )
 from ..seed import create_session_factory
-from ..db.models import Incident, PerceptionResult
+from ..db.models import Incident
 
 from .engine import SimulationEngine
 from .state import SimulationState
@@ -91,39 +92,43 @@ class SimulationRunner:
                     "sim_time": tick_time.isoformat(),
                 })
 
-    def _create_incident(self, robot_id: str, triggers: dict[str, Any]) -> DiagnosticIncident:
+    def _create_incident(self, robot_id: str, triggers: dict[str, Any], tick_time: datetime | None = None) -> DiagnosticIncident:
         incident_id = f"INC-SIM-{uuid.uuid4().hex[:8]}"
         l1 = triggers.get("l1", {})
         l2 = triggers.get("l2", {})
         alert_type = triggers.get("alert_type", "L2_ESCALATION")
 
-        # Extract the most recent PerceptionResult from L1 events to get V9 scores
-        recent_events = l1.get("recent_events", []) or []
-        latest_event = recent_events[0] if recent_events else None
+        # Fetch latest anomalous event from Silver at tick_time to extract V9 scores
         v9_scores = {}
-        if latest_event is not None:
-            raw = getattr(latest_event, "per_sensor_scores", None)
-            if raw is not None:
-                v9_scores = parse_v9_scores(raw)
+        if tick_time is not None:
+            latest_event = self.engine.get_latest_anomaly_at(robot_id, tick_time)
+            if latest_event is not None:
+                raw = getattr(latest_event, "per_sensor_scores", None)
+                if raw is not None:
+                    v9_scores = parse_v9_scores(raw)
 
         # Derive dominant sensor and family from V9 scores
         sensor, sensor_score = dominant_sensor(v9_scores)
         abnormal_family = sensor_to_family(sensor, v9_scores)
 
-        # Determine score and severity from V9 per-sensor scores (3-key schema)
+        # Normalize MAE against sensor threshold → 0-1 score → severity
         if v9_scores:
-            score = float(sensor_score)
+            from ..agent.config import config as _cfg
+            sensor_threshold = _cfg.sensor_thresholds.get(sensor, 1.0)
+            score = normalize_mae(float(sensor_score), sensor_threshold)
             severity = score_to_severity(score)
         else:
-            # Fallback: legacy density/slope calculation
+            # No V9 scores: derive from L1 density or L2 slope
             if alert_type == "L1_BURST":
-                base_score = l1.get("density_per_hour", 30) / 30.0
-                score = min(0.98, max(0.85, base_score))
-                severity = "HIGH"
+                from ..agent.config import config as _cfg
+                density = l1.get("density_per_hour", 0.0)
+                threshold = _cfg.l1_density_threshold
+                score = round(min(1.0, density / (2.0 * threshold)), 2)
+                severity = score_to_severity(score)
             else:
-                slope = l2.get("slope", 0.002)
-                score = min(0.88, max(0.65, (slope / 0.015) + 0.5))
-                severity = "MEDIUM" if score < 0.8 else "HIGH"
+                slope = l2.get("slope", 0.0)
+                score = round(min(1.0, abs(slope) / 0.15), 2)
+                severity = score_to_severity(score)
 
         inc = DiagnosticIncident(
             incident_id=incident_id,
@@ -399,20 +404,10 @@ class SimulationRunner:
             })
 
             # Broadcast per-robot file-anomaly count for this tick
-            from sqlalchemy import func
             for robot_id in self.engine.get_robots():
                 if self._stop_event.is_set():
                     break
-                session = self.engine.session_factory()
-                try:
-                    error_count = session.query(func.count(PerceptionResult.id)).filter(
-                        PerceptionResult.robot_code == robot_id,
-                        PerceptionResult.observed_at == tick_time,
-                        PerceptionResult.is_file_anomaly == True,
-                    ).scalar() or 0
-                finally:
-                    session.close()
-
+                error_count = self.engine.get_error_count_at(robot_id, tick_time)
                 if error_count > 0:
                     self._broadcast({
                         "type": "error_count",
@@ -447,7 +442,7 @@ class SimulationRunner:
                         continue
 
                     self._debounce_timestamps[robot_id] = tick_index
-                    inc = self._create_incident(robot_id, triggers)
+                    inc = self._create_incident(robot_id, triggers, tick_time=tick_time)
                     self._save_incident_to_db(inc, triggers)
 
                     triage_result = triage_incident(inc)
