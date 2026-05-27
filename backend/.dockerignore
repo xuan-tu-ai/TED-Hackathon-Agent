@@ -1,0 +1,23 @@
+# ── Excluded application modules ────────────────────────────────
+app/anomaly_detection/
+data_simulator/
+notebooks/
+tests/
+
+# ── Excluded by dependency group (anomaly-detection) ───────────
+# Nothing to exclude at file level — uv handles --no-group
+
+# ── Development artifacts ───────────────────────────────────────
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+.env.*
+!.env.docker
+!.env.example
+
+# ── OS / Editor ─────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp

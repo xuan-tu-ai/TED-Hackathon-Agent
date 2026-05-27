@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+anomaly-detection/src/anomaly_detection/models/_archived/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+.eggs/
+
+# Data
+*.db
+*.sqlite
+data/chroma_db/
+data/*
+backend/notebooks/data/*
+backend/data/*
+
+# # Models
+# models/checkpoints/
+# *.pt
+# *.pth
+# *.ckpt
+
+# Frontend
+node_modules/
+.env
+.env.local
+.env.docker
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+
+.python-version
+
+
+.docker-data/
+
